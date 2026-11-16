@@ -137,9 +137,15 @@ public final class RenderFeatureStatus {
         return entry == null || (!entry.permanent && System.currentTimeMillis() >= entry.retryAtMillis);
     }
 
+    /**
+     * Clears a failure once the feature has run again. A success reported while the retry delay
+     * still runs is ignored: the feature only skipped its work (it asks {@link #mayRun} first), and
+     * clearing the failure then made a feature that fails later in the frame fail, and log its
+     * stack trace, on every other frame.
+     */
     public static synchronized void succeeded(RenderFeature feature) {
         Entry entry = ENTRIES.get(feature);
-        if (entry != null && !entry.permanent) {
+        if (entry != null && !entry.permanent && System.currentTimeMillis() >= entry.retryAtMillis) {
             ENTRIES.remove(feature);
             if (feature.settingsFeature() != null) {
                 Feature.of(feature.settingsFeature()).markReady();
@@ -164,6 +170,12 @@ public final class RenderFeatureStatus {
                 Feature.of(id).markReady();
             }
         }
+    }
+
+    /** How many times in a row the feature has failed (0 when healthy), for the unit tests. */
+    static synchronized int failuresForTesting(RenderFeature feature) {
+        Entry entry = ENTRIES.get(feature);
+        return entry == null ? 0 : entry.failures;
     }
 
     /** A short reason for the settings row, or null when the feature is healthy. */

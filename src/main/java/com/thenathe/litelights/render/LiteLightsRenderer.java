@@ -213,6 +213,11 @@ public final class LiteLightsRenderer {
      * Just before the level is drawn: the camera, projection and light for this frame are known and
      * no render pass is open.
      */
+    /** First thing in every frame, before anything is drawn or uploaded (from GameRenderer.render). */
+    public void frameStarting() {
+        terrainCasters.frameStarting();
+    }
+
     public void beforeLevel(GameRenderer gameRenderer) {
         if (uniforms == null || binder == null || casters == null) {
             return;

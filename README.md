@@ -21,16 +21,19 @@ Everything is in LiteLights' settings screen (through Mod Menu or a keybind you 
 
 ## Install
 
-1. Install Fabric Loader 0.19.5 or newer and Fabric API 0.166.0 or newer for Minecraft 26.3, on Java 25.
+1. Install Fabric Loader 0.19.3 or newer and Fabric API 0.160.5 or newer for Minecraft 26.3, on Java 25.
 2. Drop the jar from the [latest release](../../releases/latest) into your `mods` folder.
 3. Optional: Sodium, Continuity (for overlays), Mod Menu.
 
 ## Compatibility
 
 - Works with Sodium 0.9.2 and 0.9.3 betas, or the vanilla renderer.
+- Needs OpenGL 4.1 or newer, or Vulkan. Without Sodium, swaying plants need OpenGL 4.6 (or Vulkan); with Sodium they work on 4.1.
 - Doesn't work with Iris. It's a different approach to the same problem, so pick one.
 - If you have Particle Rain, Immersive Storms, Weather Glass, Wakes, Big Water or Streams Reflowing, LiteLights turns off its own version of whatever that mod does, and the settings screen tells you which.
 - Voxy and Distant Horizons both work (one at a time). Punchy! works too, outlines included.
+
+**On a Mac:** LiteLights only asks for OpenGL 4.1, so it should run, but I haven't been able to test it on real Apple hardware yet. An earlier version froze on a friend's M4 Max as the world loaded, and I haven't found why. If that happens to you, try Minecraft's Vulkan backend (Video Settings), and please send `logs/latest.log`, any `hs_err_pid*.log` from the game folder and the macOS hang report from `~/Library/Logs/DiagnosticReports`.
 
 If something breaks, please open an issue with your log and mod list and I'll take a look.
 

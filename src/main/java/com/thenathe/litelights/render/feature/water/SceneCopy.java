@@ -54,7 +54,8 @@ final class SceneCopy implements AutoCloseable {
         int width = colorView.getWidth(0);
         int height = colorView.getHeight(0);
         var device = RenderSystem.getDevice();
-        if (texture == null || texture.getWidth(0) != width || texture.getHeight(0) != height) {
+        // The alpha copy is checked too: if making it failed last time, the colour copy exists alone.
+        if (texture == null || opaqueAlphaView == null || texture.getWidth(0) != width || texture.getHeight(0) != height) {
             closeTexture();
             texture = device.createTexture("LiteLights scene copy", GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_RENDER_ATTACHMENT,
                 GpuFormat.RGBA16_FLOAT, width, height, 1, 1);

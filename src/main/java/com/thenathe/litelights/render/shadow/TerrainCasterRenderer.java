@@ -24,6 +24,7 @@ import net.minecraft.client.renderer.BindGroupLayouts;
 import net.minecraft.core.SectionPos;
 import org.joml.Matrix4f;
 import org.joml.Vector3d;
+import org.jspecify.annotations.Nullable;
 import org.lwjgl.system.MemoryStack;
 
 /** Draws section caster meshes into the sun shadow map. */
@@ -55,6 +56,7 @@ public final class TerrainCasterRenderer {
     }
 
     private final Matrix4f sectionMatrix = new Matrix4f();
+    private @Nullable TransientUploadGuard uploadGuard;
 
     /**
      * Draws one frame's share of a redraw into the map's back texture, clearing it first on the
@@ -64,6 +66,22 @@ public final class TerrainCasterRenderer {
         RedrawTimings.begin();
         drawSections(map, sections, store, blockAtlas, clear);
         RedrawTimings.end(sections.size());
+        uploadGuard().afterDraws();
+    }
+
+    /** First thing in every frame (see {@link TransientUploadGuard}). */
+    public void frameStarting() {
+        if (uploadGuard != null) {
+            uploadGuard.frameStarting();
+        }
+    }
+
+    private TransientUploadGuard uploadGuard() {
+        if (uploadGuard == null) {
+            // Made on first use: this renderer exists before the GPU device does.
+            uploadGuard = new TransientUploadGuard();
+        }
+        return uploadGuard;
     }
 
     private void drawSections(SunShadowMap map, LongArrayList sections, ShadowCasterStore store, GpuTextureView blockAtlas, boolean clear) {

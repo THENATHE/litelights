@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.5+26.3
+
+### Compatibility
+- **Older Fabric versions:** LiteLights now needs Fabric Loader 0.19.3 or newer (was 0.19.5) and Fabric API 0.160.5 or newer (was 0.166.0). 0.160.5 is the first Fabric API for the 26.3 release, and every Fabric API for 26.3 needs Loader 0.19.3 itself, so these are as low as 26.3 allows. LiteLights is now built against them, and the oldest pair passed the in-game checks.
+- **OpenGL 4.1 (macOS):** everything LiteLights draws was checked against OpenGL 4.1 core, the newest macOS has. Every shader reaches the driver as plain GLSL 3.30 with no extensions, and nothing LiteLights calls needs more than 4.1. The full game checks passed on a Linux driver made to look like a Mac's (GL 4.1, the missing extensions taken away, no clip control, Apple's depth workaround on). This build hasn't been tried on a real Mac. 0.1.7 froze on one (an M4 Max) as the world appeared, with nothing in its log; these checks found no cause for that, so it may still happen (see Known limitations in the README).
+- Sway on the vanilla renderer (without Sodium) still needs OpenGL 4.6's draw parameters, which macOS never has; its row now says so plainly: "Needs OpenGL 4.6 (draw parameters) or Sodium". With Sodium, sway works on OpenGL 4.1.
+
+### Fixed
+- **False shadows on drivers without persistent mapping** (macOS's OpenGL 4.1 among them): blocky dark patches could appear on the ground and on water and stay until the next shadow redraw. The game's fallback for such drivers can hand a draw another draw's data, and the shadow map kept the wrong result. LiteLights now waits for the GPU after drawing shadow casters on those drivers, only in the few frames of each shadow redraw. Other drivers draw exactly as before.
+- **A failing effect could flood the log.** An effect that failed after its own check each frame (the water scene copy is the one seen) was cleared by the next frame's skipped run, so it failed again at "attempt 1" every other frame with a full stack trace: over 100,000 errors in five minutes, a log of hundreds of megabytes and a slow game. A success reported while an effect waits to retry no longer clears its failure, water's scene copy counts as the success it is, and the waits grow again as intended (5 s, 10 s, 20 s, up to 5 min).
+- The water scene copy no longer breaks for good if only its second texture failed to allocate.
+- Far water on Voxy checks that the driver has the OpenGL 4.3 and 4.5 functions it calls before calling them; without them it finds the sea by its height, as when Voxy's pass can't be read.
+
+### Upgrading
+- Nothing in the settings changes: every saved setting carries over.
+
 ## 0.9.0+26.3
 
 The first public release, on GitHub. The mod is the same as 0.1.8+26.3; only the version changed. Every saved setting carries over.

@@ -70,6 +70,8 @@ public final class ShadowCasterStore implements AutoCloseable {
     private @Nullable ClientLevel level;
     private volatile long generation;
     private int pendingInRange;
+    /** Set by {@link #nearestDirty}: every dirty section within range not already being built. */
+    private int dirtyInRange;
     /** Diagnostics: rebuilds dropped because their geometry hash didn't change (light-only rebuilds). */
     private long unchangedRebuilds;
 
@@ -156,7 +158,7 @@ public final class ShadowCasterStore implements AutoCloseable {
         // Only the nearest few dirty sections can start this frame, so pick those instead of
         // sorting everything that is dirty (thousands while chunks stream in).
         LongArrayList candidates = nearestDirty(cameraX, cameraZ, (range + 16.0) * (range + 16.0));
-        int inRange = countInRange(cameraX, cameraZ, (range + 16.0) * (range + 16.0));
+        int inRange = dirtyInRange;
         int started = 0;
         int handled = 0;
         long deadline = System.nanoTime() + SNAPSHOT_BUDGET_NANOS;
@@ -179,18 +181,24 @@ public final class ShadowCasterStore implements AutoCloseable {
 
     /**
      * Up to {@link #NEAREST_LIMIT} dirty sections within range, nearest first, skipping ones already
-     * being built. Render thread only: the result reuses the same arrays every frame.
+     * being built, and how many there are in all ({@link #dirtyInRange}): one pass over the dirty
+     * set for both. Render thread only: the result reuses the same arrays every frame.
      */
     private LongArrayList nearestDirty(double cameraX, double cameraZ, double rangeSquared) {
         int limit = NEAREST_LIMIT;
         long[] keys = nearestKeys;
         double[] distances = nearestDistances;
         int count = 0;
+        int inRange = 0;
         LongIterator iterator = dirty.iterator();
         while (iterator.hasNext()) {
             long key = iterator.nextLong();
             double distance = distanceSquared(key, cameraX, cameraZ);
-            if (distance > rangeSquared || inFlight.contains(key) || (count == limit && distance >= distances[count - 1])) {
+            if (distance > rangeSquared || inFlight.contains(key)) {
+                continue;
+            }
+            inRange++;
+            if (count == limit && distance >= distances[count - 1]) {
                 continue;
             }
             int position = count == limit ? limit - 1 : count++;
@@ -204,19 +212,8 @@ public final class ShadowCasterStore implements AutoCloseable {
         }
         nearest.clear();
         nearest.addElements(0, keys, 0, count);
+        dirtyInRange = inRange;
         return nearest;
-    }
-
-    private int countInRange(double cameraX, double cameraZ, double rangeSquared) {
-        int count = 0;
-        LongIterator iterator = dirty.iterator();
-        while (iterator.hasNext()) {
-            long key = iterator.nextLong();
-            if (distanceSquared(key, cameraX, cameraZ) <= rangeSquared && !inFlight.contains(key)) {
-                count++;
-            }
-        }
-        return count;
     }
 
     private static double distanceSquared(long key, double cameraX, double cameraZ) {
@@ -308,13 +305,32 @@ public final class ShadowCasterStore implements AutoCloseable {
      * Changes outside the square can't affect a map that covers it.
      */
     public double nearestChangeWithin(double centerX, double centerZ, double radius, double fromX, double fromZ) {
+        return nearestChangeWithin(changed, centerX, centerZ, radius, fromX, fromZ);
+    }
+
+    /** {@link #nearestChangeWithin} over a list of section keys; static for the tests. */
+    static double nearestChangeWithin(LongArrayList changed, double centerX, double centerZ, double radius, double fromX, double fromZ) {
         double nearest = Double.POSITIVE_INFINITY;
+        double nearestSquared = Double.POSITIVE_INFINITY;
         for (int i = 0; i < changed.size(); i++) {
             long key = changed.getLong(i);
             double x = SectionPos.sectionToBlockCoord(SectionPos.x(key)) + 8.0;
             double z = SectionPos.sectionToBlockCoord(SectionPos.z(key)) + 8.0;
             if (Math.abs(x - centerX) <= radius + 8.0 && Math.abs(z - centerZ) <= radius + 8.0) {
-                nearest = Math.min(nearest, Math.hypot(x - fromX, z - fromZ));
+                double dx = x - fromX;
+                double dz = z - fromZ;
+                double squared = dx * dx + dz * dz;
+                // Math.hypot is slow and this list holds thousands of sections while chunks stream
+                // in, so a section clearly further than the nearest so far isn't measured. The
+                // margin is far wider than the rounding of either calculation, so a skipped one
+                // could never have been the nearest: the result is exactly what measuring all gives.
+                if (squared <= nearestSquared * (1.0 + 1.0e-9)) {
+                    double distance = Math.hypot(dx, dz);
+                    if (distance < nearest) {
+                        nearest = distance;
+                        nearestSquared = squared;
+                    }
+                }
             }
         }
         return nearest;

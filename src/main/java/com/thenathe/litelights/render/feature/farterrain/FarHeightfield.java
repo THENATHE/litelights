@@ -168,6 +168,11 @@ final class FarHeightfield implements AutoCloseable {
 
     @Override
     public void close() {
+        if (texture == null) {
+            // Nothing was made, or it is closed already: the slots and the queue only fill while the
+            // texture exists. Far shadows call this every frame unless Advanced is chosen.
+            return;
+        }
         if (view != null) {
             view.close();
             view = null;

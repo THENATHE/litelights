@@ -8,6 +8,8 @@ import com.mojang.renderpearl.backend.opengl.GlTexture;
 import com.thenathe.litelights.LiteLightsClient;
 import com.thenathe.litelights.render.post.PostTexture;
 import org.jspecify.annotations.Nullable;
+import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.GLCapabilities;
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL30C;
 import org.lwjgl.opengl.GL43C;
@@ -92,6 +94,11 @@ final class FarWaterCapture implements AutoCloseable {
      * state is read and only a texture copy is issued, so no binding Voxy relies on changes.
      */
     private boolean copyBoundColour(PostTexture into) {
+        GLCapabilities capabilities = GL.getCapabilities();
+        if (!hasDirectCopy(capabilities.OpenGL45, capabilities.GL_ARB_direct_state_access, capabilities.OpenGL43, capabilities.GL_ARB_copy_image)) {
+            // Calling them anyway would jump to a null function: a native crash, not an exception.
+            return voxyGaveUp("the OpenGL driver lacks the direct state access queries and image copy it needs (OpenGL 4.5)");
+        }
         int framebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
         if (framebuffer == 0 || !(into.texture() instanceof GlTexture target)) {
             return false;
@@ -114,6 +121,15 @@ final class FarWaterCapture implements AutoCloseable {
         GL43C.glCopyImageSubData(source, GL11C.GL_TEXTURE_2D, 0, 0, 0, 0,
             target.glId(), GL11C.GL_TEXTURE_2D, 0, 0, 0, 0, width, height, 1);
         return true;
+    }
+
+    /**
+     * Whether the driver has what {@link #copyBoundColour} calls: OpenGL 4.5's direct state access
+     * queries and OpenGL 4.3's image copy, each core or as its extension. macOS's OpenGL 4.1 has
+     * neither, though Voxy doesn't run there anyway.
+     */
+    static boolean hasDirectCopy(boolean openGl45, boolean directStateAccess, boolean openGl43, boolean copyImage) {
+        return (openGl45 || directStateAccess) && (openGl43 || copyImage);
     }
 
     private boolean voxyGaveUp(String reason) {

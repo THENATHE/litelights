@@ -12,8 +12,11 @@ repositories {
 
 dependencies {
     minecraft 'com.mojang:minecraft:26.3'
-    implementation 'net.fabricmc:fabric-loader:0.19.5'
-    implementation 'net.fabricmc.fabric-api:fabric-api:0.166.0+26.3'
+    // Compiled against the oldest Loader and Fabric API that fabric.mod.json accepts (0.19.3 is the
+    // oldest Loader that Fabric API for 26.3 runs on; 0.160.5 is the first Fabric API for the 26.3
+    // release), so nothing newer can be used by mistake. QA runs with newer copies (docs/DEPENDENCIES.md).
+    implementation 'net.fabricmc:fabric-loader:0.19.3'
+    implementation 'net.fabricmc.fabric-api:fabric-api:0.160.5+26.3'
     // Optional at runtime: Mod Menu's config button only appears when it is installed.
     compileOnly 'com.terraformersmc:modmenu:21.0.0'
     // Optional at runtime: Sodium's public config API, for LiteLights' pages in Sodium's Video Settings.

@@ -69,8 +69,8 @@ public final class VegetationModule {
         }
         if (problem == null && !SodiumSupport.isLoaded() && !RenderSystem.getDevice().getDeviceInfo().features().shaderDrawParameters()) {
             // Vanilla's terrain shader needs the draw's base vertex to find a vertex's corner
-            // (see terrain.vsh); Sodium's vertices carry it.
-            problem = "the graphics driver has no draw parameters, which sway needs without Sodium";
+            // (see terrain.vsh); Sodium's vertices carry it. macOS's OpenGL 4.1 never has it.
+            problem = "needs OpenGL 4.6 (draw parameters) or Sodium; this graphics driver has no draw parameters";
         }
         return problem;
     }

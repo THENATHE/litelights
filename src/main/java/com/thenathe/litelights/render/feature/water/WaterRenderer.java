@@ -148,8 +148,12 @@ public final class WaterRenderer {
     /** From LiteRenderEvents.FRAME_UPDATE: no pass open, uploads allowed. */
     void onFrameUpdate(FrameState frame, RenderSettings settings) {
         try {
-            update(frame, settings);
-            RenderFeatureStatus.succeeded(RenderFeature.WATER);
+            // Only a frame that really ran clears an earlier failure, and one that copies the scene
+            // only once the copy is taken: clearing it while the retry delay runs made a failing
+            // scene copy fail again, and log again, on every frame.
+            if (update(frame, settings) && !wantsSceneCopy) {
+                RenderFeatureStatus.succeeded(RenderFeature.WATER);
+            }
         } catch (RuntimeException error) {
             activeFlags = 0;
             wantsSceneCopy = false;
@@ -169,9 +173,10 @@ public final class WaterRenderer {
         uniforms.upload();
     }
 
-    private void update(FrameState frame, RenderSettings settings) {
+    /** Returns whether water ran this frame (false with no level or while a retry delay runs). */
+    private boolean update(FrameState frame, RenderSettings settings) {
         if (uniforms == null) {
-            return;
+            return false;
         }
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
@@ -183,7 +188,7 @@ public final class WaterRenderer {
             blurThisFrame = false;
             uniforms.flags.x = 0;
             uniforms.upload();
-            return;
+            return false;
         }
         if (!spritesKnown) {
             readSprites(minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS));
@@ -261,6 +266,7 @@ public final class WaterRenderer {
         fillUniforms(frame, settings, flags, cameraX, cameraY, cameraZ);
         uniforms.upload();
         bindings.setTextures(fluidData.view(), minecraft.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).getTextureView());
+        return true;
     }
 
     private int waterFlags(RenderSettings settings) {
@@ -437,6 +443,7 @@ public final class WaterRenderer {
         try {
             sceneCopy.take(mainTarget);
             bindings.setScene(sceneCopy.view());
+            RenderFeatureStatus.succeeded(RenderFeature.WATER);
         } catch (RuntimeException error) {
             wantsSceneCopy = false;
             RenderFeatureStatus.failed(RenderFeature.WATER, error);

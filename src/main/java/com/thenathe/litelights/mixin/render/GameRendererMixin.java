@@ -11,6 +11,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(GameRenderer.class)
 abstract class GameRendererMixin {
+    @Inject(method = "render", at = @At("HEAD"))
+    private void litelights$frameStarting(CallbackInfo callback) {
+        LiteLightsRenderer.get().frameStarting();
+    }
+
     /** The world projection seam (see WorldProjection): the level's projection on its way to the GPU. */
     @ModifyArg(
         method = "renderLevel",

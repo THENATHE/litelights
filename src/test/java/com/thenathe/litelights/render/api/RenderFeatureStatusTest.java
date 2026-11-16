@@ -17,8 +17,42 @@ class RenderFeatureStatusTest {
     @AfterEach
     void forget() {
         RenderFeatureStatus.clearCompileFailures();
+        RenderFeatureStatus.retryNow(FEATURE);
         RenderFeatureStatus.succeeded(FEATURE);
         ROW.markReady();
+    }
+
+    @Test
+    void successWhileWaitingToRetryKeepsTheFailure() {
+        // The 0.1.7 log spam: a feature that skipped its work while waiting reported success, the
+        // failure was forgotten, and it failed again on the next frame, at attempt 1 every time.
+        RenderFeatureStatus.failed(FEATURE, new IllegalStateException("OpenGL error 1280"));
+        RenderFeatureStatus.succeeded(FEATURE);
+        assertFalse(RenderFeatureStatus.mayRun(FEATURE));
+        assertInstanceOf(RowState.Failed.class, ROW.state());
+        assertEquals("IllegalStateException: OpenGL error 1280", RenderFeatureStatus.problem(FEATURE));
+    }
+
+    @Test
+    void successAfterTheRetryDelayClearsTheFailure() {
+        RenderFeatureStatus.failed(FEATURE, new IllegalStateException("OpenGL error 1280"));
+        RenderFeatureStatus.retryNow(FEATURE);
+        assertTrue(RenderFeatureStatus.mayRun(FEATURE));
+        RenderFeatureStatus.succeeded(FEATURE);
+        assertEquals(null, RenderFeatureStatus.problem(FEATURE));
+        assertInstanceOf(RowState.Ready.class, ROW.state());
+    }
+
+    @Test
+    void failingAgainAfterTheDelayWaitsLonger() {
+        RenderFeatureStatus.failed(FEATURE, new IllegalStateException("first"));
+        RenderFeatureStatus.succeeded(FEATURE);
+        RenderFeatureStatus.retryNow(FEATURE);
+        RenderFeatureStatus.failed(FEATURE, new IllegalStateException("second"));
+        // Still the same failure, now the second attempt: the next wait is 10 s, not 5 s again.
+        assertFalse(RenderFeatureStatus.mayRun(FEATURE));
+        assertEquals("IllegalStateException: second", RenderFeatureStatus.problem(FEATURE));
+        assertEquals(2, RenderFeatureStatus.failuresForTesting(FEATURE));
     }
 
     @Test
