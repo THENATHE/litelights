@@ -123,7 +123,7 @@ final class FarHeightfield implements AutoCloseable {
         }
         int slot = (chunkZ & (SLOTS - 1)) * SLOTS + (chunkX & (SLOTS - 1));
         long key = ChunkPos.pack(chunkX, chunkZ);
-        LevelChunk chunk = (LevelChunk) currentLevel.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false);
+        LevelChunk chunk = currentLevel.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false);
         if (chunk == null) {
             if (slotChunk[slot] != key) {
                 return;

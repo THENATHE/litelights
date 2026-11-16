@@ -2,6 +2,7 @@ package com.thenathe.litelights.render.shadow;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.IntConsumer;
 import net.minecraft.client.model.geom.builders.UVPair;
 import net.minecraft.client.renderer.block.BlockStateModelSet;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
@@ -38,12 +39,24 @@ import org.joml.Vector3fc;
 public final class CasterMeshBuilder {
     private static final Direction[] DIRECTIONS = Direction.values();
 
-    private final CasterMeshWriter writer = new CasterMeshWriter();
+    private final CasterMeshWriter writer;
     private final RandomSource random = RandomSource.create();
     private final List<BlockStateModelPart> parts = new ArrayList<>();
     private final boolean[] solid = new boolean[16 * 16 * 16];
     private final boolean[] faceMask = new boolean[GreedyFaceMerger.SIZE * GreedyFaceMerger.SIZE];
     private final BlockPos.MutableBlockPos worldPos = new BlockPos.MutableBlockPos();
+    /**
+     * The slice being merged, for {@link #rectangleEmitter}: one consumer for every slice instead of
+     * a capturing lambda per slice.
+     */
+    private Direction.Axis sliceAxis = Direction.Axis.X;
+    private float slicePlane;
+    private final IntConsumer rectangleEmitter = rectangle -> emitRectangle(sliceAxis, slicePlane, rectangle);
+
+    /** Mesh arrays come from {@code arrays}; whoever takes a built mesh gives its array back there. */
+    CasterMeshBuilder(CasterArrayPool arrays) {
+        writer = new CasterMeshWriter(arrays);
+    }
 
     public CasterMesh build(SectionSnapshot section, BlockStateModelSet models) {
         writer.reset();
@@ -108,8 +121,9 @@ public final class CasterMeshBuilder {
             if (!anyFace) {
                 continue;
             }
-            float plane = positive ? slice + 1 : slice;
-            GreedyFaceMerger.merge(faceMask, rectangle -> emitRectangle(axis, plane, rectangle));
+            sliceAxis = axis;
+            slicePlane = positive ? slice + 1 : slice;
+            GreedyFaceMerger.merge(faceMask, rectangleEmitter);
         }
     }
 

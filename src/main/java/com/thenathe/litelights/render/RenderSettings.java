@@ -100,8 +100,8 @@ public record RenderSettings(
 
     public enum FogLook { VANILLA, HAZE, OFF }
 
-    /** farTerrain: LiteLights' air (and light) on Voxy's and Distant Horizons' far terrain. */
     /**
+     * farTerrain: LiteLights' air (and light) on Voxy's and Distant Horizons' far terrain.
      * biomeHazeTint: how much of each biome's haze colour shows (0 the plain temperate haze, 1 the
      * biome's own). sunGlow: the warm glow toward a low sun and the haze's twilight warming (1 as built).
      */

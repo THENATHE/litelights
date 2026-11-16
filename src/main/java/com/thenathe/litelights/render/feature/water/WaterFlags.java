@@ -26,8 +26,6 @@ public final class WaterFlags {
     /** Wakes: the wake field (the fluid data's fifth region) holds ripples or foam to draw. */
     public static final int WAKES = 65536;
 
-    /** Effects that read the column map; without one of these on, the map isn't built at all. */
-    public static final int NEEDS_COLUMN_MAP = SHORE_FOAM | LAVA_CRUST | FLOATING_LEAVES | CAUSTICS | FALLING_WATER | WAKES;
     /** The foam that Drifting moves: without either, the flow isn't recorded at all. */
     public static final int DRIFTING_FOAM_MOVES = SHORE_FOAM | FALLING_WATER;
     /** Effects that read the opaque scene copied before translucent terrain. */

@@ -35,13 +35,14 @@ import org.jspecify.annotations.Nullable;
  */
 public final class ShadowCasterStore implements AutoCloseable {
     /**
-     * Builds started per frame. Taking a section's snapshot copies seven block containers on the
-     * client thread, so starting stops after this many sections or this much time, whichever
+     * Builds started per frame. Taking a section's snapshot copies up to seven block containers on
+     * the client thread, so starting stops after this many sections or this much time, whichever
      * comes first.
      */
     private static final int MAX_BUILDS_PER_FRAME = 48;
     private static final long SNAPSHOT_BUDGET_NANOS = 500_000L;
     private static final int MAX_IN_FLIGHT = 192;
+    private static final Direction[] DIRECTIONS = Direction.values();
 
     public record SectionCasters(long sectionKey, CasterBufferPool.Slot slot, int quadCount, long hash) {
         public GpuBuffer buffer() {
@@ -65,7 +66,16 @@ public final class ShadowCasterStore implements AutoCloseable {
     private final LongArrayList changed = new LongArrayList();
     private final Queue<CasterMesh> finished = new ConcurrentLinkedQueue<>();
     private final ExecutorService workers;
-    private final ThreadLocal<CasterMeshBuilder> builders = ThreadLocal.withInitial(CasterMeshBuilder::new);
+    private final CasterArrayPool meshArrays = new CasterArrayPool();
+    private final ThreadLocal<CasterMeshBuilder> builders = ThreadLocal.withInitial(() -> new CasterMeshBuilder(meshArrays));
+    /**
+     * The block containers copied during one {@link #update}, by section key. Sections started in
+     * the same frame are mostly each other's neighbours (a chunk's whole column turns dirty at once),
+     * so each section is copied once per frame and its copy shared by every snapshot that needs it.
+     * Nothing changes the level during an update, and the copies are only ever read afterwards, so
+     * sharing them between worker threads is safe. Cleared when the update ends.
+     */
+    private final Long2ObjectOpenHashMap<PalettedContainer<BlockState>> frameCopies = new Long2ObjectOpenHashMap<>();
     private final CasterBufferPool buffers = CasterBufferPool.onGpu();
     private @Nullable ClientLevel level;
     private volatile long generation;
@@ -162,19 +172,23 @@ public final class ShadowCasterStore implements AutoCloseable {
         int started = 0;
         int handled = 0;
         long deadline = System.nanoTime() + SNAPSHOT_BUDGET_NANOS;
-        while (handled < candidates.size() && started < MAX_BUILDS_PER_FRAME && inFlight.size() < MAX_IN_FLIGHT
-            && System.nanoTime() < deadline) {
-            long key = candidates.getLong(handled++);
-            dirty.remove(key);
-            SectionSnapshot snapshot = snapshot(level, key);
-            if (snapshot == null) {
-                accept(CasterMesh.empty(key));
-                continue;
+        try {
+            while (handled < candidates.size() && started < MAX_BUILDS_PER_FRAME && inFlight.size() < MAX_IN_FLIGHT
+                && System.nanoTime() < deadline) {
+                long key = candidates.getLong(handled++);
+                dirty.remove(key);
+                SectionSnapshot snapshot = snapshot(level, key);
+                if (snapshot == null) {
+                    accept(CasterMesh.empty(key));
+                    continue;
+                }
+                inFlight.add(key);
+                started++;
+                long buildGeneration = generation;
+                workers.execute(() -> build(snapshot, models, buildGeneration));
             }
-            inFlight.add(key);
-            started++;
-            long buildGeneration = generation;
-            workers.execute(() -> build(snapshot, models, buildGeneration));
+        } finally {
+            frameCopies.clear();
         }
         pendingInRange = inRange - handled + inFlight.size();
     }
@@ -227,6 +241,8 @@ public final class ShadowCasterStore implements AutoCloseable {
             CasterMesh mesh = builders.get().build(snapshot, models);
             if (buildGeneration == generation) {
                 finished.add(mesh);
+            } else {
+                meshArrays.give(mesh.vertices());
             }
         } catch (Throwable error) {
             LiteLightsClient.LOG.warn("Couldn't build shadow casters for section {}", SectionPos.of(snapshot.sectionKey()), error);
@@ -235,27 +251,41 @@ public final class ShadowCasterStore implements AutoCloseable {
     }
 
     @SuppressWarnings("unchecked")
-    private static @Nullable SectionSnapshot snapshot(ClientLevel level, long key) {
+    private @Nullable SectionSnapshot snapshot(ClientLevel level, long key) {
         int sectionX = SectionPos.x(key);
         int sectionY = SectionPos.y(key);
         int sectionZ = SectionPos.z(key);
-        PalettedContainer<BlockState> states = copySection(level, sectionX, sectionY, sectionZ);
+        PalettedContainer<BlockState> states = copyForThisFrame(level, sectionX, sectionY, sectionZ);
         if (states == null) {
             return null;
         }
-        PalettedContainer<BlockState>[] neighbours = new PalettedContainer[Direction.values().length];
-        for (Direction direction : Direction.values()) {
-            neighbours[direction.ordinal()] = copySection(level,
+        PalettedContainer<BlockState>[] neighbours = new PalettedContainer[DIRECTIONS.length];
+        for (Direction direction : DIRECTIONS) {
+            neighbours[direction.ordinal()] = copyForThisFrame(level,
                 sectionX + direction.getStepX(), sectionY + direction.getStepY(), sectionZ + direction.getStepZ());
         }
         return new SectionSnapshot(key, states, neighbours);
+    }
+
+    /** The section's blocks, copied at most once per update (see {@link #frameCopies}). */
+    private @Nullable PalettedContainer<BlockState> copyForThisFrame(ClientLevel level, int sectionX, int sectionY, int sectionZ) {
+        long key = SectionPos.asLong(sectionX, sectionY, sectionZ);
+        PalettedContainer<BlockState> copy = frameCopies.get(key);
+        if (copy == null) {
+            // Sections without blocks aren't kept: finding that out again costs no copy.
+            copy = copySection(level, sectionX, sectionY, sectionZ);
+            if (copy != null) {
+                frameCopies.put(key, copy);
+            }
+        }
+        return copy;
     }
 
     private static @Nullable PalettedContainer<BlockState> copySection(ClientLevel level, int sectionX, int sectionY, int sectionZ) {
         if (sectionY < level.getMinSectionY() || sectionY > level.getMaxSectionY()) {
             return null;
         }
-        LevelChunk chunk = (LevelChunk) level.getChunkSource().getChunk(sectionX, sectionZ, ChunkStatus.FULL, false);
+        LevelChunk chunk = level.getChunkSource().getChunk(sectionX, sectionZ, ChunkStatus.FULL, false);
         if (chunk == null) {
             return null;
         }
@@ -290,9 +320,12 @@ public final class ShadowCasterStore implements AutoCloseable {
         builtEmpty.remove(key);
         if (previous != null && previous.hash() == mesh.hash() && previous.quadCount() == mesh.quadCount()) {
             unchangedRebuilds++;
+            meshArrays.give(mesh.vertices());
             return;
         }
-        built.put(key, new SectionCasters(key, buffers.store(mesh.vertices()), mesh.quadCount(), mesh.hash()));
+        // The vertices are copied out during the store, so their array can go back to the workers.
+        built.put(key, new SectionCasters(key, buffers.store(mesh.vertices(), mesh.byteCount()), mesh.quadCount(), mesh.hash()));
+        meshArrays.give(mesh.vertices());
         if (previous != null) {
             buffers.release(previous.slot());
         }

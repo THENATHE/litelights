@@ -25,8 +25,10 @@ import org.jspecify.annotations.Nullable;
 final class ShadowCasterPass extends FilteringRenderPass {
     private final Set<String> lockedUniforms = new HashSet<>();
 
-    ShadowCasterPass(RenderPass delegate) {
+    /** Starts replaying into a pass, with no uniform locked; one instance serves every frame. */
+    void start(RenderPass delegate) {
         begin(delegate);
+        lockedUniforms.clear();
     }
 
     /** Sets a uniform that the replayed draws may not change. */

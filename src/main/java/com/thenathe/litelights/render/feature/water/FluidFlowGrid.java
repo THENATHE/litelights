@@ -39,7 +39,7 @@ public final class FluidFlowGrid {
         if (!Double.isFinite(component)) {
             return 0;
         }
-        return (int) Math.clamp(Math.round(component * STEPS), Byte.MIN_VALUE + 1, Byte.MAX_VALUE);
+        return Math.clamp(Math.round(component * STEPS), Byte.MIN_VALUE + 1, Byte.MAX_VALUE);
     }
 
     public void set(int x, int z, int packedValue) {

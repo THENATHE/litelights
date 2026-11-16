@@ -444,7 +444,6 @@
     "litelights.preview.noon": "Noon",
     "litelights.preview.dusk": "Dusk",
     "litelights.preview.night": "Night",
-    "litelights.preview.tooltip": "Shows LiteLights' sky, light and grade as at %s. The world's time doesn't change. Click again to stop.",
     "litelights.frame_time": "%s ms",
     "litelights.reset": "Reset",
     "litelights.reset.tooltip": "Back to the default",

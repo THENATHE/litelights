@@ -33,7 +33,7 @@ Everything is in LiteLights' settings screen (through Mod Menu or a keybind you 
 - If you have Particle Rain, Immersive Storms, Weather Glass, Wakes, Big Water or Streams Reflowing, LiteLights turns off its own version of whatever that mod does, and the settings screen tells you which.
 - Voxy and Distant Horizons both work (one at a time). Punchy! works too, outlines included.
 
-**On a Mac:** LiteLights only asks for OpenGL 4.1, so it should run, but I haven't been able to test it on real Apple hardware yet. An earlier version froze on a friend's M4 Max as the world loaded, and I haven't found why. If that happens to you, try Minecraft's Vulkan backend (Video Settings), and please send `logs/latest.log`, any `hs_err_pid*.log` from the game folder and the macOS hang report from `~/Library/Logs/DiagnosticReports`.
+**On a Mac:** LiteLights only asks for OpenGL 4.1, so it should run, but I haven't been able to test it on real Apple hardware yet. An earlier version froze on a friend's M4 Max as the world loaded. My best guess is the Mac's driver choking on LiteLights' big terrain shaders the first time it draws them, but I haven't been able to confirm it. If that happens to you, try Minecraft's Vulkan backend (Video Settings). If it still freezes, please send me the lines in `logs/latest.log` that start with `LiteLights:`, which say how far it got (if one of them is a "slow start-up step" warning, send the lines under it too), along with the macOS hang report from `~/Library/Logs/DiagnosticReports` and any `hs_err_pid*.log` from the game folder.
 
 If something breaks, please open an issue with your log and mod list and I'll take a look.
 

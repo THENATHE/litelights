@@ -158,8 +158,4 @@ public enum BiomeClimate {
     public boolean isSandy() {
         return this == DESERT || this == BADLANDS;
     }
-
-    public boolean isNether() {
-        return this == BASALT_DELTAS || this == CRIMSON_FOREST || this == WARPED_FOREST || this == SOUL_SAND_VALLEY || this == NETHER_WASTES;
-    }
 }

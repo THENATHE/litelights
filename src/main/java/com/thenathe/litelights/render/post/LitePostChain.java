@@ -18,6 +18,8 @@ import java.util.Map;
  */
 public final class LitePostChain {
     private static final Map<PostSlot, List<PostPass>> PASSES = new EnumMap<>(PostSlot.class);
+    /** {@link PostSlot#values} copies its array on every call, and the chain runs twice a frame. */
+    private static final PostSlot[] SLOTS = PostSlot.values();
     private static final PostContext CONTEXT = new PostContext();
     private static boolean worldStageRan;
     private static long lastErrorMillis;
@@ -56,7 +58,7 @@ public final class LitePostChain {
             return;
         }
         CONTEXT.begin(mainTarget, frame, RenderSettingsAccess.current(), stage);
-        for (PostSlot slot : PostSlot.values()) {
+        for (PostSlot slot : SLOTS) {
             List<PostPass> passes = PASSES.get(slot);
             if (slot.stage() != stage || passes == null) {
                 continue;

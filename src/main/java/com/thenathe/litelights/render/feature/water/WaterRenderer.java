@@ -89,7 +89,6 @@ public final class WaterRenderer {
     private final SplashEffects effects = new SplashEffects();
     private final SplashTracker splashes = new SplashTracker(wakesLoaded);
     private final StreamsReflowingSpray streamsSpray = new StreamsReflowingSpray();
-    private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
     private final OceanSwell swell = new OceanSwell();
     private final WakeMap wakes = new WakeMap();
     private final WakeSources.BowSpray bowSpray = this::spawnBowSpray;

@@ -10,6 +10,7 @@ import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.pipeline.PipelineOwners;
 import com.thenathe.litelights.render.pipeline.PipelineVariants;
+import com.thenathe.litelights.render.startup.StartupTrace;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import org.spongepowered.asm.mixin.Mixin;
@@ -23,6 +24,9 @@ import org.spongepowered.asm.mixin.injection.At;
  * and never the game. LiteLights' own pipelines (post passes, shadow casters) have no original;
  * their feature checks for a missing pipeline and stays off. Either way the feature is tried again
  * ({@link RenderFeatureStatus#compileFailed}), and every resource reload starts afresh.
+ *
+ * <p>Every compile is also timed for the start-up log ({@link StartupTrace}); the pipeline it
+ * returns is the same.
  */
 @Mixin(FrontendGpuDevice.class)
 abstract class FrontendGpuDeviceMixin {
@@ -33,9 +37,10 @@ abstract class FrontendGpuDeviceMixin {
         ShaderSource shaderSource,
         Executor executor
     ) {
+        long requested = System.nanoTime();
         return compiled.thenCompose(pending -> {
             if (pending != CompiledRenderPipeline.Pending.NULL) {
-                return CompletableFuture.completedFuture(pending);
+                return CompletableFuture.completedFuture(StartupTrace.timed(pipeline, pending, requested));
             }
             RenderFeature owner = PipelineOwners.ownerOf(pipeline);
             if (owner == null) {

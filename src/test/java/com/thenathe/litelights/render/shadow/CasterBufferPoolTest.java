@@ -58,10 +58,14 @@ class CasterBufferPoolTest {
         }
 
         @Override
-        public void write(GpuBuffer page, long offset, byte[] data) {
-            System.arraycopy(data, 0, ((FakeBuffer) page).bytes, (int) offset, data.length);
+        public void write(GpuBuffer page, long offset, byte[] data, int length) {
+            System.arraycopy(data, 0, ((FakeBuffer) page).bytes, (int) offset, length);
         }
     });
+
+    private CasterBufferPool.Slot store(byte[] vertices) {
+        return pool.store(vertices, vertices.length);
+    }
 
     private static byte[] mesh(int quads, int fill) {
         byte[] vertices = new byte[quads * 4 * CasterMesh.VERTEX_SIZE];
@@ -77,7 +81,7 @@ class CasterBufferPoolTest {
     void meshesShareOnePageOnVertexBoundariesWithoutOverlapping() {
         List<CasterBufferPool.Slot> slots = new ArrayList<>();
         for (int i = 0; i < 50; i++) {
-            slots.add(pool.store(mesh(1 + i % 7, i + 1)));
+            slots.add(store(mesh(1 + i % 7, i + 1)));
         }
         assertEquals(1, pool.pageCount());
         slots.sort((a, b) -> Long.compare(offset(a), offset(b)));
@@ -95,19 +99,31 @@ class CasterBufferPoolTest {
     @Test
     void writtenVerticesLandInTheirRange() {
         byte[] vertices = mesh(3, 42);
-        CasterBufferPool.Slot slot = pool.store(vertices);
+        CasterBufferPool.Slot slot = store(vertices);
         byte[] page = ((FakeBuffer) slot.buffer()).bytes;
         int from = (int) offset(slot);
         assertArrayEquals(vertices, Arrays.copyOfRange(page, from, from + vertices.length));
     }
 
     @Test
+    void onlyTheMeshPartOfALongerArrayIsStored() {
+        byte[] vertices = mesh(5, 7);
+        int bytes = 2 * 4 * CasterMesh.VERTEX_SIZE;
+        CasterBufferPool.Slot slot = pool.store(vertices, bytes);
+        assertEquals(bytes, slot.bytes());
+        assertEquals(bytes, pool.usedBytes());
+        byte[] page = ((FakeBuffer) slot.buffer()).bytes;
+        int from = (int) offset(slot);
+        assertArrayEquals(Arrays.copyOf(vertices, bytes), Arrays.copyOfRange(page, from, from + bytes));
+    }
+
+    @Test
     void aReleasedRangeIsReusedOnlyAfterTheDelay() {
-        CasterBufferPool.Slot first = pool.store(mesh(4, 1));
+        CasterBufferPool.Slot first = store(mesh(4, 1));
         pool.release(first);
         for (int frame = 0; frame < CasterBufferPool.REUSE_DELAY_FRAMES - 1; frame++) {
             pool.endFrame();
-            CasterBufferPool.Slot meanwhile = pool.store(mesh(4, 2));
+            CasterBufferPool.Slot meanwhile = store(mesh(4, 2));
             assertNotEquals(offset(first), offset(meanwhile), "reused while a frame in flight could still read it");
         }
         pool.endFrame();
@@ -116,9 +132,9 @@ class CasterBufferPoolTest {
 
     @Test
     void aMeshLargerThanAPageGetsItsOwnPageWhichGoesWhenEmpty() {
-        pool.store(mesh(1, 1));
+        store(mesh(1, 1));
         int bigQuads = (int) (CasterBufferPool.PAGE_BYTES / (4 * CasterMesh.VERTEX_SIZE)) + 10;
-        CasterBufferPool.Slot big = pool.store(mesh(bigQuads, 2));
+        CasterBufferPool.Slot big = store(mesh(bigQuads, 2));
         assertEquals(2, pool.pageCount());
         assertTrue(big.buffer().size() >= big.bytes());
         pool.release(big);
@@ -132,7 +148,7 @@ class CasterBufferPoolTest {
 
     @Test
     void clearingReleasesEveryPage() {
-        pool.store(mesh(2, 1));
+        store(mesh(2, 1));
         pool.clear();
         assertEquals(0, pool.pageCount());
         assertEquals(0, pool.usedBytes());

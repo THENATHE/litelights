@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CasterMeshWriterTest {
     private static CasterMesh quad(float x, float uvOffset) {
-        CasterMeshWriter writer = new CasterMeshWriter();
+        CasterMeshWriter writer = new CasterMeshWriter(new CasterArrayPool());
         writer.vertex(x, 0, 0, uvOffset, 0, 0);
         writer.vertex(x + 1, 0, 0, uvOffset, 0, 0);
         writer.vertex(x + 1, 1, 0, uvOffset, 0, 0);
@@ -38,7 +38,7 @@ class CasterMeshWriterTest {
 
     @Test
     void emptyWriterGivesAnEmptyMesh() {
-        CasterMesh mesh = new CasterMeshWriter().finish(1L);
+        CasterMesh mesh = new CasterMeshWriter(new CasterArrayPool()).finish(1L);
         assertTrue(mesh.isEmpty());
         assertEquals(0L, mesh.hash());
     }

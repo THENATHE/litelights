@@ -26,6 +26,7 @@ import com.thenathe.litelights.render.shadow.ShadowDepth;
 import com.thenathe.litelights.render.shadow.ShadowRedrawRules;
 import com.thenathe.litelights.render.shadow.SunShadowMap;
 import com.thenathe.litelights.render.shadow.TerrainCasterRenderer;
+import com.thenathe.litelights.render.startup.StartupTrace;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import java.util.Map;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
@@ -130,6 +131,7 @@ public final class LiteLightsRenderer {
         binder = new UniformBinder(uniforms.world(), uniforms.neutral(), uniforms.hand());
         casters = new ShadowCasterStore();
         LiteLightsClient.LOG.info("Renderer ready ({})", RenderSystem.getBackendDescription());
+        StartupTrace.graphics(RenderSystem.getDevice().getDeviceInfo());
     }
 
     public WorldProjection projection() {
@@ -209,19 +211,21 @@ public final class LiteLightsRenderer {
         }
     }
 
+    /** First thing in every frame, before anything is drawn or uploaded (from GameRenderer.render). */
+    public void frameStarting() {
+        StartupTrace.frameStarting();
+        terrainCasters.frameStarting();
+    }
+
     /**
      * Just before the level is drawn: the camera, projection and light for this frame are known and
      * no render pass is open.
      */
-    /** First thing in every frame, before anything is drawn or uploaded (from GameRenderer.render). */
-    public void frameStarting() {
-        terrainCasters.frameStarting();
-    }
-
     public void beforeLevel(GameRenderer gameRenderer) {
         if (uniforms == null || binder == null || casters == null) {
             return;
         }
+        StartupTrace.frameSetUpStarting();
         Minecraft minecraft = Minecraft.getInstance();
         RenderSettingsFeed.refresh();
         settings = RenderSettingsAccess.current();
@@ -273,6 +277,7 @@ public final class LiteLightsRenderer {
             shadowsActive && sunMap != null ? sunMap.frontView() : null,
             shadowsActive && sunMap != null ? sunMap.previousView() : null,
             mobShadowsActive && mobMap != null ? mobMap.view() : null);
+        StartupTrace.frameSetUpDone();
     }
 
     private void updateSunShadows(Minecraft minecraft) {
@@ -288,6 +293,7 @@ public final class LiteLightsRenderer {
                 sunMap.close();
                 sunMap = null;
             }
+            String outerStep = StartupTrace.beginStep("making the sun shadow map");
             try {
                 sunMap = createSunMap(detail, distance);
                 sunMapDetail = detail;
@@ -295,6 +301,8 @@ public final class LiteLightsRenderer {
                 RenderFeatureStatus.failed(RenderFeature.SHADOWS, error);
                 shadowsActive = false;
                 return;
+            } finally {
+                StartupTrace.endStep(outerStep);
             }
         }
         casters.update(camera.x, camera.z, sunMap.coverageRadius() * CASTER_RANGE_FACTOR);
@@ -307,8 +315,10 @@ public final class LiteLightsRenderer {
                 boolean clear = sunMap.isFirstRedrawFrame();
                 LongArrayList batch = sunMap.takeThisFramesSections();
                 terrainCasters.draw(sunMap, batch, casters, blockAtlas, clear);
+                StartupTrace.shadowSectionsDrawn(batch.size());
                 if (!sunMap.isDrawing()) {
                     sunMap.finishRedraw(settings.shadows().glide());
+                    StartupTrace.shadowRedrawFinished();
                     if (!rowsMarkedReady) {
                         rowsMarkedReady = true;
                         RenderFeatureStatus.markReady("shadows", "mob_shadows", "underwater_shadows", "pixel_lock");
@@ -335,8 +345,10 @@ public final class LiteLightsRenderer {
         RenderSettings.ShadowDetail detail = wanted.fitting(largestSize);
         detailFallbackReason = detail == wanted ? null : "litelights.shadows.detail_too_large";
         while (true) {
+            long started = System.nanoTime();
             try {
                 SunShadowMap map = new SunShadowMap(detail.mapSize(), distance);
+                StartupTrace.sunShadowMapMade(detail.mapSize(), System.nanoTime() - started);
                 showDetailFallback();
                 return map;
             } catch (RuntimeException error) {
@@ -404,19 +416,23 @@ public final class LiteLightsRenderer {
         if (!mobShadowsActive || mobMap == null || binder == null || uniforms == null) {
             return;
         }
+        StartupTrace.mobShadowMapStarting();
         try {
             mobMap.draw(preparedFrame, viewRotation, binder);
             RenderFeatureStatus.succeeded(RenderFeature.MOB_SHADOWS);
         } catch (RuntimeException error) {
             RenderFeatureStatus.failed(RenderFeature.MOB_SHADOWS, error);
         }
+        StartupTrace.mobShadowMapDrawn();
     }
 
     public void afterLevel(GameRenderer gameRenderer) {
         if (uniforms == null) {
             return;
         }
+        StartupTrace.levelDrawn();
         LiteRenderEvents.AFTER_LEVEL.invoker().afterLevel(gameRenderer.mainRenderTarget(), frame);
+        StartupTrace.postChainDone();
     }
 
     private void fillFrame(GameRenderer gameRenderer, @Nullable ClientLevel currentLevel, float rain, float thunder,

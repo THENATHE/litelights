@@ -32,7 +32,8 @@ final class CasterBufferPool implements AutoCloseable {
     interface Device {
         GpuBuffer createPage(long bytes);
 
-        void write(GpuBuffer page, long offset, byte[] data);
+        /** Writes the first {@code length} bytes of {@code data}. */
+        void write(GpuBuffer page, long offset, byte[] data, int length);
     }
 
     /** One page: a GPU buffer and the allocator that splits it up. */
@@ -80,11 +81,11 @@ final class CasterBufferPool implements AutoCloseable {
             }
 
             @Override
-            public void write(GpuBuffer page, long offset, byte[] data) {
-                ByteBuffer buffer = MemoryUtil.memAlloc(data.length);
+            public void write(GpuBuffer page, long offset, byte[] data, int length) {
+                ByteBuffer buffer = MemoryUtil.memAlloc(length);
                 try {
-                    buffer.put(data).flip();
-                    RenderSystem.getDevice().createCommandEncoder().writeToBuffer(page.slice(offset, data.length), buffer);
+                    buffer.put(data, 0, length).flip();
+                    RenderSystem.getDevice().createCommandEncoder().writeToBuffer(page.slice(offset, length), buffer);
                 } finally {
                     MemoryUtil.memFree(buffer);
                 }
@@ -92,11 +93,11 @@ final class CasterBufferPool implements AutoCloseable {
         });
     }
 
-    /** Stores a mesh's vertices and returns where they went. */
-    Slot store(byte[] vertices) {
-        Slot slot = allocate(vertices.length);
-        device.write(slot.buffer(), slot.allocation().getOffsetFromHeap(), vertices);
-        usedBytes += vertices.length;
+    /** Stores the first {@code bytes} bytes of a mesh's vertices and returns where they went. */
+    Slot store(byte[] vertices, int bytes) {
+        Slot slot = allocate(bytes);
+        device.write(slot.buffer(), slot.allocation().getOffsetFromHeap(), vertices, bytes);
+        usedBytes += bytes;
         return slot;
     }
 

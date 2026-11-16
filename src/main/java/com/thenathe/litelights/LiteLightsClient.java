@@ -12,7 +12,9 @@ import com.thenathe.litelights.render.feature.water.WaterRenderer;
 import com.thenathe.litelights.render.feature.weather.GlassWeather;
 import com.thenathe.litelights.render.frame.DimensionGate;
 import com.thenathe.litelights.render.post.LitePostChain;
+import com.thenathe.litelights.render.startup.StartupTrace;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
@@ -44,6 +46,7 @@ public final class LiteLightsClient implements ClientModInitializer {
         GlassWeather.get().register();
         SkyFogFeature.register();
         FarTerrain.register();
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> StartupTrace.stopWatching());
         // Not Fabric's DISCONNECT event: leaving a singleplayer world fires it on the network thread,
         // and a task handed to the render thread from there is dropped by Minecraft.disconnect.
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -57,6 +60,7 @@ public final class LiteLightsClient implements ClientModInitializer {
 
     /** Lets go of the world the player left, and of the GPU memory that only mattered there. */
     private static void onWorldLeft() {
+        StartupTrace.stopWatching();
         try {
             DimensionGate.onWorldLeft();
             SkyFogFeature.get().onWorldLeft();

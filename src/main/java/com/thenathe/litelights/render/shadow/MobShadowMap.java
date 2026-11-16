@@ -50,6 +50,12 @@ public final class MobShadowMap implements AutoCloseable {
     private final LightSpace space = new LightSpace();
     private final Matrix4f cameraRelative = new Matrix4f();
     private final Matrix4f entityProjection = new Matrix4f();
+    private final ShadowCasterPass casterPass = new ShadowCasterPass();
+    /**
+     * The phases replayed this frame. The same phase object can sit in several fields (with Improved
+     * Transparency every translucent field is the one OIT phase), so each is replayed once.
+     */
+    private final Set<FeatureRenderPhase<?>> replayed = Collections.newSetFromMap(new IdentityHashMap<>());
 
     public MobShadowMap(int size) {
         this.size = size;
@@ -117,16 +123,15 @@ public final class MobShadowMap implements AutoCloseable {
         try (RenderPass pass = GuardedRenderPass.open(descriptor)) {
             RenderSystem.bindDefaultUniforms(pass);
             binder.bindForShadowCasters(pass);
-            ShadowCasterPass casterPass = new ShadowCasterPass(pass);
+            casterPass.start(pass);
             casterPass.lockUniform("Projection", projectionBuffer.slice());
-            // The same phase object can sit in several fields (with Improved Transparency every
-            // translucent field is the one OIT phase), so each is replayed once.
-            Set<FeatureRenderPhase<?>> replayed = Collections.newSetFromMap(new IdentityHashMap<>());
             for (SubmitNodeCollection collection : storage.getSubmitsPerOrder().values()) {
                 replay(accessor, context, collection.solid, casterPass, replayed);
                 replay(accessor, context, collection.translucentModels, casterPass, replayed);
                 replay(accessor, context, collection.translucentBlocksAndItems, casterPass, replayed);
             }
+        } finally {
+            replayed.clear();
         }
     }
 

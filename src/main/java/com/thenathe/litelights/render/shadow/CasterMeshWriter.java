@@ -10,10 +10,15 @@ final class CasterMeshWriter {
     private static final long FNV_OFFSET = 0xcbf29ce484222325L;
     private static final long FNV_PRIME = 0x100000001b3L;
 
-    private byte[] data = new byte[CasterMesh.VERTEX_SIZE * 4 * 256];
+    private final CasterArrayPool arrays;
+    private byte[] data = new byte[CasterMesh.QUAD_SIZE * 256];
     private int size;
     private int quadCount;
     private long hash = FNV_OFFSET;
+
+    CasterMeshWriter(CasterArrayPool arrays) {
+        this.arrays = arrays;
+    }
 
     void reset() {
         size = 0;
@@ -40,7 +45,12 @@ final class CasterMeshWriter {
         if (quadCount == 0) {
             return CasterMesh.empty(sectionKey);
         }
-        return new CasterMesh(sectionKey, Arrays.copyOf(data, size), quadCount, hash ^ quadCount);
+        if (size != quadCount * CasterMesh.QUAD_SIZE) {
+            throw new IllegalStateException(size + " bytes written for " + quadCount + " quads");
+        }
+        byte[] vertices = arrays.take(size);
+        System.arraycopy(data, 0, vertices, 0, size);
+        return new CasterMesh(sectionKey, vertices, quadCount, hash ^ quadCount);
     }
 
     static int encodePosition(float blocks) {

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.6+26.3
+
+### Added
+- **Start-up notes in the log, for the Mac freeze:** LiteLights now writes about ten lines starting "LiteLights:" between start-up and the first frames of a world: the graphics driver, how long the shaders took, and each step of the first world frame (the sun shadow map, the post pipelines, LiteLights' set-up, drawing the level, the mob shadow map, the post chain) with its time. Each comes once per game session (the shader line once per resource reload), and nothing is written per frame. If one frame takes over 10 s in that time, one warning names the step and shows where the game is stuck. A log from a game that freezes now says how far it got (see Known limitations in the README).
+
+### Changed
+- **Faster:** LiteLights makes about a quarter less garbage for Java to clean up, most of it while chunks load: shadow meshes reuse their memory, and each chunk section is copied once per frame instead of up to seven times. Nothing looks or behaves differently. On a fast graphics card frame times stay the same; slower processors keep the saving.
+
 ## 0.9.5+26.3
 
 ### Compatibility

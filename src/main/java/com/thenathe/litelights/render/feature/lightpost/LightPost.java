@@ -11,6 +11,7 @@ import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.pipeline.PipelineOwners;
 import com.thenathe.litelights.render.post.LitePostChain;
 import com.thenathe.litelights.render.post.PostSlot;
+import com.thenathe.litelights.render.startup.StartupTrace;
 import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
 
 /**
@@ -106,6 +107,9 @@ public final class LightPost {
             return;
         }
         rowsChecked = true;
+        String outerStep = StartupTrace.beginStep("compiling LiteLights' post pipelines");
+        long started = System.nanoTime();
+        int compiledBefore = StartupTrace.firstUseCompiles();
         RenderPipeline[] rayPipelines = LightRaysPass.pipelines();
         readyIf(RenderFeature.BLOOM, "bloom", BloomPass.pipelines());
         readyIf(RenderFeature.LIGHT_RAYS, "light_rays", rayPipelines);
@@ -114,6 +118,8 @@ public final class LightPost {
         readyIf(RenderFeature.FXAA, "fxaa", FxaaPass.pipeline());
         readyIf(RenderFeature.TAA, "taa", TaaPass.pipelines());
         readyIf(RenderFeature.ENCHANTMENT_OUTLINES, "outlines", EnchantmentOutline.pipelines());
+        StartupTrace.postPipelinesReady(StartupTrace.firstUseCompiles() - compiledBefore, System.nanoTime() - started);
+        StartupTrace.endStep(outerStep);
     }
 
     private static void readyIf(RenderFeature feature, String settingsFeature, RenderPipeline... pipelines) {

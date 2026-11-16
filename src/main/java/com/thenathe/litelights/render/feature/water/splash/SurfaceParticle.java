@@ -23,6 +23,8 @@ final class SurfaceParticle extends SingleQuadParticle {
     private final int delay;
     private final float startAlpha;
     private final Quaternionf flat = new Quaternionf();
+    /** Where {@link #getLightCoords} reads the light, kept so drawing doesn't allocate a position every frame. */
+    private final BlockPos.MutableBlockPos lightPos = new BlockPos.MutableBlockPos();
 
     SurfaceParticle(ClientLevel level, double x, double y, double z, WaterParticleSprites.Set set, float startSize, float endSize,
                     int lifetime, int delay, float startAlpha, int tint) {
@@ -90,7 +92,7 @@ final class SurfaceParticle extends SingleQuadParticle {
      */
     @Override
     protected int getLightCoords(float partialTick) {
-        BlockPos above = BlockPos.containing(x, y + 1.0, z);
+        BlockPos above = lightPos.set(x, y + 1.0, z);
         return level.hasChunkAt(above) ? LightCoordsUtil.getLightCoords(level, above) : 0;
     }
 
