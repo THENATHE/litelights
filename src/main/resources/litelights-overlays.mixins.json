@@ -1,0 +1,13 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.thenathe.litelights.mixin.overlays",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "PackRepositoryMixin",
+        "ReloadableResourceManagerMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

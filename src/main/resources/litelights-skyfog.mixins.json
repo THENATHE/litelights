@@ -1,0 +1,14 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.thenathe.litelights.mixin.skyfog",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "CloudHooksMixin",
+        "CloudOptionsMixin",
+        "SkyRendererSkyFogMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

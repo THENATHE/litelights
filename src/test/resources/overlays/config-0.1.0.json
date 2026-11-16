@@ -1,0 +1,140 @@
+{
+  "configVersion": 1,
+  "style": "VANILLA",
+  "lightMode": true,
+  "accent": "ORANGE",
+  "enabled": true,
+  "fallbackStyle": "dithered",
+  "forceFallbackStyle": false,
+  "edgeReach": 7,
+  "edgeRoughness": 35,
+  "blendWithinGroup": true,
+  "groups": [
+    {
+      "name": "Turf and sand",
+      "blocks": [
+        {
+          "id": "minecraft:grass_block",
+          "enabled": true,
+          "style": "default"
+        },
+        {
+          "id": "minecraft:sand",
+          "enabled": true,
+          "style": "default"
+        },
+        {
+          "id": "minecraft:mycelium",
+          "enabled": true,
+          "style": "jagged"
+        }
+      ]
+    },
+    {
+      "name": "Loose",
+      "blocks": [
+        {
+          "id": "minecraft:gravel",
+          "enabled": false,
+          "style": "default"
+        },
+        {
+          "id": "minecraft:dirt",
+          "enabled": true,
+          "style": "organic"
+        }
+      ]
+    },
+    {
+      "name": "Built",
+      "blocks": [
+        {
+          "id": "minecraft:stone_bricks",
+          "enabled": true,
+          "style": "receive_only"
+        }
+      ]
+    }
+  ],
+  "offeredDefaults": [
+    "minecraft:snow_block",
+    "minecraft:moss_block",
+    "minecraft:pale_moss_block",
+    "minecraft:grass_block",
+    "minecraft:mycelium",
+    "minecraft:podzol",
+    "minecraft:crimson_nylium",
+    "minecraft:warped_nylium",
+    "minecraft:sand",
+    "minecraft:red_sand",
+    "minecraft:soul_soil",
+    "minecraft:mud",
+    "minecraft:clay",
+    "minecraft:gravel",
+    "minecraft:dirt",
+    "minecraft:coarse_dirt",
+    "minecraft:rooted_dirt",
+    "minecraft:packed_mud",
+    "minecraft:sandstone",
+    "minecraft:red_sandstone",
+    "minecraft:terracotta",
+    "minecraft:white_terracotta",
+    "minecraft:light_gray_terracotta",
+    "minecraft:gray_terracotta",
+    "minecraft:black_terracotta",
+    "minecraft:brown_terracotta",
+    "minecraft:red_terracotta",
+    "minecraft:orange_terracotta",
+    "minecraft:yellow_terracotta",
+    "minecraft:lime_terracotta",
+    "minecraft:green_terracotta",
+    "minecraft:cyan_terracotta",
+    "minecraft:light_blue_terracotta",
+    "minecraft:blue_terracotta",
+    "minecraft:purple_terracotta",
+    "minecraft:magenta_terracotta",
+    "minecraft:pink_terracotta",
+    "minecraft:calcite",
+    "minecraft:dripstone_block",
+    "minecraft:stone",
+    "minecraft:andesite",
+    "minecraft:diorite",
+    "minecraft:granite",
+    "minecraft:tuff",
+    "minecraft:cobblestone",
+    "minecraft:mossy_cobblestone",
+    "minecraft:cinnabar",
+    "minecraft:sulfur",
+    "minecraft:deepslate",
+    "minecraft:cobbled_deepslate",
+    "minecraft:smooth_basalt",
+    "minecraft:blackstone",
+    "minecraft:netherrack",
+    "minecraft:end_stone",
+    "minecraft:smooth_stone",
+    "minecraft:smooth_sandstone",
+    "minecraft:smooth_red_sandstone",
+    "minecraft:cut_sandstone",
+    "minecraft:cut_red_sandstone",
+    "minecraft:polished_andesite",
+    "minecraft:polished_diorite",
+    "minecraft:polished_granite",
+    "minecraft:polished_tuff",
+    "minecraft:stone_bricks",
+    "minecraft:mossy_stone_bricks",
+    "minecraft:cracked_stone_bricks",
+    "minecraft:bricks",
+    "minecraft:mud_bricks",
+    "minecraft:polished_deepslate",
+    "minecraft:deepslate_bricks",
+    "minecraft:deepslate_tiles",
+    "minecraft:tuff_bricks",
+    "minecraft:polished_blackstone",
+    "minecraft:polished_blackstone_bricks",
+    "minecraft:polished_cinnabar",
+    "minecraft:cinnabar_bricks",
+    "minecraft:polished_sulfur",
+    "minecraft:sulfur_bricks",
+    "minecraft:end_stone_bricks"
+  ]
+}

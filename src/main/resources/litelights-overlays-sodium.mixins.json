@@ -1,0 +1,13 @@
+{
+    "required": false,
+    "minVersion": "0.8",
+    "package": "com.thenathe.litelights.mixin.overlayssodium",
+    "plugin": "com.thenathe.litelights.mixin.overlayssodium.QuadFacingMixinPlugin",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "QuadViewLoadMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 0
+    }
+}

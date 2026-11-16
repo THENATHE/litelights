@@ -1,0 +1,24 @@
+Large water and lava textures
+
+water_still.png, water_flow.png, lava_still.png and lava_flow.png (and their .png.mcmeta animation
+files) in this folder are the vanilla-style textures of Big Water by Tec, from
+https://github.com/Tectato/BigWater (src/main/resources/resourcepacks/vanilla/assets/bigwater/textures/block/).
+
+The PNG files were losslessly recompressed to make the jar smaller: the lava textures saved as RGB
+(every pixel was fully opaque) and the water textures as an exact six-colour palette with their
+alpha kept. Every decoded pixel is identical to the original, checked with Minecraft's own image
+decoder.
+
+lava_flow.png was also cropped: LiteLights shows only every second of its 128 frames (the strip
+it builds holds at most 8192 pixels per column), so only those 64 frames are kept, each pixel
+identical to the original's, and lava_flow.png.mcmeta's frametime is doubled from 2 to 4 so the
+animation runs at the same speed. The other .png.mcmeta files are unchanged.
+
+Big Water: https://modrinth.com/mod/big-water
+
+They are released under CC0 1.0 Universal (public domain dedication):
+https://creativecommons.org/publicdomain/zero/1.0/
+
+LiteLights uses only these texture files. The idea of large water textures is credited to Tec
+(Big Water); LiteLights' code and shaders for them are its own and were written without reading
+Big Water's code.

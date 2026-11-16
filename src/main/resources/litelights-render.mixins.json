@@ -1,0 +1,23 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.thenathe.litelights.mixin.render",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "ClientLevelMixin",
+        "EntityShadowMixin",
+        "FrontendGpuDeviceMixin",
+        "GameRendererMixin",
+        "LevelRendererMixin",
+        "PreparedFrameAccessor",
+        "PreparedRenderTypeMixin",
+        "ReloadableResourceManagerMixin",
+        "RenderPipelineBuilderMixin",
+        "RenderSystemMixin",
+        "SkyRendererMixin",
+        "TextureAtlasMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

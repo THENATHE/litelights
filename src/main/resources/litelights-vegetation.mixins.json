@@ -1,0 +1,12 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.thenathe.litelights.mixin.vegetation",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "BiomeMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

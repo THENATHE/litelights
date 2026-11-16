@@ -1,0 +1,374 @@
+package com.thenathe.litelights.render.shadow;
+
+import com.mojang.renderpearl.api.buffers.GpuBuffer;
+import com.thenathe.litelights.LiteLightsClient;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongIterator;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.Consumer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.block.BlockStateModelSet;
+import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import org.jspecify.annotations.Nullable;
+
+/**
+ * Owns every section's shadow caster mesh: which sections need building, the worker threads that
+ * build them, and where they end up in GPU memory ({@link CasterBufferPool}).
+ *
+ * <p>Sections are marked dirty by chunk loads and by every block or light change the level
+ * reports. Light changes rebuild the section too (they can't be told apart from block changes at
+ * that point), but the rebuilt mesh hashes the same, so it is dropped without a shadow redraw:
+ * only a changed hash is reported through {@link #nearestChangeWithin}.
+ */
+public final class ShadowCasterStore implements AutoCloseable {
+    /**
+     * Builds started per frame. Taking a section's snapshot copies seven block containers on the
+     * client thread, so starting stops after this many sections or this much time, whichever
+     * comes first.
+     */
+    private static final int MAX_BUILDS_PER_FRAME = 48;
+    private static final long SNAPSHOT_BUDGET_NANOS = 500_000L;
+    private static final int MAX_IN_FLIGHT = 192;
+
+    public record SectionCasters(long sectionKey, CasterBufferPool.Slot slot, int quadCount, long hash) {
+        public GpuBuffer buffer() {
+            return slot.buffer();
+        }
+
+        public int firstVertex() {
+            return slot.firstVertex();
+        }
+    }
+
+    private static final int NEAREST_LIMIT = MAX_BUILDS_PER_FRAME * 2;
+    private final long[] nearestKeys = new long[NEAREST_LIMIT];
+    private final double[] nearestDistances = new double[NEAREST_LIMIT];
+    private final LongArrayList nearest = new LongArrayList(NEAREST_LIMIT);
+    private final Long2ObjectMap<SectionCasters> built = new Long2ObjectOpenHashMap<>();
+    /** Hashes of sections that were built but turned out empty, so an empty rebuild is no change either. */
+    private final LongOpenHashSet builtEmpty = new LongOpenHashSet();
+    private final LongOpenHashSet dirty = new LongOpenHashSet();
+    private final LongOpenHashSet inFlight = new LongOpenHashSet();
+    private final LongArrayList changed = new LongArrayList();
+    private final Queue<CasterMesh> finished = new ConcurrentLinkedQueue<>();
+    private final ExecutorService workers;
+    private final ThreadLocal<CasterMeshBuilder> builders = ThreadLocal.withInitial(CasterMeshBuilder::new);
+    private final CasterBufferPool buffers = CasterBufferPool.onGpu();
+    private @Nullable ClientLevel level;
+    private volatile long generation;
+    private int pendingInRange;
+    /** Diagnostics: rebuilds dropped because their geometry hash didn't change (light-only rebuilds). */
+    private long unchangedRebuilds;
+
+    public ShadowCasterStore() {
+        int threads = Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() / 4));
+        workers = Executors.newFixedThreadPool(threads, runnable -> {
+            Thread thread = new Thread(runnable, "LiteLights shadow casters");
+            thread.setDaemon(true);
+            thread.setPriority(Thread.NORM_PRIORITY - 1);
+            return thread;
+        });
+    }
+
+    /** Drops everything when the level changes (joining a world, changing dimension). */
+    public void setLevel(@Nullable ClientLevel newLevel) {
+        if (newLevel == level) {
+            return;
+        }
+        clear();
+        level = newLevel;
+    }
+
+    /** Rebuild everything, for example after a resource reload changed the block models. */
+    public void invalidateAll() {
+        dirty.addAll(built.keySet());
+        dirty.addAll(builtEmpty);
+    }
+
+    public void markSectionDirty(int sectionX, int sectionY, int sectionZ) {
+        dirty.add(SectionPos.asLong(sectionX, sectionY, sectionZ));
+    }
+
+    public void markBlockDirty(int blockX, int blockY, int blockZ) {
+        markSectionDirty(SectionPos.blockToSectionCoord(blockX), SectionPos.blockToSectionCoord(blockY), SectionPos.blockToSectionCoord(blockZ));
+    }
+
+    /**
+     * A chunk arrived: build all its sections, and rebuild the sections next to it, whose faces
+     * toward this chunk were exposed until now.
+     */
+    public void chunkLoaded(ClientLevel chunkLevel, int chunkX, int chunkZ) {
+        // After a dimension change the first chunks arrive before the renderer's next frame has
+        // seen the new level; switching here keeps them instead of dropping the spawn area's casters.
+        setLevel(chunkLevel);
+        int minSection = chunkLevel.getMinSectionY();
+        int maxSection = chunkLevel.getMaxSectionY();
+        for (int sectionY = minSection; sectionY <= maxSection; sectionY++) {
+            markSectionDirty(chunkX, sectionY, chunkZ);
+            markSectionDirty(chunkX - 1, sectionY, chunkZ);
+            markSectionDirty(chunkX + 1, sectionY, chunkZ);
+            markSectionDirty(chunkX, sectionY, chunkZ - 1);
+            markSectionDirty(chunkX, sectionY, chunkZ + 1);
+        }
+    }
+
+    public void chunkUnloaded(ClientLevel chunkLevel, int chunkX, int chunkZ) {
+        if (chunkLevel != level) {
+            return;
+        }
+        for (int sectionY = chunkLevel.getMinSectionY(); sectionY <= chunkLevel.getMaxSectionY(); sectionY++) {
+            long key = SectionPos.asLong(chunkX, sectionY, chunkZ);
+            dirty.remove(key);
+            builtEmpty.remove(key);
+            SectionCasters removed = built.remove(key);
+            if (removed != null) {
+                buffers.release(removed.slot());
+                changed.add(key);
+            }
+        }
+    }
+
+    /**
+     * Once per frame on the render thread: uploads finished meshes and starts new builds, nearest
+     * to the camera first, for dirty sections within range of the shadow map.
+     */
+    public void update(double cameraX, double cameraZ, double range) {
+        buffers.endFrame();
+        collectFinished();
+        if (level == null || dirty.isEmpty()) {
+            pendingInRange = inFlight.size();
+            return;
+        }
+        BlockStateModelSet models = Minecraft.getInstance().getModelManager().getBlockStateModelSet();
+        // Only the nearest few dirty sections can start this frame, so pick those instead of
+        // sorting everything that is dirty (thousands while chunks stream in).
+        LongArrayList candidates = nearestDirty(cameraX, cameraZ, (range + 16.0) * (range + 16.0));
+        int inRange = countInRange(cameraX, cameraZ, (range + 16.0) * (range + 16.0));
+        int started = 0;
+        int handled = 0;
+        long deadline = System.nanoTime() + SNAPSHOT_BUDGET_NANOS;
+        while (handled < candidates.size() && started < MAX_BUILDS_PER_FRAME && inFlight.size() < MAX_IN_FLIGHT
+            && System.nanoTime() < deadline) {
+            long key = candidates.getLong(handled++);
+            dirty.remove(key);
+            SectionSnapshot snapshot = snapshot(level, key);
+            if (snapshot == null) {
+                accept(CasterMesh.empty(key));
+                continue;
+            }
+            inFlight.add(key);
+            started++;
+            long buildGeneration = generation;
+            workers.execute(() -> build(snapshot, models, buildGeneration));
+        }
+        pendingInRange = inRange - handled + inFlight.size();
+    }
+
+    /**
+     * Up to {@link #NEAREST_LIMIT} dirty sections within range, nearest first, skipping ones already
+     * being built. Render thread only: the result reuses the same arrays every frame.
+     */
+    private LongArrayList nearestDirty(double cameraX, double cameraZ, double rangeSquared) {
+        int limit = NEAREST_LIMIT;
+        long[] keys = nearestKeys;
+        double[] distances = nearestDistances;
+        int count = 0;
+        LongIterator iterator = dirty.iterator();
+        while (iterator.hasNext()) {
+            long key = iterator.nextLong();
+            double distance = distanceSquared(key, cameraX, cameraZ);
+            if (distance > rangeSquared || inFlight.contains(key) || (count == limit && distance >= distances[count - 1])) {
+                continue;
+            }
+            int position = count == limit ? limit - 1 : count++;
+            while (position > 0 && distances[position - 1] > distance) {
+                keys[position] = keys[position - 1];
+                distances[position] = distances[position - 1];
+                position--;
+            }
+            keys[position] = key;
+            distances[position] = distance;
+        }
+        nearest.clear();
+        nearest.addElements(0, keys, 0, count);
+        return nearest;
+    }
+
+    private int countInRange(double cameraX, double cameraZ, double rangeSquared) {
+        int count = 0;
+        LongIterator iterator = dirty.iterator();
+        while (iterator.hasNext()) {
+            long key = iterator.nextLong();
+            if (distanceSquared(key, cameraX, cameraZ) <= rangeSquared && !inFlight.contains(key)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static double distanceSquared(long key, double cameraX, double cameraZ) {
+        double dx = SectionPos.sectionToBlockCoord(SectionPos.x(key)) + 8.0 - cameraX;
+        double dz = SectionPos.sectionToBlockCoord(SectionPos.z(key)) + 8.0 - cameraZ;
+        return dx * dx + dz * dz;
+    }
+
+    private void build(SectionSnapshot snapshot, BlockStateModelSet models, long buildGeneration) {
+        try {
+            CasterMesh mesh = builders.get().build(snapshot, models);
+            if (buildGeneration == generation) {
+                finished.add(mesh);
+            }
+        } catch (Throwable error) {
+            LiteLightsClient.LOG.warn("Couldn't build shadow casters for section {}", SectionPos.of(snapshot.sectionKey()), error);
+            finished.add(CasterMesh.empty(snapshot.sectionKey()));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static @Nullable SectionSnapshot snapshot(ClientLevel level, long key) {
+        int sectionX = SectionPos.x(key);
+        int sectionY = SectionPos.y(key);
+        int sectionZ = SectionPos.z(key);
+        PalettedContainer<BlockState> states = copySection(level, sectionX, sectionY, sectionZ);
+        if (states == null) {
+            return null;
+        }
+        PalettedContainer<BlockState>[] neighbours = new PalettedContainer[Direction.values().length];
+        for (Direction direction : Direction.values()) {
+            neighbours[direction.ordinal()] = copySection(level,
+                sectionX + direction.getStepX(), sectionY + direction.getStepY(), sectionZ + direction.getStepZ());
+        }
+        return new SectionSnapshot(key, states, neighbours);
+    }
+
+    private static @Nullable PalettedContainer<BlockState> copySection(ClientLevel level, int sectionX, int sectionY, int sectionZ) {
+        if (sectionY < level.getMinSectionY() || sectionY > level.getMaxSectionY()) {
+            return null;
+        }
+        LevelChunk chunk = (LevelChunk) level.getChunkSource().getChunk(sectionX, sectionZ, ChunkStatus.FULL, false);
+        if (chunk == null) {
+            return null;
+        }
+        LevelChunkSection section = chunk.getSection(level.getSectionIndexFromSectionY(sectionY));
+        if (section.hasOnlyAir()) {
+            return null;
+        }
+        return section.getStates().copy();
+    }
+
+    private void collectFinished() {
+        CasterMesh mesh;
+        while ((mesh = finished.poll()) != null) {
+            inFlight.remove(mesh.sectionKey());
+            accept(mesh);
+        }
+    }
+
+    /** Keeps a freshly built mesh, and reports it as changed only if its geometry differs. */
+    private void accept(CasterMesh mesh) {
+        long key = mesh.sectionKey();
+        SectionCasters previous = built.get(key);
+        if (mesh.isEmpty()) {
+            if (previous != null) {
+                built.remove(key);
+                buffers.release(previous.slot());
+                changed.add(key);
+            }
+            builtEmpty.add(key);
+            return;
+        }
+        builtEmpty.remove(key);
+        if (previous != null && previous.hash() == mesh.hash() && previous.quadCount() == mesh.quadCount()) {
+            unchangedRebuilds++;
+            return;
+        }
+        built.put(key, new SectionCasters(key, buffers.store(mesh.vertices()), mesh.quadCount(), mesh.hash()));
+        if (previous != null) {
+            buffers.release(previous.slot());
+        }
+        changed.add(key);
+    }
+
+    /**
+     * The horizontal distance from (x, z) to the nearest section that changed geometry since the
+     * last {@link #clearChanges}, among those within the given square; infinity if none did.
+     * Changes outside the square can't affect a map that covers it.
+     */
+    public double nearestChangeWithin(double centerX, double centerZ, double radius, double fromX, double fromZ) {
+        double nearest = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < changed.size(); i++) {
+            long key = changed.getLong(i);
+            double x = SectionPos.sectionToBlockCoord(SectionPos.x(key)) + 8.0;
+            double z = SectionPos.sectionToBlockCoord(SectionPos.z(key)) + 8.0;
+            if (Math.abs(x - centerX) <= radius + 8.0 && Math.abs(z - centerZ) <= radius + 8.0) {
+                nearest = Math.min(nearest, Math.hypot(x - fromX, z - fromZ));
+            }
+        }
+        return nearest;
+    }
+
+    public void clearChanges() {
+        changed.clear();
+    }
+
+    public @Nullable SectionCasters get(long sectionKey) {
+        return built.get(sectionKey);
+    }
+
+    public void forEachBuilt(Consumer<SectionCasters> consumer) {
+        for (SectionCasters casters : built.values()) {
+            consumer.accept(casters);
+        }
+    }
+
+    /** GPU memory the caster meshes take: buffers, bytes reserved, bytes holding geometry. */
+    public record Memory(int buffers, long reservedBytes, long usedBytes) {
+    }
+
+    public Memory memory() {
+        return new Memory(buffers.pageCount(), buffers.reservedBytes(), buffers.usedBytes());
+    }
+
+    public long unchangedRebuilds() {
+        return unchangedRebuilds;
+    }
+
+    public int builtCount() {
+        return built.size();
+    }
+
+    /** Sections near enough to matter that are still waiting to be built, as of the last update. */
+    public int pendingInRange() {
+        return pendingInRange;
+    }
+
+    private void clear() {
+        generation++;
+        buffers.clear();
+        built.clear();
+        builtEmpty.clear();
+        dirty.clear();
+        inFlight.clear();
+        changed.clear();
+        finished.clear();
+    }
+
+    @Override
+    public void close() {
+        clear();
+        workers.shutdownNow();
+    }
+}
