@@ -9,6 +9,8 @@ package com.thenathe.litelights.render.feature.water.wake;
 public final class WakeShapes {
     /** Slower than this, in blocks per tick, leaves no wake. */
     public static final double MINIMUM_SPEED = 0.02;
+    /** How much foam a boat leaves along its sides and in its trail at full speed (0.4 before 0.9.8). */
+    static final double BOAT_FOAM = 0.38;
     /**
      * A swimmer (waves097: about twice the 0.1.8 wake, so a player swimming at the surface leaves a
      * clear V and some foam, still well under a slow boat's): full strength at a surface swim's
@@ -18,7 +20,7 @@ public final class WakeShapes {
     static final double SWIMMER_HALF_LENGTH = 0.25;
     static final double SWIMMER_RADIUS = 0.42;
     static final double SWIMMER_DEPTH = 0.38;
-    static final double SWIMMER_FOAM = 0.5;
+    static final double SWIMMER_FOAM = 0.62;
 
     private WakeShapes() {
     }
@@ -31,7 +33,7 @@ public final class WakeShapes {
             return;
         }
         sources.addHull(fromX, fromZ, toX, toZ, headingX, headingZ, 0.55, 0.65,
-            0.55 * pace * strength, 0.06 * pace * strength, Math.min(1.0, 0.4 * pace * strength));
+            0.55 * pace * strength, 0.06 * pace * strength, Math.min(1.0, BOAT_FOAM * pace * strength));
     }
 
     /** A player or mob swimming at the surface; {@code width} is its hitbox width. */

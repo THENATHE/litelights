@@ -1452,10 +1452,10 @@ public final class SettingsScreen extends Screen {
         return new int[] {layout.listX() - 5, layout.describeY(), layout.listW() + 10, layout.describeH()};
     }
 
-    /** The middle of the label of the setting row with this name, in GUI pixels, or null when it isn't on screen. */
+    /** The middle of the label of the setting or action row with this name, in GUI pixels, or null when it isn't on screen. */
     public int[] rowLabelPoint(String name) {
         for (ListRow row : rows) {
-            if (row.source() instanceof RowValue value && value.label().getString().equals(name)) {
+            if (name.equals(describableName(row))) {
                 int top = layout.listY() + row.y() - scroll;
                 if (top >= layout.listY() && top + ROW_H <= layout.listBottom()) {
                     return new int[] {layout.listX() + 20, top + ROW_H / 2};
@@ -1691,7 +1691,7 @@ public final class SettingsScreen extends Screen {
     /** Scrolls the list so the row with this name is at the top, for pictures of a given row. */
     public void scrollToRow(String name) {
         for (ListRow row : rows) {
-            if (row.source() instanceof RowValue value && value.label().getString().equals(name)) {
+            if (name.equals(describableName(row))) {
                 scrollTo(row.y());
                 return;
             }

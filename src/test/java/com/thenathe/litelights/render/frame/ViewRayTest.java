@@ -73,6 +73,35 @@ class ViewRayTest {
         }
     }
 
+    @Test
+    void skyEventsDrawnFromTheEyeStayWithTheStarsAtEveryBobPhase() {
+        // The sky events (shaders/sky/events.vsh) put a point a few blocks out, the aurora's
+        // nearest curtains, at the eye rather than at the camera position. On screen it must then
+        // land where a star in the same direction does, however the view bobs.
+        Vector3f near = new Vector3f(0.976f, 0.216f, 0.0f).normalize().mul(6.0f);
+        double largestFromCamera = 0.0;
+        for (boolean zeroToOne : new boolean[] {true, false}) {
+            for (float walked = 0.0f; walked < 2.0f; walked += 0.125f) {
+                Matrix4f viewProjection = levelViewProjection(walked, WALKING_BOB, 0.0f, 0.0f, zeroToOne);
+                Vector3f eye = ViewRayMirror.viewOrigin(new Matrix4f(viewProjection).invert());
+                float[] star = screen(viewProjection.transform(new Vector4f(near, 0.0f)));
+                float[] fromEye = screen(viewProjection.transform(new Vector4f(new Vector3f(near).add(eye), 1.0f)));
+                float[] fromCamera = screen(viewProjection.transform(new Vector4f(near, 1.0f)));
+                assertEquals(star[0], fromEye[0], 1.0e-4f, "at walk " + walked);
+                assertEquals(star[1], fromEye[1], 1.0e-4f, "at walk " + walked);
+                largestFromCamera = Math.max(largestFromCamera, Math.hypot(star[0] - fromCamera[0], star[1] - fromCamera[1]));
+            }
+        }
+        // 0.9.7 drew from the camera: the point strayed from the stars by a hundredth of the screen
+        // and more, about twenty pixels on a 1080-line screen.
+        assertTrue(largestFromCamera > 0.01, "only " + largestFromCamera);
+    }
+
+    /** Screen position (0..1) of a clip-space point. */
+    private static float[] screen(Vector4f clip) {
+        return new float[] {clip.x / clip.w * 0.5f + 0.5f, clip.y / clip.w * 0.5f + 0.5f};
+    }
+
     /**
      * The level's projection and view rotation as GameRenderer.renderLevel and Camera build them:
      * reversed depth (near and far swapped), view bobbing, then the nausea skew, then the rotation.

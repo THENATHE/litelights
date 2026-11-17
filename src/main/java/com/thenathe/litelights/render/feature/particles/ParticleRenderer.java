@@ -2,6 +2,7 @@ package com.thenathe.litelights.render.feature.particles;
 
 import com.thenathe.litelights.render.LiteMath;
 import com.thenathe.litelights.render.RenderSettings;
+import com.thenathe.litelights.render.feature.skyfog.SkyFogMath;
 import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.util.LightCoordsUtil;
 import org.joml.Matrix4f;
@@ -120,7 +121,7 @@ final class ParticleRenderer {
         float cameraUpY = 1.0f - 2.0f * (rotationX * rotationX + rotationZ * rotationZ);
         float cameraUpZ = 2.0f * (rotationY * rotationZ + rotationW * rotationX);
         // Past this distance the storm fog hides soft particles completely (no fog: never).
-        float fogHidden = stormFogDensity > 0.0f && !fogCullOff ? HIDDEN_BY_FOG_DEPTH / stormFogDensity : Float.MAX_VALUE;
+        float fogHidden = stormFogDensity > 0.0f && !fogCullOff ? SkyFogMath.stormDistanceBeyond(HIDDEN_BY_FOG_DEPTH, stormFogDensity) : Float.MAX_VALUE;
         float fogHiddenSquared = fogHidden * fogHidden;
         boolean puffs = mistStyle == RenderSettings.MistStyle.PUFFS;
         for (int i = 0; i < state.count; i++) {
@@ -144,7 +145,10 @@ final class ParticleRenderer {
             float z = (float) (state.previousZ[i] + (state.z[i] - state.previousZ[i]) * partialTick - cameraZ);
             float distanceSquared = x * x + y * y + z * z;
             float range = ParticleReach.range(kind, rangeScales);
-            if (distanceSquared > range * range || kind.layer == ParticleKind.Layer.SOFT && distanceSquared > fogHiddenSquared) {
+            // Haze lies on the land: its range is over the ground, so flying high still shows the
+            // mist below (fog097's spawners, fog098); the simulation removes it on the same terms.
+            float rangeSquared = kind.haze != ParticleKind.Haze.NONE ? x * x + z * z : distanceSquared;
+            if (rangeSquared > range * range || kind.layer == ParticleKind.Layer.SOFT && distanceSquared > fogHiddenSquared) {
                 continue;
             }
             float lifeTicks = state.age[i] + partialTick;

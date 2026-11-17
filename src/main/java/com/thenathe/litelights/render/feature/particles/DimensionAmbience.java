@@ -95,14 +95,27 @@ final class DimensionAmbience {
         }
         boolean clumped = s.settings.weather().mistStyle() == RenderSettings.MistStyle.PUFFS;
         int mist = ParticleBudget.countFromRate(clumped ? mistRate * HazeClumps.RATE_SCALE : mistRate, random.nextFloat());
+        // Moving fast, the square leads the camera and a share of the mist goes ahead; high over an
+        // island it widens (HazeLead), so flying over the islands keeps mist below.
+        HazeLead.lead(s, LEAD);
+        float widened = mistAcross + 2.0f * HazeLead.widening(s.cameraY - endGround(s));
         for (int i = 0; i < mist && queue.room(ParticleCategory.END) > 0; i++) {
-            int x = (int) Math.floor(s.cameraX + (random.nextFloat() - 0.5f) * mistAcross);
-            int z = (int) Math.floor(s.cameraZ + (random.nextFloat() - 0.5f) * mistAcross);
+            double offsetX = (random.nextFloat() - 0.5f) * widened;
+            double offsetZ = (random.nextFloat() - 0.5f) * widened;
+            if (HazeLead.speed(s) > 0.0f) {
+                // The wedge ahead: the same square's spots, turned toward the travel for a share of them.
+                float angle = HazeLead.angle(s, random);
+                double reach = Math.sqrt(offsetX * offsetX + offsetZ * offsetZ);
+                offsetX = Math.cos(angle) * reach;
+                offsetZ = Math.sin(angle) * reach;
+            }
+            int x = (int) Math.floor(s.cameraX + LEAD[0] + offsetX);
+            int z = (int) Math.floor(s.cameraZ + LEAD[1] + offsetZ);
             if (!s.level.hasChunk(x >> 4, z >> 4)) {
                 continue;
             }
             int ground = s.level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
-            if (ground <= s.level.getMinY() || Math.abs(ground - s.cameraY) > 18.0f) {
+            if (ground <= s.level.getMinY()) {
                 continue;
             }
             if (clumped && !HazeClumps.keep(x, z, s.hazeDriftX, s.hazeDriftZ, random.nextFloat())) {
@@ -112,6 +125,19 @@ final class DimensionAmbience {
             queue.add(ParticleKind.END_MIST, x + random.nextFloat(), y, z + random.nextFloat(), 0.0f, 0.0f, 0.0f,
                 1.8f + random.nextFloat() * 1.2f, 220 + random.nextInt(80), END_MIST_COLOR, s.lightAt(x, y, z), random.nextInt());
         }
+    }
+
+    private static final double[] LEAD = new double[2];
+
+    /** The top of the island under the camera, or the camera's own height over the void. */
+    private static double endGround(Surroundings s) {
+        int x = (int) Math.floor(s.cameraX);
+        int z = (int) Math.floor(s.cameraZ);
+        if (!s.level.hasChunk(x >> 4, z >> 4)) {
+            return s.cameraY;
+        }
+        int ground = s.level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
+        return ground <= s.level.getMinY() ? s.cameraY : ground;
     }
 
     /** Ash haze puffs' size on average over their life (2.4 to 3.9 blocks, growing by 1.4), and their lifetime (220 to 330 ticks). */
@@ -127,7 +153,7 @@ final class DimensionAmbience {
             // The puffs fill a box 30 blocks across and 10 high around the camera, each reaching about a third of its size past it.
             float layer = 10.0f + ASH_HAZE_SIZE * 0.6f;
             float extinction = HazeField.extinction(rate, ASH_HAZE_LIFETIME, (HAZE_COLOR >>> 24) / 255.0f, ASH_HAZE_SIZE, 30.0f * 30.0f, layer);
-            HazeField.get().offer(ParticleKind.Haze.ASH, extinction, HAZE_COLOR, s.cameraY - layer * 0.5, s.cameraY + layer * 0.5,
+            HazeField.get().offer(ParticleKind.Haze.ASH, extinction, HAZE_COLOR, -0.5f * layer, 0.5f * layer,
                 s.lightAt(s.cameraX, s.cameraY, s.cameraZ));
             return;
         }
@@ -136,22 +162,16 @@ final class DimensionAmbience {
             clumped);
     }
 
-    /** The Mist field's share of the End's low mist, over the island under the camera. */
+    /**
+     * The Mist field's share of the End's low mist. It lies on the islands wherever they are, and
+     * the void between them has none (the field's map of the land), so it is offered over the void too.
+     */
     private static void offerEndMist(Surroundings s, float rate, float across) {
-        int x = (int) Math.floor(s.cameraX);
-        int z = (int) Math.floor(s.cameraZ);
-        if (!s.level.hasChunk(x >> 4, z >> 4)) {
-            return;
-        }
-        int ground = s.level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
-        if (ground <= s.level.getMinY() || Math.abs(ground - s.cameraY) > 18.0f) {
-            return;
-        }
         // Puff centres 0.3 to 1.7 blocks up, each reaching about a quarter of its size above that.
-        double top = ground + 1.7 + END_MIST_SIZE * 0.25;
-        float extinction = HazeField.extinction(rate, END_MIST_LIFETIME, (END_MIST_COLOR >>> 24) / 255.0f, END_MIST_SIZE, across * across,
-            (float) (top - ground));
-        HazeField.get().offer(ParticleKind.Haze.END, extinction, END_MIST_COLOR, ground, top, s.lightAt(s.cameraX, ground + 1.0, s.cameraZ));
+        float top = 1.7f + END_MIST_SIZE * 0.25f;
+        float extinction = HazeField.extinction(rate, END_MIST_LIFETIME, (END_MIST_COLOR >>> 24) / 255.0f, END_MIST_SIZE, across * across, top);
+        double ground = endGround(s);
+        HazeField.get().offer(ParticleKind.Haze.END, extinction, END_MIST_COLOR, 0.0f, top, s.lightAt(s.cameraX, Math.min(ground + 1.0, s.cameraY), s.cameraZ));
     }
 
     /**
@@ -170,10 +190,17 @@ final class DimensionAmbience {
         RandomSource random = s.random;
         float across = kind.fixedRange ? nearAcross : nearAcross * s.ambientReach;
         int count = ParticleBudget.countFromRate(rate, random.nextFloat());
+        // Haze leads a fast camera (HazeLead): the box runs ahead along the travel.
+        if (kind.haze != ParticleKind.Haze.NONE) {
+            HazeLead.lead(s, LEAD);
+        } else {
+            LEAD[0] = 0.0;
+            LEAD[1] = 0.0;
+        }
         for (int i = 0; i < count && queue.room(kind.category) > 0; i++) {
-            double x = s.cameraX + (random.nextFloat() - 0.5f) * across;
+            double x = s.cameraX + LEAD[0] + (random.nextFloat() - 0.5f) * across;
             double y = s.cameraY + (random.nextFloat() - 0.5f) * high;
-            double z = s.cameraZ + (random.nextFloat() - 0.5f) * across;
+            double z = s.cameraZ + LEAD[1] + (random.nextFloat() - 0.5f) * across;
             if (!s.level.getBlockState(s.cursor.set(x, y, z)).isAir()) {
                 continue;
             }

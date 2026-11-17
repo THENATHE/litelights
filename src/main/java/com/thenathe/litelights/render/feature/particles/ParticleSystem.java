@@ -69,9 +69,14 @@ public final class ParticleSystem {
     private static final ParticleSystem INSTANCE = new ParticleSystem();
     /** The far-off bang of a distant firework arrives this many ticks after its flash. */
     private static final int FIREWORK_SOUND_DELAY = 30;
-    /** Where the bang is played from, in blocks toward the burst, and how loud: heard up to 16 x volume blocks away. */
-    private static final double FIREWORK_SOUND_DISTANCE = 16.0;
-    private static final float FIREWORK_SOUND_VOLUME = 2.0f;
+    /**
+     * Where the bang is played from, in blocks toward the burst and up, and how loud. Minecraft
+     * plays a sound at its volume (at most 1) and fades it linearly to silence at 16 blocks times
+     * the volume (at least 16).
+     */
+    private static final double FIREWORK_SOUND_DISTANCE = 8.0;
+    private static final double FIREWORK_SOUND_HEIGHT = 3.0;
+    private static final float FIREWORK_SOUND_VOLUME = 0.33f;
     /** Rows of features this system draws, marked ready on its first frame unless another mod handles them. */
     private static final String[] PARTICLE_ROWS = {
         "particles", "ambient_particles", "particles.snow_sand_sprites", "particles.enhanced_fire", "particles.ember_veins",
@@ -81,7 +86,8 @@ public final class ParticleSystem {
     /** Submit orders for fire's decals: after vanilla's own (order 0), soot before veins. */
     private static final int BURN_MARK_ORDER = 1;
     private static final int EMBER_VEIN_ORDER = 2;
-    private static final String[] SKY_ROWS = {"weather.polar_lights", "weather.meteor_nights", "weather.far_fireworks"};
+    /** The sky-event rows drawn here; meteor showers are the sky pass's (SkyFogFeature marks that row). */
+    private static final String[] SKY_ROWS = {"weather.polar_lights", "weather.far_fireworks"};
 
     private ParticleState published = new ParticleState(ParticleBudget.totalCap(RenderSettings.ParticleDensity.FULL));
     private ParticleState next = new ParticleState(ParticleBudget.totalCap(RenderSettings.ParticleDensity.FULL));
@@ -238,7 +244,7 @@ public final class ParticleSystem {
         } else {
             fire.clear();
         }
-        HazeField.get().endTick(amount != RenderSettings.ParticleDensity.OFF && HazeField.wanted(settings));
+        HazeField.get().endTick(amount != RenderSettings.ParticleDensity.OFF && HazeField.wanted(settings), surroundings);
         if (published.count > 0 || queue.count > 0) {
             startStep(amount);
         }
@@ -325,7 +331,7 @@ public final class ParticleSystem {
     private static boolean anythingOn(RenderSettings settings) {
         RenderSettings.Weather weather = settings.weather();
         return settings.particles().density() != RenderSettings.ParticleDensity.OFF
-            || weather.polarLights() || weather.meteorNights() || weather.farFireworks();
+            || weather.polarLights() || weather.farFireworks();
     }
 
     private void updateSky(ClientLevel level, RenderSettings settings) {
@@ -342,12 +348,13 @@ public final class ParticleSystem {
         sky.update(settings.weather(), skyAllowed, surroundings.seed, surroundings.clockTime, surroundings.gameTime, coldness, visibility);
         if (sky.burstStartedAt(surroundings.gameTime - FIREWORK_SOUND_DELAY, burst)) {
             // Vanilla's far blast, which already sounds distant, from the burst's direction. It is
-            // placed near the camera on purpose: a sound fades out linearly to silence at 16 blocks
-            // times its volume, so placed 60 blocks out at volume 2.5 (as before 0.1.7) it was never
-            // heard. Here it is heard at about 0.45 of its full volume.
+            // placed near the camera on purpose: placed 60 blocks out at volume 2.5 (as before
+            // 0.1.7) it was never heard. 8.5 blocks away, in a 16-block fade, at volume 0.33, it is
+            // heard at 0.33 x (1 - 8.5 / 16) = 0.15 of full loudness: a third of 0.9.7's 0.47
+            // (16 and 6 blocks away and up, in the 32-block fade of volume 2, played at 1).
             double x = surroundings.cameraX + Math.sin(burst[0]) * FIREWORK_SOUND_DISTANCE;
             double z = surroundings.cameraZ - Math.cos(burst[0]) * FIREWORK_SOUND_DISTANCE;
-            level.playLocalSound(x, surroundings.cameraY + 6.0, z, SoundEvents.FIREWORK_ROCKET_LARGE_BLAST_FAR, SoundSource.AMBIENT,
+            level.playLocalSound(x, surroundings.cameraY + FIREWORK_SOUND_HEIGHT, z, SoundEvents.FIREWORK_ROCKET_LARGE_BLAST_FAR, SoundSource.AMBIENT,
                 FIREWORK_SOUND_VOLUME, 0.85f + surroundings.random.nextFloat() * 0.2f, false);
         }
     }

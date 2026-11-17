@@ -150,23 +150,26 @@ vec3 lite_stars(vec3 direction) {
     return stars;
 }
 
-// Now and then a star streaks down the sky: every night in roughly one eight-second window in
-// three, and on about two nights in five (busy nights) in two windows in three, each streak lasting
-// about a second. The settings screen's preview (LiteTime.z above 0) sends one every few seconds,
-// starting near where the player looks.
-vec3 lite_shooting_star(vec3 direction) {
+// One lane of streaking stars: in each window of `period` seconds, with `chance`, one star streaks
+// down the sky for `flight` seconds, from a hash of the window, the night and the lane. Lane 0 is
+// the falling stars'; a meteor shower adds lanes of its own, whose windows start at other moments
+// so their streaks don't line up. The settings screen's previews (LiteTime.z above 0) start the
+// streaks near where the player looks. `size` scales the streak: 1 is a falling star, 2 a big
+// meteor twice as wide that travels twice as far with a trail three times as long.
+//
+// Returns how bright the streak is here (x, 0 where there is none), how far back along its trail
+// (y, 0 at the head to 1 at the end) and a hash of the streak for its colour (z).
+vec3 lite_streak_shape(vec3 direction, float period, float chance, float lane, float flight, float size) {
     float night = LiteSkyInfo.y;
     bool preview = LiteTime.z > 0.0;
-    float period = preview ? 3.0 : 8.0;
-    const float flight = 1.0;
-    float chance = preview ? 0.95 : (lite_hash11(night * 0.731 + 0.17) < 0.4 ? 0.65 : 0.33);
-    float window = floor(LiteTime.y / period);
-    vec3 random = lite_hash33(vec3(window, night, 5.3));
+    float time = LiteTime.y + lane * 1.37;
+    float window = floor(time / period);
+    vec3 random = lite_hash33(vec3(window, night, 5.3 + lane * 2.9));
     if (random.z > chance) {
         return vec3(0.0);
     }
     float start = fract(random.z * 7.13) * (period - flight - 0.2);
-    float progress = (LiteTime.y - window * period - start) / flight;
+    float progress = (time - window * period - start) / flight;
     if (progress < 0.0 || progress > 1.0) {
         return vec3(0.0);
     }
@@ -189,17 +192,65 @@ vec3 lite_shooting_star(vec3 direction) {
     }
     vec2 plane = vec2(dot(direction, east), dot(direction, north)) / facing;
     vec2 heading = normalize(vec2(cos(random.x * 19.0), -0.7 - 0.5 * random.y));
-    vec2 head = heading * 0.36 * progress;
-    float tail = 0.16 * min(progress * 3.0, 1.0);
+    vec2 head = heading * 0.36 * size * progress;
+    float tail = 0.16 * size * (size * 0.5 + 0.5) * min(progress * 3.0, 1.0);
+    float width = LITE_STREAK_PIXEL * size;
     vec2 snapped = (floor(plane / LITE_STREAK_PIXEL) + 0.5) * LITE_STREAK_PIXEL;
     vec2 relative = snapped - head;
     float behind = -dot(relative, heading);
     float across = abs(relative.x * heading.y - relative.y * heading.x);
-    if (behind < -LITE_STREAK_PIXEL || behind > tail || across > LITE_STREAK_PIXEL) {
+    if (behind < -width || behind > tail || across > width) {
         return vec3(0.0);
     }
-    float fade = (1.0 - max(behind, 0.0) / max(tail, 1.0e-4)) * sin(progress * 3.14159);
-    return vec3(1.0, 0.94, 0.84) * 2.2 * fade;
+    float back = max(behind, 0.0) / max(tail, 1.0e-4);
+    return vec3((1.0 - back) * sin(progress * 3.14159), back, fract((random.x + random.y) * 43.7));
+}
+
+// A falling star's or a shower meteor's streak: warm white, fading along its trail.
+vec3 lite_streak(vec3 direction, float period, float chance, float lane) {
+    return vec3(1.0, 0.94, 0.84) * 2.2 * lite_streak_shape(direction, period, chance, lane, 1.0, 1.0).x;
+}
+
+// Now and then a star streaks down the sky: every night in roughly one eight-second window in
+// three, and on about two nights in five (busy nights) in two windows in three. The settings
+// screen's preview sends one every few seconds.
+vec3 lite_shooting_star(vec3 direction) {
+    if (LiteTime.z > 0.0) {
+        return lite_streak(direction, 3.0, 0.95, 0.0);
+    }
+    float chance = lite_hash11(LiteSkyInfo.y * 0.731 + 0.17) < 0.4 ? 0.65 : 0.33;
+    return lite_streak(direction, 8.0, chance, 0.0);
+}
+
+// A meteor shower night (LITE_FEATURE_METEOR_SHOWER): the same streaks, many more of them, in two
+// lanes of four-second windows with a streak in nine in ten, about 27 a minute, on top of the
+// night's falling stars. Its preview sends about 38 a minute.
+//
+// Now and then, rarely, a big meteor: twice the size, a trail three times as long and three and a
+// half seconds in flight, its hot white head fading into red or blue (half each) along the trail.
+// One minute-long window in twenty has one, so it comes about once in three shower nights
+// (a night's dark part lasts about seven minutes); the preview shows one about every 22 seconds,
+// about one streak in fifteen.
+vec3 lite_meteor_shower(vec3 direction) {
+    bool preview = LiteTime.z > 0.0;
+    float period = preview ? 3.0 : 4.0;
+    float chance = preview ? 0.95 : 0.9;
+    vec3 streaks = lite_streak(direction, period, chance, 1.0) + lite_streak(direction, period, chance, 2.0);
+
+    // Whether a window has a big meteor is its own hash: gated through lite_streak_shape's chance,
+    // so rare a meteor would always start early in its window.
+    float bigPeriod = preview ? 22.0 : 60.0;
+    float bigWindow = floor((LiteTime.y + 3.0 * 1.37) / bigPeriod);
+    if (lite_hash11(bigWindow * 0.37 + LiteSkyInfo.y * 1.71 + 0.5) > (preview ? 0.9 : 0.05)) {
+        return streaks;
+    }
+    vec3 big = lite_streak_shape(direction, bigPeriod, 1.0, 3.0, 3.5, 2.0);
+    if (big.x > 0.0) {
+        vec3 tint = big.z < 0.5 ? vec3(1.0, 0.32, 0.18) : vec3(0.3, 0.55, 1.0);
+        vec3 colour = mix(vec3(1.0, 0.96, 0.9), tint, smoothstep(0.0, 0.45, big.y));
+        streaks += colour * 2.6 * big.x;
+    }
+    return streaks;
 }
 
 #endif

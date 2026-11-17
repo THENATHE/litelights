@@ -109,6 +109,8 @@ public final class PageModel implements PageContent {
     private final String page;
     private final Map<String, Section> sections = new LinkedHashMap<>();
     private Section current;
+    /** Where in the current section the next contributed row goes, after {@link #below}; -1 for its end. */
+    private int insertAt = -1;
 
     private PageModel(String page) {
         this.page = page;
@@ -132,6 +134,7 @@ public final class PageModel implements PageContent {
         for (PageContributor contributor : Pages.contributors(page)) {
             contributor.contribute(model);
             model.current = model.sections.get(INTRO);
+            model.insertAt = -1;
         }
         return model;
     }
@@ -206,6 +209,7 @@ public final class PageModel implements PageContent {
 
     @Override
     public PageContent section(String section) {
+        insertAt = -1;
         current = sections.computeIfAbsent(section, key -> {
             String literal = Pages.sectionName(page, key);
             Component caption = literal != null ? Component.literal(literal) : Component.translatable(Pages.captionKey(key));
@@ -223,44 +227,68 @@ public final class PageModel implements PageContent {
     }
 
     @Override
+    public PageContent below(Option<?> option) {
+        for (Section section : sections.values()) {
+            for (int i = 0; i < section.entries.size(); i++) {
+                if (section.entries.get(i) instanceof Setting setting && setting.value() instanceof RowValue.OptionValue value
+                        && value.option() == option) {
+                    current = section;
+                    insertAt = i + 1;
+                    return this;
+                }
+            }
+        }
+        return this;
+    }
+
+    /** A contributor's row: under the row {@link #below} named, or at the end of the current section. */
+    private void add(Entry entry) {
+        if (insertAt >= 0) {
+            current.entries.add(insertAt++, entry);
+        } else {
+            current.addContributed(entry);
+        }
+    }
+
+    @Override
     public PageContent note(Component text) {
-        current.addContributed(new Note(text));
+        add(new Note(text));
         return this;
     }
 
     @Override
     public PageContent recommendation(String modId, Component text) {
-        current.addContributed(new Recommendation(modId, text));
+        add(new Recommendation(modId, text));
         return this;
     }
 
     @Override
     public PageContent action(Component label, Component description, Component button, Runnable action) {
-        current.addContributed(new Action(label, description, button, action, false, null));
+        add(new Action(label, description, button, action, false, null));
         return this;
     }
 
     @Override
     public PageContent confirmedAction(Component label, Component description, Component button, Runnable action) {
-        current.addContributed(new Action(label, description, button, action, true, null));
+        add(new Action(label, description, button, action, true, null));
         return this;
     }
 
     @Override
     public PageContent subScreen(Component label, Component description, Component button, Function<Screen, Screen> opener) {
-        current.addContributed(new Action(label, description, button, () -> { }, false, opener));
+        add(new Action(label, description, button, () -> { }, false, opener));
         return this;
     }
 
     @Override
     public PageContent row(CustomRow row) {
-        current.addContributed(new Setting(RowValue.of(row)));
+        add(new Setting(RowValue.of(row)));
         return this;
     }
 
     @Override
     public PageContent card(Component heading, Component text, Component button, String url, Runnable action) {
-        current.addContributed(new Card(heading, text, button, url, action));
+        add(new Card(heading, text, button, url, action));
         return this;
     }
 }

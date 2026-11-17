@@ -2,7 +2,7 @@ package com.thenathe.litelights.render.frame;
 
 /** Bit values for LiteFlags in frame.glsl. Keep the two lists in step. */
 public final class FrameFlags {
-    // In bit order, with their owner; free: 3 and 10 to 13.
+    // In bit order, with their owner; free: 3, 12 and 13.
     public static final int FEATURE_SHADOWS = 1;                // core-render
     public static final int FEATURE_ENHANCED_LIGHT = 2;         // light-post (set by core-render)
     public static final int FEATURE_MOB_SHADOWS = 4;            // core-render
@@ -13,6 +13,7 @@ public final class FrameFlags {
     public static final int FEATURE_SUN_MAP_FADING = 256;       // core-render
     public static final int FEATURE_ENHANCED_SHADOWS = 512;     // core-render
     public static final int FEATURE_MARK_NEAR = 1 << 10;        // far-terrain
+    public static final int FEATURE_METEOR_SHOWER = 1 << 11;    // sky-fog
     public static final int FEATURE_STORM_FOG = 1 << 14;        // sky-fog
     public static final int FEATURE_DARK_DISC = 1 << 15;        // sky-fog
     public static final int FEATURE_SHOOTING_STARS = 1 << 16;   // sky-fog
@@ -54,7 +55,8 @@ public final class FrameFlags {
      * FRAME_UPDATE listener has run. A stream adds its bits to the switch they belong to, and skips
      * its own Java-side work with DimensionGate.allows(aspect).
      */
-    public static final int ASPECT_SKY_BITS = FEATURE_LITE_SKY | FEATURE_REALISTIC_SKY | FEATURE_SHOOTING_STARS | FEATURE_LITE_CLOUDS;
+    public static final int ASPECT_SKY_BITS = FEATURE_LITE_SKY | FEATURE_REALISTIC_SKY | FEATURE_SHOOTING_STARS | FEATURE_METEOR_SHOWER
+        | FEATURE_LITE_CLOUDS;
     public static final int ASPECT_SHADOWS_BITS = FEATURE_SHADOWS | FEATURE_ENHANCED_SHADOWS | FEATURE_MOB_SHADOWS
         | FEATURE_SUN_MAP | FEATURE_MOB_MAP | FEATURE_SUN_MAP_FADING;
     public static final int ASPECT_REFLECTIONS_BITS = 0;

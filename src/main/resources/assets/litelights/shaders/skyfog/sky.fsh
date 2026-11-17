@@ -59,8 +59,13 @@ void main() {
         float starlight = LiteSkyZenith.a * clear;
         if (starlight > 0.0) {
             vec3 stars = lite_stars(direction);
-            if (lite_feature(LITE_FEATURE_SHOOTING_STARS) && LiteTime.z <= 0.0) {
-                stars += lite_shooting_star(direction);
+            if (LiteTime.z <= 0.0) {
+                if (lite_feature(LITE_FEATURE_SHOOTING_STARS)) {
+                    stars += lite_shooting_star(direction);
+                }
+                if (lite_feature(LITE_FEATURE_METEOR_SHOWER)) {
+                    stars += lite_meteor_shower(direction);
+                }
             }
             // Stars don't show through the sun and moon squares.
             lights += stars * starlight * step(dot(lights, vec3(1.0)), 0.0);
@@ -68,9 +73,16 @@ void main() {
         // Below the horizon there is only ground.
         float aboveHorizon = smoothstep(-0.02, 0.01, direction.y);
         sky.rgb += lights * clear * aboveHorizon;
-        if (lite_feature(LITE_FEATURE_SHOOTING_STARS) && LiteTime.z > 0.0) {
-            // Previewed falling stars show even while it really rains, like the other sky events.
-            sky.rgb += lite_shooting_star(direction) * max(LiteSkyZenith.a, 0.5) * aboveHorizon;
+        if (LiteTime.z > 0.0) {
+            // Previewed falling stars and meteor showers show even while it really rains, like the
+            // other sky events. The shower's flag is only set while it is the one previewed.
+            vec3 previewed = vec3(0.0);
+            if (lite_feature(LITE_FEATURE_METEOR_SHOWER)) {
+                previewed = lite_meteor_shower(direction);
+            } else if (lite_feature(LITE_FEATURE_SHOOTING_STARS)) {
+                previewed = lite_shooting_star(direction);
+            }
+            sky.rgb += previewed * max(LiteSkyZenith.a, 0.5) * aboveHorizon;
         }
     }
 

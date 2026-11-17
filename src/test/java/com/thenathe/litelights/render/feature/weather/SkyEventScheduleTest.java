@@ -1,7 +1,10 @@
 package com.thenathe.litelights.render.feature.weather;
 
 import com.thenathe.litelights.config.PreviewEvent;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -72,32 +75,32 @@ class SkyEventScheduleTest {
     }
 
     @Test
-    void meteorsAndBurstsAreFixedBySlot() {
+    void burstsAreFixedByBeat() {
         SkyEventSchedule.Night night = SkyEventSchedule.night(SEED, 7);
-        float[] first = new float[6];
-        float[] second = new float[6];
-        int meteors = 0;
-        for (long slot = 0; slot < 1000; slot++) {
-            boolean found = SkyEventSchedule.meteor(SEED, night, slot, first);
-            assertEquals(found, SkyEventSchedule.meteor(SEED, night, slot, second));
-            if (found) {
-                meteors++;
-                for (int i = 0; i < 6; i++) {
-                    assertEquals(first[i], second[i]);
-                }
-                assertTrue(first[1] >= Math.toRadians(12.0) - 1e-6, "meteors start above the horizon");
+        float[] first = new float[5];
+        float[] second = new float[5];
+        for (long beat = 0; beat < 500; beat++) {
+            int bursts = SkyEventSchedule.volleySize(SEED, night, beat);
+            assertEquals(bursts, SkyEventSchedule.volleySize(SEED, night, beat));
+            for (int burst = 0; burst < bursts; burst++) {
+                assertEquals(SkyEventSchedule.burstTick(SEED, night, beat, burst), SkyEventSchedule.burstTick(SEED, night, beat, burst));
+                SkyEventSchedule.firework(SEED, night, beat, burst, first);
+                SkyEventSchedule.firework(SEED, night, beat, burst, second);
+                assertArrayEquals(first, second);
             }
         }
-        assertEquals(SkyEventSchedule.METEOR_CHANCE_PER_SLOT * 1000, meteors, 60);
     }
 
     @Test
-    void fireworksStayLowOverTheHorizonAndInTheEvening() {
+    void fireworksStayLowOverTheHorizonSmallAndInTheEvening() {
         SkyEventSchedule.Night night = SkyEventSchedule.night(SEED, 3);
         float[] burst = new float[5];
-        for (long slot = 0; slot < 500; slot++) {
-            if (SkyEventSchedule.firework(SEED, night, slot, burst)) {
+        for (long beat = 0; beat < 500; beat++) {
+            for (int index = 0; index < SkyEventSchedule.volleySize(SEED, night, beat); index++) {
+                SkyEventSchedule.firework(SEED, night, beat, index, burst);
                 assertTrue(burst[1] > Math.toRadians(6.0) && burst[1] < Math.toRadians(22.0));
+                assertTrue(burst[2] >= Math.toRadians(3.6) - 1e-6 && burst[2] <= Math.toRadians(6.6) + 1e-6,
+                    "0.9.8's bursts are about 60 % of 0.9.7's 6 to 11 degrees: " + Math.toDegrees(burst[2]));
                 assertTrue(burst[3] >= 0 && burst[3] < 6);
             }
         }
@@ -108,20 +111,90 @@ class SkyEventScheduleTest {
     }
 
     @Test
-    void meteorsAreBrighterAndSomeAreFireballs() {
-        SkyEventSchedule.Night night = SkyEventSchedule.night(SEED, 11);
-        float[] meteor = new float[6];
-        int found = 0;
-        int fireballs = 0;
-        for (long slot = 0; slot < 4000; slot++) {
-            if (SkyEventSchedule.meteor(SEED, night, slot, meteor)) {
-                found++;
-                fireballs += meteor[5] > 0.5f ? 1 : 0;
-                assertTrue(meteor[4] >= 0.75f && meteor[4] <= 1.0f);
-                assertTrue(meteor[2] >= Math.toRadians(14.0) - 1e-6 && meteor[2] <= Math.toRadians(34.0) + 1e-6);
+    void aVolleyStaysInsideItsBeat() {
+        for (SkyEventSchedule.Night night : List.of(SkyEventSchedule.night(SEED, 3),
+                SkyEventSchedule.preview(3, PreviewEvent.Event.FIREWORKS, 0.0f, 0.0f))) {
+            int beatTicks = SkyEventSchedule.beatTicks(night);
+            for (long beat = -50; beat < 2000; beat++) {
+                int bursts = SkyEventSchedule.volleySize(SEED, night, beat);
+                assertTrue(bursts >= 1 && bursts <= SkyEventSchedule.MAX_VOLLEY);
+                long previous = Long.MIN_VALUE;
+                for (int burst = 0; burst < bursts; burst++) {
+                    long tick = SkyEventSchedule.burstTick(SEED, night, beat, burst);
+                    assertTrue(tick >= beat * beatTicks && tick < (beat + 1) * beatTicks, "burst " + burst + " of beat " + beat);
+                    assertTrue(tick > previous);
+                    previous = tick;
+                }
             }
         }
-        assertEquals(SkyEventSchedule.FIREBALL_CHANCE, fireballs / (double) found, 0.03);
+    }
+
+    @Test
+    void aRealNightHasMostlySingleBurstsSecondsApart() {
+        Show show = show(SkyEventSchedule.night(SEED, 3), 20_000);
+        double longest = show.pauses.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
+        double shortest = show.pauses.stream().mapToDouble(Double::doubleValue).min().orElse(0.0);
+        double average = show.pauses.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        long usual = show.pauses.stream().filter(pause -> pause >= 4.0 && pause <= 12.0).count();
+        assertTrue(shortest >= 2.5 && longest <= 13.5 && longest > 12.0, "pauses from " + shortest + " to " + longest + " seconds");
+        assertEquals(8.8, average, 0.3, "about nine seconds between volleys on average");
+        assertTrue(usual > 0.85 * show.pauses.size(), "most pauses are 4 to 12 seconds: " + usual + " of " + show.pauses.size());
+        assertTrue(show.followers.stream().allMatch(gap -> gap >= 0.4 && gap <= 1.0), "a pair or three follow each other quickly");
+        double singles = show.singles / (double) show.volleys;
+        assertEquals(1.0 - SkyEventSchedule.PAIR_CHANCE - SkyEventSchedule.TRIPLE_CHANCE, singles, 0.02, "mostly single bursts");
+    }
+
+    @Test
+    void aPreviewIsBusierButStillPauses() {
+        Show show = show(SkyEventSchedule.preview(9, PreviewEvent.Event.FIREWORKS, 0.0f, 0.0f), 5_000);
+        double average = show.pauses.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        assertTrue(average > 3.0 && average < 4.5, "about half a real night's pauses: " + average);
+        assertTrue(show.pauses.stream().allMatch(pause -> pause >= 1.0), "volleys never run together");
+        assertTrue(show.pauses.stream().anyMatch(pause -> pause > 5.0), "with real pauses");
+    }
+
+    @Test
+    void aPreviewShowsItsFirstBurstWithinASecond() {
+        SkyEventSchedule.Night preview = SkyEventSchedule.preview(9, PreviewEvent.Event.FIREWORKS, 0.0f, 0.0f);
+        int beatTicks = SkyEventSchedule.beatTicks(preview);
+        for (long chosen = 1_000; chosen < 200_000; chosen += 997) {
+            long delay = SkyEventSchedule.previewDelay(SEED, preview, chosen, 10);
+            // The first burst in the show's own time after the moment it was chosen.
+            long showChosen = chosen - delay;
+            long first = Long.MAX_VALUE;
+            for (long beat = Math.floorDiv(showChosen, beatTicks) - 1; beat <= Math.floorDiv(showChosen, beatTicks) + 1; beat++) {
+                for (int burst = 0; burst < SkyEventSchedule.volleySize(SEED, preview, beat); burst++) {
+                    long tick = SkyEventSchedule.burstTick(SEED, preview, beat, burst);
+                    if (tick >= showChosen) {
+                        first = Math.min(first, tick);
+                    }
+                }
+            }
+            assertTrue(first - showChosen <= 10, "first burst " + (first - showChosen) + " ticks after choosing");
+        }
+    }
+
+    /** A show's pauses between volleys and its gaps within volleys, in seconds, and how many volleys were single bursts. */
+    private record Show(List<Double> pauses, List<Double> followers, int volleys, int singles) {
+    }
+
+    private static Show show(SkyEventSchedule.Night night, int beats) {
+        List<Double> pauses = new ArrayList<>();
+        List<Double> followers = new ArrayList<>();
+        int singles = 0;
+        long lastBurst = Long.MIN_VALUE;
+        for (long beat = 0; beat < beats; beat++) {
+            int bursts = SkyEventSchedule.volleySize(SEED, night, beat);
+            singles += bursts == 1 ? 1 : 0;
+            for (int burst = 0; burst < bursts; burst++) {
+                long tick = SkyEventSchedule.burstTick(SEED, night, beat, burst);
+                if (lastBurst != Long.MIN_VALUE) {
+                    (burst == 0 ? pauses : followers).add((tick - lastBurst) / 20.0);
+                }
+                lastBurst = tick;
+            }
+        }
+        return new Show(pauses, followers, beats, singles);
     }
 
     @Test
@@ -133,8 +206,6 @@ class SkyEventScheduleTest {
 
         SkyEventSchedule.Night meteors = SkyEventSchedule.preview(4, PreviewEvent.Event.METEOR_SHOWER, bearing, 0.1f);
         assertTrue(meteors.meteorShower() && meteors.auroraStrength() == 0.0f && !meteors.fireworks());
-        assertEquals(bearing, meteors.radiantAzimuth());
-        assertTrue(meteors.radiantElevation() >= Math.toRadians(25.0) - 1e-6 && meteors.radiantElevation() <= Math.toRadians(60.0) + 1e-6);
 
         SkyEventSchedule.Night fireworks = SkyEventSchedule.preview(4, PreviewEvent.Event.FIREWORKS, bearing, 0.5f);
         assertTrue(fireworks.fireworks() && !fireworks.meteorShower() && fireworks.auroraStrength() == 0.0f);
@@ -147,29 +218,17 @@ class SkyEventScheduleTest {
     }
 
     @Test
-    void aPreviewShowsSomethingWithinAboutASecond() {
-        // How long a preview waits for its first meteor and burst, whatever the slot it starts in.
-        SkyEventSchedule.Night meteors = SkyEventSchedule.preview(9, PreviewEvent.Event.METEOR_SHOWER, 0.0f, 0.0f);
-        SkyEventSchedule.Night fireworks = SkyEventSchedule.preview(9, PreviewEvent.Event.FIREWORKS, 0.0f, 0.0f);
-        float[] out = new float[6];
-        long meteorTicks = 0;
-        long burstTicks = 0;
-        int starts = 0;
-        for (long start = 0; start < 5000; start += 7) {
-            long meteorWait = 0;
-            while (!SkyEventSchedule.meteor(SEED, meteors, start + meteorWait, out)) {
-                meteorWait++;
-            }
-            long burstWait = 0;
-            while (!SkyEventSchedule.firework(SEED, fireworks, start + burstWait, out)) {
-                burstWait++;
-            }
-            meteorTicks += meteorWait * SkyEventSchedule.METEOR_SLOT_TICKS;
-            burstTicks += burstWait * SkyEventSchedule.FIREWORK_SLOT_TICKS;
-            starts++;
+    void meteorShowerNightsAreTheSameAsIn097() {
+        // 0.9.8 draws a shower's meteors in the sky shader, but the nights that have one are
+        // still those 0.9.7 picked, from the same salt of the night's hash.
+        int showers = 0;
+        for (long night = 0; night < 2000; night++) {
+            long hash = SkyEventSchedule.mix(SEED, night);
+            boolean expected = SkyEventSchedule.unit(SkyEventSchedule.mix(hash, 1)) < SkyEventSchedule.METEOR_SHOWER_CHANCE;
+            assertEquals(expected, SkyEventSchedule.night(SEED, night).meteorShower());
+            showers += expected ? 1 : 0;
         }
-        assertTrue(meteorTicks / (double) starts < 20.0, "first meteor after " + meteorTicks / (double) starts + " ticks on average");
-        assertTrue(burstTicks / (double) starts < 20.0, "first burst after " + burstTicks / (double) starts + " ticks on average");
+        assertTrue(showers > 300 && showers < 500);
     }
 
     @Test

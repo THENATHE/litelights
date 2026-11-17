@@ -130,14 +130,14 @@ public final class LiteLightsOptions {
 
     // Sky
 
-    public static final EnumOption<SkyPalette> SKY_PALETTE = EnumOption.builder("sky.palette", SkyPalette.class, SkyPalette.VANILLA_COLOURS)
+    public static final EnumOption<SkyPalette> SKY_PALETTE = EnumOption.builder("sky.palette", SkyPalette.class, SkyPalette.COMPUTED)
             .at(Pages.SKY, "sky").cost(Cost.LOW).feature("sky").register();
     public static final BoolOption FALLING_STARS = BoolOption.builder("sky.falling_stars", true)
             .at(Pages.SKY, "sky").register();
     public static final EnumOption<Clouds> CLOUDS = EnumOption.builder("sky.clouds", Clouds.class, Clouds.FANCY)
             .at(Pages.SKY, "clouds").feature("clouds").choiceCost(Clouds.OFF, Cost.FREE).choiceCost(Clouds.FLAT, Cost.LOW)
             .cost(Cost.MEDIUM).register();
-    public static final IntOption CLOUD_LAYERS = IntOption.builder("sky.cloud_layers", 1, 1, 2, 1)
+    public static final IntOption CLOUD_LAYERS = IntOption.builder("sky.cloud_layers", 2, 1, 2, 1)
             .at(Pages.SKY, "clouds").feature("clouds").cost(Cost.LOW)
             .enabledWhen(() -> LiteLightsOptions.CLOUDS.get() != Clouds.OFF).register();
 
@@ -220,7 +220,7 @@ public final class LiteLightsOptions {
             .at(Pages.SHADOWS, "shadows").feature("shadows").needs(WORLD_SHADOWS).register();
     public static final FloatOption SUNLIGHT_COLOUR = FloatOption.builder("shadows.sunlight_colour", 1.0F, 0.0F, 2.0F, 0.05F)
             .at(Pages.SHADOWS, "shadows").feature("shadows").needs(WORLD_SHADOWS).register();
-    public static final IntOption SHADOW_REACH = IntOption.builder("shadows.reach", 256, 64, 512, 16)
+    public static final IntOption SHADOW_REACH = IntOption.builder("shadows.reach", 192, 64, 512, 16)
             .at(Pages.SHADOWS, "quality").feature("shadows").needs(WORLD_SHADOWS).cost(Cost.HIGH).format(ValueFormat.BLOCKS).register();
     public static final EnumOption<ShadowDetail> SHADOW_DETAIL = EnumOption.builder("shadows.detail",
                     ShadowDetail.class, ShadowDetail.SHARPEST)
@@ -243,7 +243,7 @@ public final class LiteLightsOptions {
 
     // Water
 
-    public static final EnumOption<WaterPalette> WATER_PALETTE = EnumOption.builder("water.palette", WaterPalette.class, WaterPalette.VANILLA_COLOURS)
+    public static final EnumOption<WaterPalette> WATER_PALETTE = EnumOption.builder("water.palette", WaterPalette.class, WaterPalette.ENHANCED)
             .at(Pages.WATER, "colour").register();
     public static final BoolOption BIOME_DEPTH_COLOUR = BoolOption.builder("water.biome_depth_colour", true)
             .at(Pages.WATER, "colour").cost(Cost.LOW).register();
@@ -262,11 +262,11 @@ public final class LiteLightsOptions {
             .at(Pages.WATER, "surface").cost(Cost.LOW).register();
     public static final BoolOption EDGE_FOAM_BLOCKS_ONLY = BoolOption.builder("water.edge_foam_blocks_only", true)
             .at(Pages.WATER, "surface").needs(EDGE_FOAM).register();
-    public static final EnumOption<FoamMotion> FOAM_MOTION = EnumOption.builder("water.foam_motion", FoamMotion.class, FoamMotion.STATIONARY)
+    public static final EnumOption<FoamMotion> FOAM_MOTION = EnumOption.builder("water.foam_motion", FoamMotion.class, FoamMotion.DRIFTING)
             .at(Pages.WATER, "surface").cost(Cost.FREE).choiceCost(FoamMotion.DRIFTING, Cost.LOW)
-            .enabledWhen(LiteLightsOptions::anyFoam).tag("litelights.tag.experimental").register();
-    public static final BoolOption OCEAN_WAVES = BoolOption.builder("water.ocean_waves", false)
-            .at(Pages.WATER, "surface").cost(Cost.LOW).tag("litelights.tag.experimental").register();
+            .enabledWhen(LiteLightsOptions::anyFoam).register();
+    public static final BoolOption OCEAN_WAVES = BoolOption.builder("water.ocean_waves", true)
+            .at(Pages.WATER, "surface").cost(Cost.LOW).register();
     // How far the swash runs up the beach in fair weather, and how thick the surf's foam lines are.
     // At 1 each draws the waves exactly as before the rows existed (0.9.7, waves097).
     public static final FloatOption SHORE_RUN_UP = FloatOption.builder("water.shore_run_up", 1.0F, 1.0F, 2.0F, 0.25F)
@@ -308,11 +308,11 @@ public final class LiteLightsOptions {
 
     // Vegetation
 
-    public static final BoolOption SWAY_GRASS = BoolOption.builder("vegetation.sway_grass", false)
+    public static final BoolOption SWAY_GRASS = BoolOption.builder("vegetation.sway_grass", true)
             .at(Pages.VEGETATION, "sway").cost(Cost.LOW).feature("sway").register();
-    public static final BoolOption SWAY_PLANTS = BoolOption.builder("vegetation.sway_plants", false)
+    public static final BoolOption SWAY_PLANTS = BoolOption.builder("vegetation.sway_plants", true)
             .at(Pages.VEGETATION, "sway").cost(Cost.LOW).feature("sway").register();
-    public static final BoolOption SWAY_LEAVES = BoolOption.builder("vegetation.sway_leaves", false)
+    public static final BoolOption SWAY_LEAVES = BoolOption.builder("vegetation.sway_leaves", true)
             .at(Pages.VEGETATION, "sway").cost(Cost.MEDIUM).feature("sway").register();
 
     // Particles
@@ -411,7 +411,7 @@ public final class LiteLightsOptions {
     public static final BoolOption OUTLINE_WORN_ARMOUR = BoolOption.builder("outlines.worn_armour", true)
             .at(Pages.OUTLINES, "outlines").feature("outlines").needs(OUTLINES).cost(Cost.LOW).register();
     /** Hides vanilla's shimmer on the items and armour that get an outline; the outline stays. */
-    public static final BoolOption OUTLINE_HIDE_SHIMMER = BoolOption.builder("outlines.hide_shimmer", false)
+    public static final BoolOption OUTLINE_HIDE_SHIMMER = BoolOption.builder("outlines.hide_shimmer", true)
             .at(Pages.OUTLINES, "outlines").feature("outlines").needs(OUTLINES).register();
     /** Trimmed armour glows in its trim material's colour instead of the glow colour. */
     public static final BoolOption OUTLINE_TRIM_COLOURS = BoolOption.builder("outlines.trim_colours", true)
@@ -650,8 +650,11 @@ public final class LiteLightsOptions {
             String section = "storms/" + name;
             boolean sandy = type == StormType.SANDSTORM || type == StormType.HABOOB;
             BooleanSupplier stormShows = sandy ? () -> SANDSTORMS.on() : () -> true;
+            // Rain, snow and sandstorms start with light fog, their thunder variants with the usual
+            // fog (user, 2026-11-16).
+            boolean thundery = type == StormType.THUNDERSTORM || type == StormType.BLIZZARD || type == StormType.HABOOB;
 
-            EnumOption<StormFog> fog = EnumOption.builder(id + ".fog", StormFog.class, StormFog.NORMAL)
+            EnumOption<StormFog> fog = EnumOption.builder(id + ".fog", StormFog.class, thundery ? StormFog.NORMAL : StormFog.LIGHT)
                     .at(Pages.WEATHER, section).text("litelights.option.weather.storm_fog", "litelights.option." + id + ".fog.description")
                     .enabledWhen(stormShows).register();
             EnumOption.Builder<StormClouds> clouds = EnumOption.builder(id + ".clouds", StormClouds.class, StormClouds.FOLLOW_DENSITY)

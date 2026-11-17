@@ -60,8 +60,11 @@ void main() {
     vec3 position = eye + direction * sampleDistance;
 
     float lit = lite_shadow_lookup(LiteSunShadow, LiteSunShadowMatrix, position, LiteShadowMapInfo.x, 0.02);
-    // Past the shadow map's reach every point would count as lit; fade the air out before then.
-    float reach = 1.0 - smoothstep(LiteShadowParams.w * 0.75, LiteShadowParams.w * 0.95, length(position.xz));
+    // The beams fade out gently over the far 60 % of the slices' reach (fog098), so walking toward a
+    // beam it grows nearer instead of a wall of light sliding along ahead. Past the shadow map's reach
+    // every point would count as lit; the farthest slice stops short of it, and this makes sure.
+    float reach = (1.0 - smoothstep(Slices.w * 0.4, Slices.w, sampleDistance))
+        * (1.0 - smoothstep(LiteShadowParams.w * 0.9, LiteShadowParams.w, length(position.xz)));
     float shadedLength = (1.0 - lit) * reach * span;
     lit *= reach;
 

@@ -3,6 +3,7 @@ package com.thenathe.litelights.gui;
 import com.thenathe.litelights.LiteLightsClient;
 import com.thenathe.litelights.config.CustomRow;
 import com.thenathe.litelights.config.DimensionOptions;
+import com.thenathe.litelights.config.FarTerrainReach;
 import com.thenathe.litelights.config.GradeTemplates;
 import com.thenathe.litelights.config.LiteLightsConfig;
 import com.thenathe.litelights.config.LiteLightsOptions.GradeTime;
@@ -44,6 +45,7 @@ final class BuiltInPages {
         PageModel.subheadingIcon(Pages.WEATHER, "storms/haboob", Glyphs.SAND_THUNDER);
         Pages.contribute(Pages.GENERAL, BuiltInPages::gettingStarted);
         Pages.contribute(Pages.GENERAL, CompatibilityNotices::contribute);
+        Pages.contribute(Pages.SHADOWS, BuiltInPages::calculateDistance);
         Pages.contribute(Pages.COLOUR_GRADING, page -> page.section("grading").row(gradeTemplatePicker()).row(gradeTimePicker()));
         Pages.contribute(Pages.PARTICLES, page -> page.section("particles")
                 .note(Component.translatable("litelights.note.nether_ambience")));
@@ -96,7 +98,10 @@ final class BuiltInPages {
                 .recommendation(CONTINUITY, Component.translatable("litelights.getting_started.continuity"))
                 .note(Component.translatable("litelights.getting_started.tip.gpu"))
                 .note(Component.translatable("litelights.getting_started.tip.far_terrain"))
-                .note(Component.translatable("litelights.getting_started.tip.preview"));
+                .note(Component.translatable("litelights.getting_started.tip.preview"))
+                .subScreen(Component.translatable("litelights.setup.again"),
+                        Component.translatable("litelights.setup.again.description"),
+                        Component.translatable("litelights.setup.again.button"), FirstSetupScreen::new);
     }
 
     /**
@@ -140,6 +145,24 @@ final class BuiltInPages {
                 .untracked()
                 .state(() -> LiteLightsOptions.GRADE_SCHEDULE.feature().state())
                 .shownWhen(() -> LiteLightsOptions.GRADE_SCHEDULE.get() == GradeSchedule.BY_TIME_OF_DAY);
+    }
+
+    /**
+     * Calculate distance, right under Reach, while Voxy or Distant Horizons is installed: sets Reach
+     * so the shadow map hands over to far shadows where the far terrain begins. The render distance
+     * is read again on each press, so it follows a changed distance.
+     */
+    private static void calculateDistance(PageContent page) {
+        if (!FarTerrainReach.available()) {
+            return;
+        }
+        int chunks = FarTerrainReach.renderDistance();
+        page.below(LiteLightsOptions.SHADOW_REACH)
+                .action(Component.translatable("litelights.shadows.calculate_distance"),
+                        Component.translatable("litelights.shadows.calculate_distance.description", chunks,
+                                FarTerrainReach.forRenderDistance(chunks)),
+                        Component.translatable("litelights.shadows.calculate_distance.button"),
+                        FarTerrainReach::apply);
     }
 
     private static void resetEverything() {

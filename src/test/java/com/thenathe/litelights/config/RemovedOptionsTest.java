@@ -63,7 +63,7 @@ class RemovedOptionsTest {
             assertEquals(LiteLightsOptions.GlassDetail.TEXELS_32, LiteLightsOptions.GLASS_DETAIL.get());
             assertFalse(LiteLightsOptions.GLASS_FROST.on());
             assertFalse(LiteLightsOptions.EDGE_FOAM.on());
-            assertEquals(LiteLightsOptions.FoamMotion.STATIONARY, LiteLightsOptions.FOAM_MOTION.get(), "a new option starts at its default");
+            assertEquals(LiteLightsOptions.FoamMotion.DRIFTING, LiteLightsOptions.FOAM_MOTION.get(), "a new option starts at its default");
 
             file.save();
             JsonObject saved = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
@@ -72,7 +72,7 @@ class RemovedOptionsTest {
             assertEquals("streaks", options.get("weather.glass_style").getAsString(), "and so does this one's");
             assertEquals("texels_32", options.get("weather.glass_detail").getAsString());
             assertFalse(options.get("weather.glass_frost").getAsBoolean());
-            assertEquals("stationary", options.get("water.foam_motion").getAsString());
+            assertEquals("drifting", options.get("water.foam_motion").getAsString());
             assertFalse(saved.has("unreadable") && saved.getAsJsonObject("unreadable").size() > 0, "nothing was unreadable");
             // Schema 2 files go through 0.9.7's glint step, which has nothing to move in this one.
             assertTrue(Files.exists(folder.resolve("litelights.json.schema2.bak")), "the file was backed up before the glint step");

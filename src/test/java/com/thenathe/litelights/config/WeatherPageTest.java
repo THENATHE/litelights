@@ -69,7 +69,7 @@ class WeatherPageTest {
             String name = EnumOption.storedName(type);
             assertEquals("storms/" + name, rows.fog().section());
             assertEquals("storms/" + name, rows.clouds().section());
-            assertEquals(StormFog.NORMAL, rows.fog().defaultValue());
+            assertEquals(stormFogDefault(type), rows.fog().defaultValue());
             assertEquals(StormClouds.FOLLOW_DENSITY, rows.clouds().defaultValue());
             assertEquals(List.of(StormFog.LIGHT, StormFog.NORMAL, StormFog.DENSE, StormFog.VERY_DENSE), rows.fog().choices());
         }
@@ -146,7 +146,7 @@ class WeatherPageTest {
             assertEquals(LiteLightsOptions.DistanceFill.FILL, LiteLightsOptions.WEATHER_DISTANCE_FILL.get());
             assertEquals(LiteLightsOptions.MistStyle.FIELD, LiteLightsOptions.MIST_STYLE.get(), "Mist style (0.9.7) starts at Mist field");
             for (StormType type : StormType.values()) {
-                assertEquals(StormFog.NORMAL, LiteLightsOptions.storm(type).fog().get(), "new rows start at their defaults");
+                assertEquals(stormFogDefault(type), LiteLightsOptions.storm(type).fog().get(), "new rows start at their defaults");
                 assertEquals(StormClouds.FOLLOW_DENSITY, LiteLightsOptions.storm(type).clouds().get());
             }
 
@@ -158,6 +158,7 @@ class WeatherPageTest {
             assertEquals("very_far", options.get("weather.distance").getAsString());
             assertFalse(options.get("weather.polar_lights").getAsBoolean());
             assertEquals("normal", options.get("weather.storms.haboob.fog").getAsString());
+            assertEquals("light", options.get("weather.storms.rain.fog").getAsString());
             assertEquals("follow_density", options.get("weather.storms.rain.clouds").getAsString());
             assertEquals("field", options.get("weather.mist_style").getAsString());
             assertFalse(saved.has("unreadable") && saved.getAsJsonObject("unreadable").size() > 0, "nothing was unreadable");
@@ -193,5 +194,13 @@ class WeatherPageTest {
         } finally {
             registry.resetAll();
         }
+    }
+
+    /** Light fog for rain, snow and sandstorms; Normal for their thunder variants (defaults098). */
+    private static StormFog stormFogDefault(StormType type) {
+        return switch (type) {
+            case RAIN, SNOW, SANDSTORM -> StormFog.LIGHT;
+            case THUNDERSTORM, BLIZZARD, HABOOB -> StormFog.NORMAL;
+        };
     }
 }

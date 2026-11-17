@@ -4,6 +4,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.thenathe.litelights.LiteLightsClient;
 import com.thenathe.litelights.config.DimensionOptions.Aspect;
 import com.thenathe.litelights.config.PreviewEvent;
+import com.thenathe.litelights.mixin.particles.BiomeManagerAccessor;
 import com.thenathe.litelights.render.LiteMath;
 import com.thenathe.litelights.render.RenderSettings;
 import com.thenathe.litelights.render.api.LiteRenderEvents;
@@ -70,6 +71,11 @@ public final class SkyFogFeature {
     // This frame's decisions, read by the sky and cloud hooks.
     private boolean liteSky;
     private boolean realisticSky;
+    /** Whether the sky shader draws a meteor shower this frame: a shower night, or its preview. */
+    private boolean meteorShower;
+    /** The night last asked about, so the schedule is worked out once a night. */
+    private SkyEventSchedule.@Nullable Night showerNight;
+    private long showerSeed;
     private boolean skyPassWanted;
     private boolean fogReadyMarked;
     private boolean skyReadyMarked;
@@ -81,6 +87,14 @@ public final class SkyFogFeature {
     private float sunSine;
     private float day;
     private float twilight;
+    /**
+     * The part of twilight after the sun has set (or before it rises): 0 while it is up, rising to
+     * the whole of the twilight once it is a few degrees under the horizon. The Computed sky turns
+     * it into an afterglow and a blue hour instead of a dimming orange (fog098).
+     */
+    private float afterglow;
+    /** Whether the sky colours are Computed this frame, whose sunsets have the afterglow. */
+    private boolean computedSky;
     private float moonlight;
     // The land's haze colour after the Biome haze tint setting, worked out first in fill.
     private float hazeRed;
@@ -177,6 +191,7 @@ public final class SkyFogFeature {
         boolean overworldSky = dimension.skybox() == DimensionType.Skybox.OVERWORLD && dimension.hasSkyLight();
 
         easeTowardLand(seconds);
+        computedSky = settings.sky().palette() == RenderSettings.SkyPalette.COMPUTED;
         readLight(frame, dimension, skyState);
         tintHaze(settings.fog().biomeHazeTint());
         wetFog = LiteMath.lerp(settings.weather().storms().rainFog(thunder), settings.weather().storms().snowFog(thunder), snowyShareOfWetLand());
@@ -222,6 +237,7 @@ public final class SkyFogFeature {
         sunSine = frame.sunDirection.w;
         day = skyless ? 1.0f : SkyFogMath.daylight(sunSine);
         twilight = skyless ? 0.0f : SkyFogMath.twilight(sunSine) * LiteMath.smoothstep(-0.25f, -0.05f, sunSine);
+        afterglow = twilight * SkyFogMath.sunGone(sunSine);
         moonlight = skyless ? 0.0f : LiteMath.smoothstep(-0.05f, 0.3f, frame.moonDirection.w) * moonFullness(moonPhase(skyState));
     }
 
@@ -257,9 +273,28 @@ public final class SkyFogFeature {
 
         // The sun's glow in the haze: wide and warm low in the sky, faint at noon.
         float glow = skyless ? 0.0f : day * (0.10f + 1.05f * twilight) * (1.0f - 0.85f * rain) * fogSettings.sunGlow();
-        frame.sunGlow.set(glow, glow * LiteMath.lerp(0.90f, 0.48f, twilight), glow * LiteMath.lerp(0.72f, 0.16f, twilight),
-            LiteMath.lerp(6.0f, 3.0f, twilight));
+        if (computedSky && !skyless) {
+            sunsetGlow(frame, fogSettings.sunGlow());
+        } else {
+            frame.sunGlow.set(glow, glow * LiteMath.lerp(0.90f, 0.48f, twilight), glow * LiteMath.lerp(0.72f, 0.16f, twilight),
+                LiteMath.lerp(6.0f, 3.0f, twilight));
+        }
         return mist;
+    }
+
+    /**
+     * The Computed sky's sun glow (fog098): a step more saturated and warmer than the Vanilla
+     * colours' around a low sun, and once the sun has gone, an afterglow in deep reds and magentas
+     * along the horizon that fades with the twilight instead of with the daylight, so the end of a
+     * sunset doesn't dim into brown. Wider, too, so it lies along the horizon. Dawn mirrors it.
+     */
+    private void sunsetGlow(FrameState frame, float sunGlow) {
+        float strength = Math.max(day, 0.5f * afterglow) * (0.10f + 1.05f * twilight) * (1.0f - 0.85f * rain) * sunGlow
+            * (1.0f + 0.15f * twilight);
+        float green = LiteMath.lerp(LiteMath.lerp(0.90f, 0.42f, twilight), 0.20f, afterglow);
+        float blue = LiteMath.lerp(LiteMath.lerp(0.72f, 0.12f, twilight), 0.32f, afterglow);
+        float width = LiteMath.lerp(LiteMath.lerp(6.0f, 3.0f, twilight), 2.2f, afterglow);
+        frame.sunGlow.set(strength, strength * green, strength * blue, width);
     }
 
     /**
@@ -319,12 +354,30 @@ public final class SkyFogFeature {
         // stars don't change at midnight. Kept small, so the float carries it exactly.
         long night = SkyEventSchedule.nightIndex(currentLevel.getOverworldClockTime());
         frame.skyInfo.set(moonPhase(skyState), (float) Math.floorMod(night, 100_000L), starAngle, stormCover);
-        if (PreviewEvent.current() == PreviewEvent.Event.FALLING_STARS) {
-            // The settings screen's falling-star preview: streaks every few seconds, starting a
-            // little above where the player looks.
+        PreviewEvent.Event preview = PreviewEvent.current();
+        boolean showers = settings.weather().meteorNights();
+        if (preview == null) {
+            meteorShower = showers && showerTonight(currentLevel, night);
+        } else {
+            // Like the other sky events, a real shower is left out while any event is previewed.
+            meteorShower = showers && preview == PreviewEvent.Event.METEOR_SHOWER;
+        }
+        if (preview == PreviewEvent.Event.FALLING_STARS || meteorShower && preview != null) {
+            // The settings screen's falling-star and meteor-shower previews: streaks every few
+            // seconds, starting a little above where the player looks.
             frame.time.z = Math.clamp(PreviewEvent.elevation() + 0.3f, 0.45f, 1.1f);
             frame.time.w = PreviewEvent.bearing();
         }
+    }
+
+    /** Whether tonight is one of the world's meteor shower nights (SkyEventSchedule, from the world's hashed seed). */
+    private boolean showerTonight(ClientLevel currentLevel, long night) {
+        long seed = ((BiomeManagerAccessor) currentLevel.getBiomeManager()).litelights$biomeZoomSeed();
+        if (showerNight == null || showerNight.index() != night || showerSeed != seed) {
+            showerNight = SkyEventSchedule.night(seed, night);
+            showerSeed = seed;
+        }
+        return showerNight.meteorShower();
     }
 
     private static void fillEndTint(FrameState frame, boolean endTint, float aura) {
@@ -348,6 +401,7 @@ public final class SkyFogFeature {
             flags |= FrameFlags.FEATURE_LITE_SKY;
             flags |= realisticSky ? FrameFlags.FEATURE_REALISTIC_SKY : 0;
             flags |= settings.sky().fallingStars() ? FrameFlags.FEATURE_SHOOTING_STARS : 0;
+            flags |= meteorShower ? FrameFlags.FEATURE_METEOR_SHOWER : 0;
         }
         flags |= skyState.shouldRenderDarkDisc ? FrameFlags.FEATURE_DARK_DISC : 0;
         flags |= LiteClouds.get().activeThisFrame() ? FrameFlags.FEATURE_LITE_CLOUDS : 0;
@@ -400,9 +454,24 @@ public final class SkyFogFeature {
             green = LiteMath.lerp(0.050f + 0.036f * moonlight, green, day);
             blue = LiteMath.lerp(0.085f + 0.050f * moonlight, blue, day);
             float warming = twilight * sunGlow;
-            red *= 1.0f + 0.30f * warming;
-            green *= Math.max(0.0f, 1.0f - 0.05f * warming);
-            blue *= Math.max(0.0f, 1.0f - 0.26f * warming);
+            if (computedSky) {
+                // The Computed sky (fog098): a little warmer while the sun is up, but the warmth turns
+                // rose rather than orange as the light fades, and once the sun is gone the haze cools to
+                // the blue hour's clear violet blue: orange on a dimming colour reads as brown.
+                float sunUp = warming * (1.0f - SkyFogMath.sunGone(sunSine));
+                float dim = 1.0f - LiteMath.smoothstep(0.12f, 0.45f, day);
+                red *= 1.0f + 0.36f * sunUp;
+                green *= Math.max(0.0f, 1.0f - LiteMath.lerp(0.05f, 0.12f, dim) * sunUp);
+                blue *= Math.max(0.0f, 1.0f - LiteMath.lerp(0.30f, 0.0f, dim) * sunUp);
+                float blueHour = afterglow * sunGlow;
+                red *= 1.0f - 0.22f * blueHour;
+                green *= 1.0f - 0.10f * blueHour;
+                blue *= 1.0f + 0.45f * blueHour;
+            } else {
+                red *= 1.0f + 0.30f * warming;
+                green *= Math.max(0.0f, 1.0f - 0.05f * warming);
+                blue *= Math.max(0.0f, 1.0f - 0.26f * warming);
+            }
             float grey = SkyFogMath.luminance(red, green, blue);
             float wash = 0.6f * rain;
             float darken = (1.0f - 0.30f * rain) * (1.0f - 0.25f * thunder);
@@ -488,9 +557,16 @@ public final class SkyFogFeature {
         float red = LiteMath.lerp(0.010f + 0.010f * moonlight, 0.25f * land.skyRed, day);
         float green = LiteMath.lerp(0.014f + 0.014f * moonlight, 0.46f * land.skyGreen, day);
         float blue = LiteMath.lerp(0.034f + 0.025f * moonlight, 0.86f * land.skyBlue, day);
-        red = LiteMath.lerp(red, 0.17f, 0.35f * twilight);
-        green = LiteMath.lerp(green, 0.22f, 0.35f * twilight);
-        blue = LiteMath.lerp(blue, 0.42f, 0.35f * twilight);
+        if (computedSky) {
+            // A clearer, deeper twilight blue overhead, so the afterglow fades up into blue (fog098).
+            red = LiteMath.lerp(red, 0.12f, 0.45f * twilight);
+            green = LiteMath.lerp(green, 0.18f, 0.45f * twilight);
+            blue = LiteMath.lerp(blue, 0.46f, 0.45f * twilight);
+        } else {
+            red = LiteMath.lerp(red, 0.17f, 0.35f * twilight);
+            green = LiteMath.lerp(green, 0.22f, 0.35f * twilight);
+            blue = LiteMath.lerp(blue, 0.42f, 0.35f * twilight);
+        }
         float overcast = Math.max(day, 0.05f);
         red = LiteMath.lerp(red, 0.42f * overcast, 0.75f * rain);
         green = LiteMath.lerp(green, 0.45f * overcast, 0.75f * rain);
@@ -527,7 +603,7 @@ public final class SkyFogFeature {
             RenderFeatureStatus.succeeded(RenderFeature.SKY);
             if (!skyReadyMarked) {
                 skyReadyMarked = true;
-                RenderFeatureStatus.markReady("sky", "sky.falling_stars", "end_sky_glow");
+                RenderFeatureStatus.markReady("sky", "sky.falling_stars", "weather.meteor_nights", "end_sky_glow");
             }
         } catch (RuntimeException error) {
             RenderFeatureStatus.failed(RenderFeature.SKY, error);

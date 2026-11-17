@@ -1,23 +1,23 @@
 # LiteLights
 
-LiteLights is a client-side Fabric mod for Minecraft 26.3. It adds shadows, better water, sky, fog, weather and ambient particles, but keeps the vanilla look, and it's fast enough to run on a normal setup next to Sodium. There are no presets: every effect has its own setting, and most of them are on by default.
+LiteLights is a client-side Fabric mod for Minecraft 26.3. It adds shadows, better water, sky, fog, weather and ambient particles, but keeps the vanilla look, and it's fast enough to run on a normal setup next to Sodium. Every effect has its own setting, and most of them are on by default.
 
 ![LiteLights at default settings](docs/preview.jpg)
 
-*LiteLights at its default settings, on Sodium, with no resource packs.*
+*LiteLights on Sodium, with no resource packs.*
 
 ## What it does
 
 - **Shadows:** cached sun and moon shadows, creature shadows instead of vanilla's round blob, and five detail levels.
 - **Lighting:** bloom, sunbeams (above and under water), glint on water, ice, metal and glass, colour grading by time of day, and enchantment outlines on held items and armour.
-- **Water:** natural colours with depth, reflections, caustics, edge foam, large water textures, splashes, ocean waves (Experimental) and wakes behind boats and swimmers.
+- **Water:** natural colours with depth, reflections, caustics, edge foam, large water textures, splashes, ocean waves and wakes behind boats and swimmers.
 - **Sky and fog:** LiteLights' own sun, moon and stars, clouds in one or two layers, haze with mist banks and biome colours, the aurora borealis, meteor showers and distant fireworks.
 - **Weather:** its own rain and snow, rolling mist along the ground (or soft 3D puffs if you prefer), storm fog for each kind of storm, sandstorms and haboobs, rain drips and wall streaks, and frost, snow and sand on windows.
 - **Particles and plants:** fireflies, dust, pollen, better fire and smoke, ember veins, and swaying grass, plants and leaves.
-- **Far terrain:** Voxy and Distant Horizons land gets the same haze, light and water.
+- **Far terrain:** Voxy and Distant Horizons land gets the same haze, light, water and shadows; Calculate distance on the Shadows page lines the near shadows up with it.
 - **Overlays:** softer blocks like grass and sand spill onto harder ones, with textures made from whatever resource packs you have loaded. This one needs Continuity.
 
-Everything is in LiteLights' settings screen (through Mod Menu or a keybind you set), and in Sodium's Video Settings if you have Sodium.
+The first time you start the game with LiteLights, it asks how powerful your computer is and sets itself up to suit, or keeps the creator's recommended settings. Everything is in LiteLights' settings screen (through Mod Menu or a keybind you set), and in Sodium's Video Settings if you have Sodium.
 
 ## Install
 

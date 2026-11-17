@@ -235,4 +235,65 @@ class HazeTest {
         }
         assertTrue(HazeField.saturated(1.65f) < 0.4f, "a blizzard no longer closes the view in within a block");
     }
+
+    @Test
+    void hazeLeadsOnlyAMovingCamera() {
+        assertEquals(0.0f, HazeLead.aheadShare(0.0f));
+        assertEquals(0.0f, HazeLead.aheadShare(0.05f), "walking slowly changes nothing");
+        float sprint = HazeLead.aheadShare(0.28f);
+        float flying = HazeLead.aheadShare(1.0f);
+        assertTrue(sprint > 0.1f && sprint < flying, "a sprint leads some puffs, flying more");
+        assertEquals(0.6f, flying, 1.0e-6f, "never more than three in five ahead");
+
+        Surroundings still = new Surroundings();
+        double[] lead = new double[2];
+        HazeLead.lead(still, lead);
+        assertEquals(0.0, lead[0]);
+        assertEquals(0.0, lead[1]);
+        // Standing still the angle takes exactly one random number, as the spawners did before.
+        net.minecraft.util.RandomSource random = net.minecraft.util.RandomSource.create(7L);
+        net.minecraft.util.RandomSource same = net.minecraft.util.RandomSource.create(7L);
+        assertEquals(same.nextFloat() * (float) (Math.PI * 2.0), HazeLead.angle(still, random), 1.0e-6f);
+        assertEquals(same.nextFloat(), random.nextFloat());
+
+        Surroundings flyingEast = new Surroundings();
+        flyingEast.motionX = 1.0f;
+        HazeLead.lead(flyingEast, lead);
+        assertEquals(24.0, lead[0], 1.0e-6, "the lead stops at 24 blocks");
+        Surroundings sprintingNorth = new Surroundings();
+        sprintingNorth.motionZ = -0.28f;
+        HazeLead.lead(sprintingNorth, lead);
+        assertEquals(-8.4, lead[1], 1.0e-4, "thirty ticks of a sprint");
+    }
+
+    @Test
+    void ringWidensOnlyHighOverTheGround() {
+        assertEquals(0.0f, HazeLead.widening(1.6));
+        assertEquals(0.0f, HazeLead.widening(8.0));
+        assertEquals(11.0f, HazeLead.widening(30.0), 1.0e-6f);
+        assertEquals(36.0f, HazeLead.widening(200.0), 1.0e-6f);
+    }
+
+    @Test
+    void mistBanksLiftByAFewBlocksAndRepeatWithTheDrift() {
+        float highest = 0.0f;
+        int lifted = 0;
+        int cells = 0;
+        for (int x = -300; x < 300; x += 3) {
+            for (int z = -300; z < 300; z += 3) {
+                float lift = FieldGround.bankLift(x, z, 0.0, 0.0);
+                assertTrue(lift >= 0.0f && lift <= 3.0f);
+                highest = Math.max(highest, lift);
+                lifted += lift > 0.5f ? 1 : 0;
+                cells++;
+            }
+        }
+        assertTrue(highest > 2.5f, "some banks rise nearly the whole way");
+        float share = lifted / (float) cells;
+        assertTrue(share > 0.15f && share < 0.6f, "banks over part of the land, not all of it: " + share);
+        // The drift wraps every 2048 blocks; the banks wrap with it, so they never jump.
+        assertEquals(FieldGround.bankLift(10, 20, 100.0, 50.0), FieldGround.bankLift(10, 20, 100.0 + 2048.0, 50.0), 1.0e-5f);
+        // Drifting moves the pattern with the drift.
+        assertEquals(FieldGround.bankLift(10, 20, 0.0, 0.0), FieldGround.bankLift(10 + 16, 20, 64.0, 0.0), 1.0e-5f);
+    }
 }

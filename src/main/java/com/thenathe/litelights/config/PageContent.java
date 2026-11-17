@@ -20,6 +20,14 @@ public interface PageContent {
     /** Starts or continues a section with a caption of your own. */
     PageContent section(String section, Component caption, boolean startsFolded);
 
+    /**
+     * Continues the section that holds {@code option}'s row, with the rows added next placed right
+     * under that row, in the order they are added, rather than at the end of the section. The next
+     * {@link #section} call goes back to adding at the end. Rows for an option not on this page go
+     * at the end of the current section.
+     */
+    PageContent below(Option<?> option);
+
     /** A short wrapped paragraph. */
     PageContent note(Component text);
 

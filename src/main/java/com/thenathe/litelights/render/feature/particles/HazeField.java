@@ -26,13 +26,19 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Optional;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
  * The Mist field (Mist style: Mist field, fog097): instead of puffs, one low layer of drifting mist,
- * traced through right after the level at half resolution (post/mist_field.fsh, eight fixed steps,
+ * traced through right after the level at half resolution (post/mist_field.fsh, twelve fixed steps,
  * no loop over data), then laid over the picture at full resolution with an upsample that keeps the
  * edges of what stands in it (post/mist_field_composite.fsh), lit like the puffs, through the
  * lightmap.
+ *
+ * <p>The layer lies on the land (fog098): its bottom and top are heights over the ground at each
+ * step of the trace, read from a small map of the land around the camera ({@link FieldGround}), so
+ * it fills valleys, climbs hills, pools in hollows and rises in slow banks, and stays on the land
+ * however high the camera flies. The Nether's ash haze fills the open air around the camera instead.
  *
  * <p>The spawners still decide where the haze is and how thick: with the field chosen they offer
  * what they would have spawned instead of spawning it ({@link #offer}). Puffs at that rate, size and
@@ -52,33 +58,43 @@ public final class HazeField {
     private static final float SPRITE_COVER = 0.64f;
     /** Extinction per block around which piled-up haze stops adding up (see {@link #saturated}). */
     private static final float SATURATION = 0.15f;
-    /** Haze further than this is left to the fog: the puffs' kinds keep their Near area too. */
-    private static final float REACH = 48.0f;
+    /**
+     * Haze further than this over the ground is left to the fog, which the field hands over to
+     * across its last 45 % (fog098; it was 48 blocks, the puffs' Near area).
+     */
+    private static final float REACH = 112.0f;
+    /** Soft edges the shader gives the layer, in blocks below its bottom and as a share of its height above its top (mist_field.fsh). */
+    private static final float BOTTOM_SOFTNESS = 1.5f;
+    private static final float TOP_SOFTNESS = 0.45f;
 
     private static final BlendFunction OVER_BY_TRANSMITTANCE = new BlendFunction(BlendFactor.ONE, BlendFactor.SRC_ALPHA,
         BlendFactor.ZERO, BlendFactor.ONE);
     static final RenderPipeline MARCH = PostPipelines.fullScreen("mist_field", LiteLightsClient.id("post/mist_field"),
-            PostPipelines.samplers("FieldDepth"), PostPipelines.HALF_FLOAT, 64)
+            PostPipelines.samplers("FieldDepth", "FieldGround"), PostPipelines.HALF_FLOAT, 64)
         .build();
     static final RenderPipeline COMPOSITE = PostPipelines.fullScreen("mist_field_composite", LiteLightsClient.id("post/mist_field_composite"),
             PostPipelines.samplers("FieldMarch", "FieldDepth", "FieldLightmap"),
             new ColorTargetState(Optional.of(OVER_BY_TRANSMITTANCE), GpuFormat.RGBA8_UNORM, PostPipelines.WRITE_RGB), 64)
         .build();
 
-    // This tick's offers, summed: extinction, extinction-weighted colour, layer and dust share.
+    // This tick's offers, summed: extinction, extinction-weighted colour, layer, dust share and how
+    // much of it lies on the land.
     private float offeredExtinction;
     private float offeredRed;
     private float offeredGreen;
     private float offeredBlue;
-    private double offeredBottom;
-    private double offeredTop;
+    private float offeredBottom;
+    private float offeredTop;
     private float offeredDust;
+    private float offeredOnLand;
     private int offeredLight;
 
     // Eased toward the offers once a tick; frames take the value between the last two ticks.
-    private final float[] now = new float[7];
-    private final float[] previous = new float[7];
-    private final float[] target = new float[7];
+    // 0 extinction, 1-3 colour, 4-5 the layer's bottom and top over its base, 6 dust share, 7 on the land.
+    private final float[] now = new float[8];
+    private final float[] previous = new float[8];
+    private final float[] target = new float[8];
+    private final FieldGround ground = new FieldGround();
     private final ByteBuffer push = ByteBuffer.allocateDirect(64).order(ByteOrder.nativeOrder());
     private final PostTexture march = new PostTexture("LiteLights mist field", GpuFormat.RGBA16_FLOAT, 2);
     private int light;
@@ -133,16 +149,19 @@ public final class HazeField {
         offeredRed = 0.0f;
         offeredGreen = 0.0f;
         offeredBlue = 0.0f;
-        offeredBottom = 0.0;
-        offeredTop = 0.0;
+        offeredBottom = 0.0f;
+        offeredTop = 0.0f;
         offeredDust = 0.0f;
+        offeredOnLand = 0.0f;
     }
 
     /**
-     * One kind's haze this tick: its extinction per block, its colour (rgb, alpha ignored), the world
-     * heights its layer spans, and the light there (packed as vanilla's light coordinates).
+     * One kind's haze this tick: its extinction per block, its colour (rgb, alpha ignored), the
+     * heights its layer spans, and the light there (packed as vanilla's light coordinates). The
+     * heights are over the ground wherever the trace goes, or for the Nether's ash haze, which fills
+     * the open air around the camera, over the camera.
      */
-    public void offer(ParticleKind.Haze kind, float extinction, int rgb, double bottom, double top, int lightCoords) {
+    public void offer(ParticleKind.Haze kind, float extinction, int rgb, float bottom, float top, int lightCoords) {
         if (extinction <= 0.0f || top <= bottom) {
             return;
         }
@@ -155,11 +174,17 @@ public final class HazeField {
         if (kind == ParticleKind.Haze.SAND) {
             offeredDust += extinction;
         }
+        if (kind != ParticleKind.Haze.ASH) {
+            offeredOnLand += extinction;
+        }
         offeredLight = lightCoords;
     }
 
-    /** After the spawners: eases toward this tick's offers. */
-    void endTick(boolean fieldChosen) {
+    /**
+     * After the spawners: eases toward this tick's offers and, while the field lies on the land,
+     * brings the map of the land under it up to date.
+     */
+    void endTick(boolean fieldChosen, Surroundings s) {
         System.arraycopy(now, 0, previous, 0, now.length);
         if (!fieldChosen) {
             beginTick();
@@ -171,11 +196,10 @@ public final class HazeField {
             target[1] = offeredRed * weight;
             target[2] = offeredGreen * weight;
             target[3] = offeredBlue * weight;
-            // World heights: a float holds them to well under a block's width, and the camera's own
-            // height comes off each frame, so the layer stays put while the camera moves.
-            target[4] = (float) (offeredBottom * weight);
-            target[5] = (float) (offeredTop * weight);
+            target[4] = offeredBottom * weight;
+            target[5] = offeredTop * weight;
             target[6] = offeredDust * weight;
+            target[7] = offeredOnLand * weight;
             light = offeredLight;
         }
         boolean empty = now[0] < 1.0e-4f;
@@ -188,6 +212,16 @@ public final class HazeField {
             }
         }
         active = fieldChosen && (now[0] > 1.0e-4f || offeredExtinction > 0.0f);
+        if (active && now[7] > 0.0f && s.level != null) {
+            // Under a roof the camera's column is the roof: the fill for cells nothing is known of
+            // is just under the camera then, as the spawners' field ground was.
+            int x = (int) Math.floor(s.cameraX);
+            int z = (int) Math.floor(s.cameraZ);
+            double cameraGround = s.level.hasChunk(x >> 4, z >> 4)
+                ? Math.min(s.level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z), s.cameraY - 1.62)
+                : s.cameraY - 1.62;
+            ground.update(s.level, s.cameraX, s.cameraY, s.cameraZ, cameraGround, s.hazeDriftX, s.hazeDriftZ);
+        }
     }
 
     /** Clears everything, as when leaving a world. */
@@ -195,6 +229,7 @@ public final class HazeField {
         beginTick();
         Arrays.fill(now, 0.0f);
         Arrays.fill(previous, 0.0f);
+        ground.forget();
         active = false;
     }
 
@@ -226,17 +261,32 @@ public final class HazeField {
             return;
         }
         try {
-            push.putFloat(0, at(1, partialTick)).putFloat(4, at(2, partialTick)).putFloat(8, at(3, partialTick)).putFloat(12, extinction);
             float cameraY = frame.cameraBlockY + frame.cameraFraction.y();
-            push.putFloat(16, at(4, partialTick) - cameraY).putFloat(20, at(5, partialTick) - cameraY).putFloat(24, at(6, partialTick)).putFloat(28, REACH);
+            double cameraX = frame.cameraBlockX + frame.cameraFraction.x();
+            double cameraZ = frame.cameraBlockZ + frame.cameraFraction.z();
+            float onLand = at(7, partialTick);
+            float bottom = at(4, partialTick);
+            float top = at(5, partialTick);
+            // The slab the layer can be anywhere in, camera-relative, so the trace only steps through
+            // that: over the map's lowest and highest land, or around the camera for ash haze.
+            float referenceY = ground.referenceY() - cameraY;
+            float low = onLand * (referenceY + ground.lowestGround()) + bottom - BOTTOM_SOFTNESS;
+            // highestTop counts banks and pooling in full, more than the shader raises the top by.
+            float tallest = top - bottom + onLand * FieldGround.MOST_RAISED;
+            float high = onLand * (referenceY + ground.highestTop()) + top + Math.max(TOP_SOFTNESS * tallest, 0.5f);
+            push.putFloat(0, at(1, partialTick)).putFloat(4, at(2, partialTick)).putFloat(8, at(3, partialTick)).putFloat(12, extinction);
+            push.putFloat(16, bottom).putFloat(20, top).putFloat(24, at(6, partialTick)).putFloat(28, REACH);
             // Vanilla's light coordinates: block light and sky light, each 0 to 240.
-            push.putFloat(32, light & 0xFFFF).putFloat(36, light >>> 16 & 0xFFFF).putFloat(40, 0.0f).putFloat(44, 0.0f);
-            push.putFloat(48, 0.0f).putFloat(52, 0.0f).putFloat(56, 0.0f).putFloat(60, 0.0f);
+            push.putFloat(32, light & 0xFFFF).putFloat(36, light >>> 16 & 0xFFFF).putFloat(40, onLand).putFloat(44, referenceY);
+            push.putFloat(48, (float) (ground.originX() - cameraX)).putFloat(52, (float) (ground.originZ() - cameraZ))
+                .putFloat(56, low).putFloat(60, high);
             GpuTextureView marched = march.ensure(context.width(), context.height());
+            GpuTextureView groundView = ground.view();
             try (RenderPass pass = GuardedRenderPass.open(() -> "LiteLights mist field", marched, Optional.empty())) {
                 pass.setPipeline(RenderSystem.getCompiledPipeline(MARCH));
                 context.bindUniforms(pass);
                 pass.setUniform("FieldDepth", context.sceneDepth(), PostContext.nearestSampler());
+                pass.setUniform("FieldGround", groundView, PostContext.linearSampler());
                 pass.pushConstants(push);
                 pass.draw(3, 1, 0, 0);
             }

@@ -37,6 +37,10 @@ final class AmbientParticles {
      * swarmed. Fireflies also follow the amount less steeply than the others (ParticleBudget).
      */
     private static final float FIREFLY_RATE = 1.0f;
+    /** Dust speck spawn attempts a tick: a quarter fewer than before 0.9.8 (fog098; it was 3). */
+    private static final float DUST_RATE = 2.25f;
+    /** Out in a desert's open sun, the share of specks kept on top of that: the sand blowing there is cut as far (fog098). */
+    private static final float OPEN_DESERT_DUST = 0.25f;
 
     private AmbientParticles() {
     }
@@ -103,8 +107,9 @@ final class AmbientParticles {
     /** Specks catch the light: they show where blocks or the sun light the air, and stay out of the dark. */
     private static void dust(Surroundings s, SpawnQueue queue, float scale) {
         RandomSource random = s.random;
-        int attempts = ParticleBudget.countFromRate(3.0f * scale, random.nextFloat());
+        int attempts = ParticleBudget.countFromRate(DUST_RATE * scale, random.nextFloat());
         float across = 18.0f * s.ambientReach;
+        boolean desert = s.climate == BiomeClimate.DESERT;
         for (int i = 0; i < attempts && queue.room(ParticleCategory.AMBIENT) > 0; i++) {
             double x = s.cameraX + (random.nextFloat() - 0.5f) * across;
             double y = s.cameraY + (random.nextFloat() - 0.4f) * 8.0f;
@@ -122,7 +127,7 @@ final class AmbientParticles {
                 continue;
             }
             // Indoors, by a window or a torch, they read best; out in the open they thin out.
-            if (skyLight == 15 && blockLight < 8 && random.nextFloat() < 0.7f) {
+            if (skyLight == 15 && blockLight < 8 && (random.nextFloat() < 0.7f || desert && random.nextFloat() >= OPEN_DESERT_DUST)) {
                 continue;
             }
             int alpha = (int) (110 + 120 * brightness);

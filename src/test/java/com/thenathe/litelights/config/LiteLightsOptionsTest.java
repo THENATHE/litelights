@@ -17,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The built-in options: defaults from the plan, unique ids, and English text for every row. */
@@ -37,7 +38,8 @@ class LiteLightsOptionsTest {
         assertTrue(LiteLightsOptions.PIXEL_LOCK.on());
         assertEquals(LiteLightsOptions.AntiAliasing.OFF, LiteLightsOptions.ANTI_ALIASING.get());
         assertEquals(LiteLightsOptions.Clouds.FANCY, LiteLightsOptions.CLOUDS.get());
-        assertEquals(1, LiteLightsOptions.CLOUD_LAYERS.value());
+        assertEquals(2, LiteLightsOptions.CLOUD_LAYERS.value());
+        assertEquals(LiteLightsOptions.SkyPalette.COMPUTED, LiteLightsOptions.SKY_PALETTE.get());
         assertEquals(LiteLightsOptions.FogLook.HAZE, LiteLightsOptions.FOG_LOOK.get());
         assertEquals(2.0F, LiteLightsOptions.SUNBEAM_STRENGTH.value());
         assertEquals(1.5F, LiteLightsOptions.UNDERWATER_SUNBEAM_STRENGTH.value());
@@ -48,40 +50,46 @@ class LiteLightsOptionsTest {
         assertTrue(LiteLightsOptions.GLINT_METAL_GLASS.on());
         assertFalse(LiteLightsOptions.GLINT_SAND_STONE.on());
         assertEquals(LiteLightsOptions.JumpSplash.ADVANCED, LiteLightsOptions.JUMP_SPLASH.get());
-        assertEquals(LiteLightsOptions.WaterPalette.VANILLA_COLOURS, LiteLightsOptions.WATER_PALETTE.get());
+        assertEquals(LiteLightsOptions.WaterPalette.ENHANCED, LiteLightsOptions.WATER_PALETTE.get());
         assertEquals(0.5F, LiteLightsOptions.GLINT_WATER_SOFTNESS.value());
         assertEquals(0.5F, LiteLightsOptions.GLINT_WATER_INTENSITY.value());
         assertEquals(0.5F, LiteLightsOptions.GLINT_GROUND_SOFTNESS.value());
         assertEquals(0.5F, LiteLightsOptions.GLINT_GROUND_INTENSITY.value());
         assertEquals(LiteLightsOptions.GradeSchedule.BY_TIME_OF_DAY, LiteLightsOptions.GRADE_SCHEDULE.get());
-        assertEquals(256, LiteLightsOptions.SHADOW_REACH.value());
+        assertEquals(192, LiteLightsOptions.SHADOW_REACH.value());
         assertEquals(LiteLightsOptions.ShadowDetail.SHARPEST, LiteLightsOptions.SHADOW_DETAIL.get());
         assertEquals(LiteLightsOptions.ShadowOffset.BALANCED, LiteLightsOptions.SHADOW_OFFSET.get());
         assertFalse(LiteLightsOptions.UNDERWATER_BLUR.on());
         assertEquals(4, LiteLightsOptions.LARGE_WATER_SCALE.value());
-        assertFalse(LiteLightsOptions.SWAY_LEAVES.on());
+        assertTrue(LiteLightsOptions.SWAY_GRASS.on());
+        assertTrue(LiteLightsOptions.SWAY_PLANTS.on());
+        assertTrue(LiteLightsOptions.SWAY_LEAVES.on());
         assertEquals(LiteLightsOptions.PrecipitationLook.LITELIGHTS, LiteLightsOptions.PRECIPITATION.get());
         assertTrue(LiteLightsOptions.STORM_ATMOSPHERE.on());
         assertTrue(LiteLightsOptions.GLASS_WEATHER.on());
         assertEquals(LiteLightsOptions.GlassDetail.TEXELS_16, LiteLightsOptions.GLASS_DETAIL.get());
         assertTrue(LiteLightsOptions.GLASS_FROST.on());
         assertTrue(LiteLightsOptions.GLASS_DUST.on());
-        assertEquals(LiteLightsOptions.FoamMotion.STATIONARY, LiteLightsOptions.FOAM_MOTION.get());
+        assertEquals(LiteLightsOptions.FoamMotion.DRIFTING, LiteLightsOptions.FOAM_MOTION.get());
+        assertTrue(LiteLightsOptions.OCEAN_WAVES.on());
         assertTrue(LiteLightsOptions.RAIN_DRIPS.on());
         assertTrue(LiteLightsOptions.WALL_STREAKS.on());
         assertEquals(10, LiteLightsOptions.OUTLINE_SIZE.value());
         assertEquals(0.8F, LiteLightsOptions.OUTLINE_SATURATION.value());
         assertEquals(0.5F, LiteLightsOptions.OUTLINE_DIFFUSION.value());
         assertTrue(LiteLightsOptions.OUTLINE_WORN_ARMOUR.on());
+        assertTrue(LiteLightsOptions.OUTLINE_HIDE_SHIMMER.on());
         assertEquals(0, LiteLightsConfig.registry().changedCount());
     }
 
     @Test
-    void foamMotionIsAnExperimentalChoiceOnTheWaterPage() {
+    void foamMotionIsAChoiceOnTheWaterPage() {
         assertEquals("water.foam_motion", LiteLightsOptions.FOAM_MOTION.id());
         assertEquals(List.of(LiteLightsOptions.FoamMotion.STATIONARY, LiteLightsOptions.FoamMotion.DRIFTING),
             LiteLightsOptions.FOAM_MOTION.choices());
-        assertEquals("litelights.tag.experimental", LiteLightsOptions.FOAM_MOTION.tagKey());
+        // No longer Experimental since defaults098, like Ocean waves.
+        assertNull(LiteLightsOptions.FOAM_MOTION.tagKey());
+        assertNull(LiteLightsOptions.OCEAN_WAVES.tagKey());
         assertEquals(Pages.WATER, LiteLightsOptions.FOAM_MOTION.page());
         assertEquals(Cost.FREE, LiteLightsOptions.FOAM_MOTION.costOf(LiteLightsOptions.FoamMotion.STATIONARY));
         assertEquals(Cost.LOW, LiteLightsOptions.FOAM_MOTION.costOf(LiteLightsOptions.FoamMotion.DRIFTING));
@@ -111,12 +119,13 @@ class LiteLightsOptionsTest {
         assertEquals(2.0F, LiteLightsOptions.WAVE_FOAM.max());
         assertEquals(LiteLightsOptions.OCEAN_WAVES, LiteLightsOptions.SHORE_RUN_UP.needs());
         assertEquals(LiteLightsOptions.OCEAN_WAVES, LiteLightsOptions.WAVE_FOAM.needs());
-        // Ocean waves is off by default, so both rows start greyed out.
-        assertFalse(LiteLightsOptions.SHORE_RUN_UP.active());
-        assertFalse(LiteLightsOptions.WAVE_FOAM.active());
-        LiteLightsOptions.OCEAN_WAVES.set(true);
+        // Ocean waves is on by default, so both rows start usable, and grey out with it off.
         assertTrue(LiteLightsOptions.SHORE_RUN_UP.active());
         assertTrue(LiteLightsOptions.WAVE_FOAM.active());
+        LiteLightsOptions.OCEAN_WAVES.set(false);
+        assertFalse(LiteLightsOptions.SHORE_RUN_UP.active());
+        assertFalse(LiteLightsOptions.WAVE_FOAM.active());
+        LiteLightsOptions.OCEAN_WAVES.reset();
         // The run-up moves in quarter blocks.
         LiteLightsOptions.SHORE_RUN_UP.set(1.6F);
         assertEquals(1.5F, LiteLightsOptions.SHORE_RUN_UP.value(), 1.0E-6);

@@ -72,9 +72,9 @@ public final class WakeField {
     private static final float FOAM_KEEP = 0.972f;
     /** How much foam spreads to its neighbours each tick, so trails widen as they age. */
     private static final float FOAM_SPREAD = 0.035f;
-    /** Crests higher than this whiten, more the higher they are. */
+    /** Crests higher than this whiten, more the higher they are (the rate was 0.6 before 0.9.8, 0.7 before 0.9.7). */
     private static final float CREST_FOAM_FROM = 0.1f;
-    private static final float CREST_FOAM_RATE = 0.6f;
+    private static final float CREST_FOAM_RATE = 0.5f;
 
     /** Smaller than this is flat water: the area with waves in it stops growing and ends. */
     private static final float QUIET_HEIGHT = 0.5f / HEIGHT_STEPS;

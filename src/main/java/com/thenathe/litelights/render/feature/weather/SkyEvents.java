@@ -28,11 +28,12 @@ import org.joml.Vector4f;
 import org.lwjgl.system.MemoryUtil;
 
 /**
- * The night sky's events: an aurora over cold biomes, meteor showers and distant fireworks. Drawn
- * into the main target just after vanilla's sky and before terrain, so terrain and clouds cover
- * them and they sit at the sky's distance.
+ * The night sky's events drawn as geometry: an aurora over cold biomes and distant fireworks.
+ * Drawn into the main target just after vanilla's sky and before terrain, so terrain and clouds
+ * cover them and they sit at the sky's distance. (A meteor shower's streaks are the sky shader's,
+ * beside the falling stars.)
  *
- * <p>Which nights bring what, and when each meteor and burst happens, comes from
+ * <p>Which nights bring what, and when each burst happens, comes from
  * {@link SkyEventSchedule}, and the aurora's curtains from {@link AuroraCurtains}; this class only
  * turns that into at most several hundred quads a frame. The vertex data goes into one reused
  * native buffer and one GPU buffer that grows only if needed.
@@ -43,8 +44,14 @@ public final class SkyEvents {
     private static final int SPARKS_PER_BURST = 40;
     /** Each spark draws itself and a short trail of earlier positions. */
     private static final int TRAIL = 4;
-    /** At most two meteors and three bursts show at once; a meteor is a streak and a head, a burst its sparks, a flash and a glow. */
-    private static final int MAX_QUADS = AuroraCurtains.MAX_QUADS + 3 * 2 + 4 * (SPARKS_PER_BURST * TRAIL + 2);
+    /**
+     * At most a volley of three bursts shows at once, and in the busier preview two bursts of the
+     * volley before can still be fading; a burst is its sparks, a flash and a glow.
+     */
+    private static final int MAX_BURSTS = SkyEventSchedule.MAX_VOLLEY + 2;
+    private static final int MAX_QUADS = AuroraCurtains.MAX_QUADS + MAX_BURSTS * (SPARKS_PER_BURST * TRAIL + 2);
+    /** A previewed show's first burst goes off this many ticks after the preview is chosen. */
+    private static final int PREVIEW_FIRST_BURST_TICKS = 10;
     /** Firework glows are told apart from sparks in the shader by their texture coordinates, which start here. */
     private static final float GLOW_UV = 10.0f;
     private static final int VERTEX_SIZE = DefaultVertexFormat.POSITION_TEX_COLOR.getVertexSize();
@@ -88,7 +95,7 @@ public final class SkyEvents {
         .build();
 
     private final ByteBuffer vertices = MemoryUtil.memAlloc(MAX_QUADS * 4 * VERTEX_SIZE);
-    private final float[] event = new float[6];
+    private final float[] event = new float[5];
     private final AuroraCurtains curtains = new AuroraCurtains();
     private final AuroraCurtains.Sink sink = this::vertex;
     private GpuBuffer gpuBuffer;
@@ -98,10 +105,16 @@ public final class SkyEvents {
     private int auroraQuads;
     private int sparkQuads;
     private long lastFireworkSound = Long.MIN_VALUE;
+    /** The event the settings screen previewed last frame, to notice when fireworks are chosen. */
+    private PreviewEvent.Event previewed;
+    /**
+     * Ticks the fireworks' schedule runs behind the game while their preview shows: set when the
+     * preview is chosen, so its first burst goes off half a second later. 0 on a real night.
+     */
+    private long fireworksDelay;
 
     // Inputs for this frame, set by update() on the client thread before the level draws.
     private float auroraStrength;
-    private boolean meteorsOn;
     private boolean fireworksOn;
     private long seed;
     private long nightSeed;
@@ -157,14 +170,17 @@ public final class SkyEvents {
             // The settings screen previews one event tonight, wherever the player is and in front
             // of them; the night's own events are left out meanwhile so the preview shows just the one.
             night = SkyEventSchedule.preview(index, preview, PreviewEvent.bearing(), PreviewEvent.elevation());
+            if (preview == PreviewEvent.Event.FIREWORKS && previewed != PreviewEvent.Event.FIREWORKS) {
+                fireworksDelay = SkyEventSchedule.previewDelay(worldSeed, night, (long) gameTicks, PREVIEW_FIRST_BURST_TICKS);
+            }
             auroraStrength = show && settings.polarLights() ? night.auroraStrength() * visibility : 0.0f;
-            meteorsOn = show && settings.meteorNights() && night.meteorShower();
             fireworksOn = show && settings.farFireworks() && night.fireworks();
         } else {
+            fireworksDelay = 0;
             auroraStrength = show && settings.polarLights() ? night.auroraStrength() * coldness * visibility : 0.0f;
-            meteorsOn = show && settings.meteorNights() && night.meteorShower();
             fireworksOn = show && settings.farFireworks() && night.fireworks() && SkyEventSchedule.fireworksHour(clockTime);
         }
+        previewed = preview;
         this.visibility = visibility;
     }
 
@@ -174,21 +190,27 @@ public final class SkyEvents {
      * Returns the burst's azimuth through {@code out[0]}.
      */
     public boolean burstStartedAt(long tick, float[] out) {
-        if (!fireworksOn || tick % SkyEventSchedule.FIREWORK_SLOT_TICKS != 0 || tick == lastFireworkSound) {
+        if (!fireworksOn || tick == lastFireworkSound) {
             return false;
         }
-        if (!SkyEventSchedule.firework(seed, night, tick / SkyEventSchedule.FIREWORK_SLOT_TICKS, out)) {
-            return false;
+        long showTick = tick - fireworksDelay;
+        long beat = Math.floorDiv(showTick, SkyEventSchedule.beatTicks(night));
+        int bursts = SkyEventSchedule.volleySize(seed, night, beat);
+        for (int burst = 0; burst < bursts; burst++) {
+            if (SkyEventSchedule.burstTick(seed, night, beat, burst) == showTick) {
+                SkyEventSchedule.firework(seed, night, beat, burst, out);
+                lastFireworkSound = tick;
+                return true;
+            }
         }
-        lastFireworkSound = tick;
-        return true;
+        return false;
     }
 
     /** From LiteRenderEvents.AFTER_SKY: builds and draws this frame's events, if any. */
     public void draw(RenderTarget target, FrameState frame) {
         auroraQuads = 0;
         sparkQuads = 0;
-        if (auroraStrength <= 0.0f && !meteorsOn && !fireworksOn) {
+        if (auroraStrength <= 0.0f && !fireworksOn) {
             return;
         }
         vertices.clear();
@@ -196,9 +218,6 @@ public final class SkyEvents {
             buildAurora(frame.time.y);
         }
         int auroraVertices = vertices.position() / VERTEX_SIZE;
-        if (meteorsOn) {
-            buildMeteors();
-        }
         if (fireworksOn) {
             buildFireworks();
         }
@@ -247,74 +266,52 @@ public final class SkyEvents {
         curtains.build(shape, night.auroraStrength(), auroraStrength, night.auroraBearing(), seconds, sink);
     }
 
-    private void buildMeteors() {
-        long newestSlot = Math.floorDiv((long) gameTime, SkyEventSchedule.METEOR_SLOT_TICKS);
-        long oldestSlot = Math.floorDiv((long) gameTime - SkyEventSchedule.METEOR_TICKS, SkyEventSchedule.METEOR_SLOT_TICKS);
-        for (long slot = oldestSlot; slot <= newestSlot; slot++) {
-            if (!SkyEventSchedule.meteor(seed, night, slot, event)) {
-                continue;
+    private void buildFireworks() {
+        double showTime = gameTime - fireworksDelay;
+        int beatTicks = SkyEventSchedule.beatTicks(night);
+        long newestBeat = Math.floorDiv((long) showTime, beatTicks);
+        long oldestBeat = Math.floorDiv((long) showTime - SkyEventSchedule.FIREWORK_TICKS, beatTicks);
+        for (long beat = oldestBeat; beat <= newestBeat; beat++) {
+            int bursts = SkyEventSchedule.volleySize(seed, night, beat);
+            for (int burst = 0; burst < bursts; burst++) {
+                double age = showTime - SkyEventSchedule.burstTick(seed, night, beat, burst);
+                if (age >= 0.0 && age <= SkyEventSchedule.FIREWORK_TICKS) {
+                    SkyEventSchedule.firework(seed, night, beat, burst, event);
+                    drawBurst(age);
+                }
             }
-            double age = gameTime - slot * SkyEventSchedule.METEOR_SLOT_TICKS;
-            if (age < 0.0 || age > SkyEventSchedule.METEOR_TICKS) {
-                continue;
-            }
-            float progress = (float) (age / SkyEventSchedule.METEOR_TICKS);
-            boolean fireball = event[5] > 0.5f;
-            float heading = event[3];
-            float travel = event[2] * progress;
-            float elevationScale = 1.0f / Math.max(0.3f, (float) Math.cos(event[1]));
-            float headAzimuth = event[0] + (float) Math.cos(heading) * travel * elevationScale;
-            float headElevation = event[1] + (float) Math.sin(heading) * travel;
-            // The trail grows quickly to most of the way back to where the meteor started.
-            float tail = event[2] * 0.75f * Math.min(1.0f, progress * 2.5f);
-            float tailAzimuth = headAzimuth - (float) Math.cos(heading) * tail * elevationScale;
-            float tailElevation = headElevation - (float) Math.sin(heading) * tail;
-            float brightness = Math.min(1.0f, event[4] * (float) Math.sqrt(Math.sin(Math.PI * progress)) * (fireball ? 1.3f : 1.0f)) * visibility;
-            streak(tailAzimuth, tailElevation, headAzimuth, headElevation, fireball ? 1.3f : 0.85f, 0xFFF4DC, brightness);
-            // A bright head leads the trail; a fireball's burns green.
-            spark(headAzimuth, headElevation, fireball ? 2.0f : 1.3f, fireball ? 0xC8FFD2 : 0xFFFBEE, brightness);
         }
     }
 
-    private void buildFireworks() {
-        long newestSlot = Math.floorDiv((long) gameTime, SkyEventSchedule.FIREWORK_SLOT_TICKS);
-        long oldestSlot = Math.floorDiv((long) gameTime - SkyEventSchedule.FIREWORK_TICKS, SkyEventSchedule.FIREWORK_SLOT_TICKS);
-        for (long slot = oldestSlot; slot <= newestSlot; slot++) {
-            if (!SkyEventSchedule.firework(seed, night, slot, event)) {
+    /** One burst {@code age} ticks after it went off, from the values in {@link #event}. */
+    private void drawBurst(double age) {
+        float life = (float) (age / SkyEventSchedule.FIREWORK_TICKS);
+        int color = FIREWORK_COLORS[(int) event[3]];
+        long pattern = (long) event[4];
+        float fade = (1.0f - life * life) * visibility;
+        float widthScale = 1.0f / Math.max(0.3f, (float) Math.cos(event[1]));
+        if (age < 5.0) {
+            // The burst's first flash.
+            spark(event[0], event[1], 2.6f * (float) (1.0 - age / 5.0) + 0.7f, 0xFFF6E0, visibility);
+        }
+        // A soft glow in the burst's colour, the smoke and haze around it lit up, so the burst
+        // reads from far away.
+        glow(event[0], event[1], event[2] * SKY_RADIUS * 1.9f, color, 0.3f * fade * (1.0f - life));
+        for (int spark = 0; spark < SPARKS_PER_BURST; spark++) {
+            long sparkHash = SkyEventSchedule.mix(pattern, spark);
+            // Late in the burst, sparks twinkle out one by one.
+            if (life > 0.6f && SkyEventSchedule.unit(SkyEventSchedule.mix(sparkHash, (long) age)) < life - 0.45f) {
                 continue;
             }
-            double age = gameTime - slot * SkyEventSchedule.FIREWORK_SLOT_TICKS;
-            if (age < 0.0 || age > SkyEventSchedule.FIREWORK_TICKS) {
-                continue;
-            }
-            float life = (float) (age / SkyEventSchedule.FIREWORK_TICKS);
-            int color = FIREWORK_COLORS[(int) event[3]];
-            long pattern = (long) event[4];
-            float fade = (1.0f - life * life) * visibility;
-            float widthScale = 1.0f / Math.max(0.3f, (float) Math.cos(event[1]));
-            if (age < 5.0) {
-                // The burst's first flash.
-                spark(event[0], event[1], 3.4f * (float) (1.0 - age / 5.0) + 0.8f, 0xFFF6E0, visibility);
-            }
-            // A soft glow in the burst's colour, the smoke and haze around it lit up, so the burst
-            // reads from far away.
-            glow(event[0], event[1], event[2] * SKY_RADIUS * 1.9f, color, 0.3f * fade * (1.0f - life));
-            for (int spark = 0; spark < SPARKS_PER_BURST; spark++) {
-                long sparkHash = SkyEventSchedule.mix(pattern, spark);
-                // Late in the burst, sparks twinkle out one by one.
-                if (life > 0.6f && SkyEventSchedule.unit(SkyEventSchedule.mix(sparkHash, (long) age)) < life - 0.45f) {
-                    continue;
-                }
-                float angle = (float) ((spark + SkyEventSchedule.unit(sparkHash) * 0.8) / SPARKS_PER_BURST * Math.PI * 2.0);
-                float reachShare = 0.35f + 0.65f * (float) SkyEventSchedule.unit(SkyEventSchedule.mix(sparkHash, 13));
-                for (int trail = 0; trail < TRAIL; trail++) {
-                    double sampleAge = Math.max(0.0, age - trail * 2.5);
-                    float spread = event[2] * reachShare * (1.0f - (float) Math.exp(-sampleAge / 5.0));
-                    float droop = (float) (sampleAge * sampleAge) * 0.00005f;
-                    float azimuth = event[0] + (float) Math.cos(angle) * spread * widthScale;
-                    float elevation = event[1] + (float) Math.sin(angle) * spread - droop;
-                    spark(azimuth, elevation, trail == 0 ? 0.95f : 0.7f, color, fade * (trail == 0 ? 1.0f : 0.5f / trail));
-                }
+            float angle = (float) ((spark + SkyEventSchedule.unit(sparkHash) * 0.8) / SPARKS_PER_BURST * Math.PI * 2.0);
+            float reachShare = 0.35f + 0.65f * (float) SkyEventSchedule.unit(SkyEventSchedule.mix(sparkHash, 13));
+            for (int trail = 0; trail < TRAIL; trail++) {
+                double sampleAge = Math.max(0.0, age - trail * 2.5);
+                float spread = event[2] * reachShare * (1.0f - (float) Math.exp(-sampleAge / 5.0));
+                float droop = (float) (sampleAge * sampleAge) * 0.00003f;
+                float azimuth = event[0] + (float) Math.cos(angle) * spread * widthScale;
+                float elevation = event[1] + (float) Math.sin(angle) * spread - droop;
+                spark(azimuth, elevation, trail == 0 ? 0.8f : 0.6f, color, fade * (trail == 0 ? 1.0f : 0.5f / trail));
             }
         }
     }
@@ -349,46 +346,11 @@ public final class SkyEvents {
         vertex(cx - (rightX + upX) * half, cy - upY * half, cz - (rightZ + upZ) * half, low, low, rgb, alpha);
     }
 
-    /** A meteor: a thin quad from tail (dark) to head (bright). */
-    private void streak(float tailAzimuth, float tailElevation, float headAzimuth, float headElevation, float width, int rgb, float alpha) {
-        float[] tail = direction(tailAzimuth, tailElevation);
-        float tx = tail[0];
-        float ty = tail[1];
-        float tz = tail[2];
-        float[] head = direction(headAzimuth, headElevation);
-        // Across the streak: perpendicular to both its line and the view toward it.
-        float lineX = head[0] - tx;
-        float lineY = head[1] - ty;
-        float lineZ = head[2] - tz;
-        float acrossX = lineY * head[2] - lineZ * head[1];
-        float acrossY = lineZ * head[0] - lineX * head[2];
-        float acrossZ = lineX * head[1] - lineY * head[0];
-        float length = (float) Math.sqrt(acrossX * acrossX + acrossY * acrossY + acrossZ * acrossZ);
-        if (length < 1.0e-6f) {
-            return;
-        }
-        float scale = width * 0.5f / length;
-        acrossX *= scale;
-        acrossY *= scale;
-        acrossZ *= scale;
-        float r = SKY_RADIUS;
-        vertex(tx * r - acrossX, ty * r - acrossY, tz * r - acrossZ, 0.0f, -1.0f, rgb, 0.0f);
-        vertex(tx * r + acrossX, ty * r + acrossY, tz * r + acrossZ, 0.0f, 1.0f, rgb, 0.0f);
-        vertex(head[0] * r + acrossX, head[1] * r + acrossY, head[2] * r + acrossZ, 0.0f, 1.0f, rgb, alpha);
-        vertex(head[0] * r - acrossX, head[1] * r - acrossY, head[2] * r - acrossZ, 0.0f, -1.0f, rgb, alpha);
-    }
+    private final float[] direction = new float[3];
 
-    private final float[] directionA = new float[3];
-    private final float[] directionB = new float[3];
-    private boolean useB;
-
-    /**
-     * Unit direction for an azimuth (0 north, toward -z, turning east toward +x) and an elevation.
-     * Alternates between two scratch arrays so a caller can hold two directions at once.
-     */
+    /** Unit direction for an azimuth (0 north, toward -z, turning east toward +x) and an elevation, in a scratch array. */
     private float[] direction(float azimuth, float elevation) {
-        float[] out = useB ? directionB : directionA;
-        useB = !useB;
+        float[] out = direction;
         float horizontal = (float) Math.cos(elevation);
         out[0] = (float) Math.sin(azimuth) * horizontal;
         out[1] = (float) Math.sin(elevation);

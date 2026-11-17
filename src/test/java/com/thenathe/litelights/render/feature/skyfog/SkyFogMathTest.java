@@ -140,4 +140,28 @@ class SkyFogMathTest {
         assertEquals(0xFF0000, LiteMath.mixRgb(0xFF0000, 0x00FF00, 0.0f));
         assertEquals(0x00FF00, LiteMath.mixRgb(0xFF0000, 0x00FF00, 1.0f));
     }
+
+    @Test
+    void stormFogIsClearCloseByAndAsThickFarOff() {
+        float density = 0.086f;
+        assertEquals(0.0f, SkyFogMath.stormDepth(0.0f, density), 1.0e-6f);
+        // A blizzard's snow ten blocks out: well under half the fog an even fog put over it.
+        assertTrue(SkyFogMath.stormDepth(10.0f, density) < 0.5f * density * 10.0f);
+        // Fifty blocks out about as thick as before, and further thicker, so the distance still closes in.
+        assertEquals(density * 50.0f, SkyFogMath.stormDepth(50.0f, density), 0.1f * density * 50.0f);
+        assertTrue(SkyFogMath.stormDepth(80.0f, density) > density * 80.0f);
+        // The particles' fog cull never drops anything the fog doesn't hide.
+        float hidden = 4.2f;
+        float beyond = SkyFogMath.stormDistanceBeyond(hidden, density);
+        assertTrue(SkyFogMath.stormDepth(beyond, density) >= hidden);
+    }
+
+    @Test
+    void theSunIsGoneOnlyOnceItHasSet() {
+        assertEquals(0.0f, SkyFogMath.sunGone(0.5f));
+        assertEquals(0.0f, SkyFogMath.sunGone(0.03f));
+        assertTrue(SkyFogMath.sunGone(0.0f) > 0.1f && SkyFogMath.sunGone(0.0f) < 0.4f);
+        assertEquals(1.0f, SkyFogMath.sunGone(-0.08f));
+        assertEquals(1.0f, SkyFogMath.sunGone(-0.5f));
+    }
 }

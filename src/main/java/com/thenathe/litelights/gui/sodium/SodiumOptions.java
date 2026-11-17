@@ -3,9 +3,11 @@ package com.thenathe.litelights.gui.sodium;
 import com.thenathe.litelights.LiteLightsClient;
 import com.thenathe.litelights.config.BoolOption;
 import com.thenathe.litelights.config.EnumOption;
+import com.thenathe.litelights.config.FarTerrainReach;
 import com.thenathe.litelights.config.FloatOption;
 import com.thenathe.litelights.config.IntOption;
 import com.thenathe.litelights.config.LiteLightsConfig;
+import com.thenathe.litelights.config.LiteLightsOptions;
 import com.thenathe.litelights.config.Option;
 import com.thenathe.litelights.config.Pages;
 import com.thenathe.litelights.config.RowState;
@@ -81,8 +83,12 @@ public final class SodiumOptions implements ConfigEntryPoint {
                 if (built == null) {
                     continue;
                 }
-                groups.computeIfAbsent(groupKey(option), key -> builder.createOptionGroup()
-                        .setName(groupName(info.id(), option))).addOption(built);
+                OptionGroupBuilder group = groups.computeIfAbsent(groupKey(option), key -> builder.createOptionGroup()
+                        .setName(groupName(info.id(), option)));
+                group.addOption(built);
+                if (option == LiteLightsOptions.SHADOW_REACH && FarTerrainReach.available()) {
+                    group.addOption(calculateDistanceButton(builder));
+                }
             }
             if (groups.isEmpty()) {
                 continue;
@@ -101,6 +107,24 @@ public final class SodiumOptions implements ConfigEntryPoint {
                 .setName(Component.translatable("litelights.sodium.open"))
                 .setTooltip(Component.translatable("litelights.sodium.open.tooltip"))
                 .setScreenConsumer(SodiumOptions::openLiteLights);
+    }
+
+    /**
+     * The Shadows page's Calculate distance, under Reach. Sodium's buttons are made to open a
+     * screen; this one sets Reach instead and stays on Sodium's page.
+     */
+    private static OptionBuilder calculateDistanceButton(ConfigBuilder builder) {
+        int chunks = FarTerrainReach.renderDistance();
+        Option<?> reach = LiteLightsOptions.SHADOW_REACH;
+        return builder.createExternalButtonOption(LiteLightsClient.id("shadows.calculate_distance"))
+                .setName(Component.translatable("litelights.shadows.calculate_distance.button"))
+                .setTooltip(Component.translatable("litelights.shadows.calculate_distance.description", chunks,
+                        FarTerrainReach.forRenderDistance(chunks)))
+                .setEnabledProvider(state -> enabled(reach, state), LiteLightsClient.id(LiteLightsOptions.WORLD_SHADOWS.id()))
+                .setScreenConsumer(parent -> {
+                    FarTerrainReach.apply();
+                    LiteLightsConfig.saveIfChanged();
+                });
     }
 
     private static void openLiteLights(Screen parent) {

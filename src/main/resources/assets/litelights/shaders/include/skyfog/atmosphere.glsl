@@ -74,6 +74,16 @@ float lite_mist_depth(vec3 position, float distance) {
     return depth * smoothstep(3.0, 20.0, distance) * lite_wisps(position, distance);
 }
 
+// Storm fog is thin close to the eye and reaches its full density over the first dozen blocks, so a
+// heavy storm's snow, sand and rain show around the player while the distance closes in (fog098).
+// Past about 50 blocks it hides as much as an even fog did; SkyFogMath.stormDepth mirrors it.
+const float LITE_STORM_CLEAR = 12.0;
+const float LITE_STORM_FAR_GAIN = 1.3;
+
+float lite_storm_depth(float distance) {
+    return LiteStormFog.a * LITE_STORM_FAR_GAIN * (distance - LITE_STORM_CLEAR * (1.0 - exp(-distance / LITE_STORM_CLEAR)));
+}
+
 // The render-distance fade: cylindrical like vanilla's, over the last quarter of the render
 // distance, easing in so the edge of the loaded land has no visible start.
 float lite_edge_fog(vec3 position) {
@@ -99,7 +109,7 @@ vec4 lite_air(vec3 position, float skyLight) {
     float distance = max(length(position), 1.0e-3);
     float haze = lite_haze_depth(position, distance);
     float mist = lite_feature(LITE_FEATURE_GROUND_MIST) ? lite_mist_depth(position, distance) : 0.0;
-    float storm = lite_feature(LITE_FEATURE_STORM_FOG) ? LiteStormFog.a * distance : 0.0;
+    float storm = lite_feature(LITE_FEATURE_STORM_FOG) ? lite_storm_depth(distance) : 0.0;
     float total = haze + mist + storm;
     if (total <= 1.0e-5) {
         return vec4(0.0);

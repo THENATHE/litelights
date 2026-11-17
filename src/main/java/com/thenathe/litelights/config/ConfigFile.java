@@ -40,6 +40,8 @@ public final class ConfigFile {
     private final OptionRegistry registry;
     private final ConfigMigrations migrations;
     private JsonObject root = new JsonObject();
+    /** Whether the last load found no file at all: a fresh install (FirstSetup). */
+    private boolean startedWithoutFile;
 
     public ConfigFile(Path path, OptionRegistry registry, ConfigMigrations migrations) {
         this.path = path;
@@ -53,6 +55,7 @@ public final class ConfigFile {
 
     public synchronized void load() {
         root = new JsonObject();
+        startedWithoutFile = !Files.exists(path);
         if (!Files.isRegularFile(path)) {
             registry.acceptStored(null, null);
             return;
@@ -129,6 +132,14 @@ public final class ConfigFile {
             modules.add(id, module);
         }
         return module;
+    }
+
+    /**
+     * Whether there was no settings file when it was loaded, as on a fresh install. A file that
+     * couldn't be read and was moved aside doesn't count: its player has been here before.
+     */
+    public synchronized boolean startedWithoutFile() {
+        return startedWithoutFile;
     }
 
     /** Whether the file has data for this module, for one-time imports from older mods. */

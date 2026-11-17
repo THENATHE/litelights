@@ -26,6 +26,9 @@ import net.minecraft.world.level.dimension.DimensionType;
  * wind, and the settings in force.
  */
 public final class Surroundings {
+    /** Blocks a tick: faster than flying in spectator mode, so a jump this long is a teleport. */
+    private static final float LONGEST_MOVE = 8.0f;
+
     public ClientLevel level;
     public RenderSettings settings;
     public final RandomSource random = RandomSource.create();
@@ -34,6 +37,14 @@ public final class Surroundings {
     public double cameraX;
     public double cameraY;
     public double cameraZ;
+    /**
+     * How far the camera moved since the last tick, in blocks (x, z): what the haze spawners lead
+     * with when the player sprints or flies. A jump of more than {@link #LONGEST_MOVE} (a teleport,
+     * a respawn) counts as standing still.
+     */
+    public float motionX;
+    public float motionZ;
+    private boolean hasLastCamera;
     /** Horizontal direction the camera faces, as a unit vector (x, z). */
     public float forwardX;
     public float forwardZ;
@@ -71,12 +82,22 @@ public final class Surroundings {
     public float ambientFill = 1.0f;
 
     void update(ClientLevel currentLevel, Camera camera, RenderSettings currentSettings) {
+        boolean sameLevel = level == currentLevel && hasLastCamera;
+        double lastX = cameraX;
+        double lastZ = cameraZ;
         level = currentLevel;
         settings = currentSettings;
         cameraX = camera.position().x;
         cameraY = camera.position().y;
         cameraZ = camera.position().z;
         cursor.set(cameraX, cameraY, cameraZ);
+        motionX = sameLevel ? (float) (cameraX - lastX) : 0.0f;
+        motionZ = sameLevel ? (float) (cameraZ - lastZ) : 0.0f;
+        if (motionX * motionX + motionZ * motionZ > LONGEST_MOVE * LONGEST_MOVE) {
+            motionX = 0.0f;
+            motionZ = 0.0f;
+        }
+        hasLastCamera = true;
         float yaw = (float) Math.toRadians(camera.yRot());
         forwardX = -(float) Math.sin(yaw);
         forwardZ = (float) Math.cos(yaw);

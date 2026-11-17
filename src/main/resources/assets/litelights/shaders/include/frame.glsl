@@ -20,7 +20,7 @@ layout(std140) uniform LiteFrame {
     vec4 LiteAmbientColor;           // rgb tint of sky light in shadow, a = night factor 0..1
     ivec4 LiteCameraBlock;           // camera block position, w = dimension kind (see LITE_DIMENSION_*)
     vec4 LiteCameraFraction;         // camera position minus LiteCameraBlock; w unused
-    vec4 LiteTime;                   // x day fraction 0..1, y seconds wrapped at 3600, z the falling-star preview's elevation in radians (0 = no preview), w its bearing (radians from north, turning east)
+    vec4 LiteTime;                   // x day fraction 0..1, y seconds wrapped at 3600, z the falling-star or meteor-shower preview's elevation in radians (0 = no preview), w its bearing (radians from north, turning east)
     vec4 LiteWeather;                // x rain 0..1, y thunder 0..1; z, w unused
     vec4 LiteShadowParams;           // x darkness, y sky light a full shadow takes (ShadowDepth), z sunlight colour, w reach in blocks
     vec4 LiteShadowMapInfo;          // x sun map size, y blocks per sun texel, z mob map size, w blocks per mob texel
@@ -46,7 +46,7 @@ layout(std140) uniform LiteFrame {
 };
 
 // LiteFlags.x
-// In bit order, with their owner; free: 3 and 10 to 13. Mirrored in FrameFlags.
+// In bit order, with their owner; free: 3, 12 and 13. Mirrored in FrameFlags.
 const int LITE_FEATURE_SHADOWS = 1;                // core-render
 const int LITE_FEATURE_ENHANCED_LIGHT = 2;         // light-post (set by core-render)
 const int LITE_FEATURE_MOB_SHADOWS = 4;            // core-render
@@ -57,6 +57,7 @@ const int LITE_FEATURE_MOB_MAP = 128;              // core-render
 const int LITE_FEATURE_SUN_MAP_FADING = 256;       // core-render
 const int LITE_FEATURE_ENHANCED_SHADOWS = 512;     // core-render
 const int LITE_FEATURE_MARK_NEAR = 1 << 10;        // far-terrain: opaque LiteLights surfaces write LITE_NEAR_ALPHA (see far_terrain.glsl)
+const int LITE_FEATURE_METEOR_SHOWER = 1 << 11;    // sky-fog: tonight is a meteor shower night (or its preview)
 const int LITE_FEATURE_STORM_FOG = 1 << 14;        // sky-fog
 const int LITE_FEATURE_DARK_DISC = 1 << 15;        // sky-fog: camera below the horizon height, the sky below it is dark
 const int LITE_FEATURE_SHOOTING_STARS = 1 << 16;   // sky-fog

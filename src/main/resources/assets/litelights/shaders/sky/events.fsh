@@ -39,6 +39,15 @@ const vec3 LITE_AURORA_GREEN = vec3(0.2, 1.0, 0.45);
 const vec3 LITE_AURORA_TEAL = vec3(0.16, 0.82, 0.62);
 const vec3 LITE_AURORA_RED = vec3(0.82, 0.16, 0.42);
 
+// One ray's own brightness (x) and how high it reaches before it fades (y).
+vec2 lite_aurora_ray(float ray, float along, float time) {
+    float flicker = 0.65 + 0.35 * sin(time * (0.3 + lite_sin_hash(ray) * 0.5) + lite_sin_hash(ray + 7.0) * 6.2831);
+    float bundle = 0.55 + 0.45 * sin(along * 0.11 + lite_sin_hash(floor(along / 9.0)) * 6.2831 + time * 0.06);
+    // A soft glow under the rays, as in photographs: not all the light is in the rays.
+    float strength = 0.3 + 0.7 * mix(0.45, 1.0, lite_sin_hash(ray + 3.0)) * flicker * bundle;
+    return vec2(strength, mix(0.45, 1.0, lite_sin_hash(ray + 11.0)));
+}
+
 void main() {
     float time = LiteTime.y;
     float along = texCoord0.x;
@@ -48,17 +57,20 @@ void main() {
     float height = floor(clamp(texCoord0.y, 0.0, 1.0) * rows + 0.5) / rows;
     float group = exp2(clamp(ceil(log2(max(fwidth(along), 1.0e-5) * 3.0)), -3.0, 6.0));
 
-    float ray = floor(along / group) * group;
-    float flicker = 0.65 + 0.35 * sin(time * (0.3 + lite_sin_hash(ray) * 0.5) + lite_sin_hash(ray + 7.0) * 6.2831);
-    float bundle = 0.55 + 0.45 * sin(along * 0.11 + lite_sin_hash(floor(along / 9.0)) * 6.2831 + time * 0.06);
-    // A soft glow under the rays, as in photographs: not all the light is in the rays.
-    float rayStrength = 0.3 + 0.7 * mix(0.45, 1.0, lite_sin_hash(ray + 3.0)) * flicker * bundle;
+    // Each ray blends into the next over the middle of its width, so the rays read as soft
+    // streaks rather than hard bars.
+    float position = along / group - 0.5;
+    float ray = floor(position) * group;
+    vec2 rayValues = mix(lite_aurora_ray(ray, along, time), lite_aurora_ray(ray + group, along, time),
+        smoothstep(0.2, 0.8, fract(position)));
+    float rayStrength = rayValues.x;
+    float reach = rayValues.y;
     float ripple = 0.75 + 0.25 * sin(along * 0.045 - time * 0.3);
-    // How high this ray reaches before it fades.
-    float reach = mix(0.45, 1.0, lite_sin_hash(ray + 11.0));
 
-    float fringe = vertexColor.r * exp(-pow((height - 0.03) / 0.03, 2.0));
-    float body = smoothstep(0.02, 0.07, height) * exp(-max(height - 0.07, 0.0) / (0.2 * reach));
+    // The lower edge is soft: the fringe and the green body fade in over a band of rows rather
+    // than starting at a line.
+    float fringe = vertexColor.r * exp(-pow((height - 0.03) / 0.036, 2.0));
+    float body = smoothstep(0.012, 0.085, height) * exp(-max(height - 0.075, 0.0) / (0.2 * reach));
     float tops = vertexColor.g * smoothstep(0.25, 0.5, height) * (1.0 - smoothstep(0.55 * reach + 0.3, 0.98, height));
 
     vec3 green = mix(LITE_AURORA_YELLOW_GREEN, LITE_AURORA_GREEN, smoothstep(0.05, 0.2, height));
@@ -73,7 +85,7 @@ void main() {
     fragColor = vec4(color * vertexColor.a * 0.95, 1.0);
 }
 #else
-// Meteors and firework sparks: texCoord0 runs -1..1 across the quad. A bright core with a dimmer
+// Firework sparks: texCoord0 runs -1..1 across the quad. A bright core with a dimmer
 // rim, in two steps. Firework glows run 9..11 instead: a soft round falloff in four steps.
 void main() {
     if (texCoord0.x > 5.0) {

@@ -248,8 +248,17 @@ vec3 lite_swash_water(vec3 light, out vec3 hue) {
     return mean * tint * light;
 }
 
-// The swash: a thin sheet of water and foam that runs up the beach after each wave and slides back,
-// on the top faces of the beach blocks at the water's level (sand, gravel, stone, anything).
+// The swash's timing (fog098). The surf's foam leads its crest by about this share of a wave (the
+// whitened band around the breaking crest), so the sheet starts up the sand as that leading edge
+// reaches the waterline instead of after the crest itself has: before, it read as delayed.
+const float LITE_SWASH_LEAD = 0.15;
+// The share of a wave the sheet takes to run up. Short enough that its front leaves the waterline at
+// about the foam's own speed, carrying the foam on up the beach, then slows and slides back.
+const float LITE_SWASH_RUN_UP = 0.22;
+
+// The swash: a thin sheet of water and foam that runs up the beach with each wave's leading foam and
+// slides back after it, on the top faces of the beach blocks at the water's level (sand, gravel,
+// stone, anything).
 void lite_ocean_swash(inout vec4 color, LiteSurface surface) {
     if (surface.normal.y < 0.5 || lite_feature(LITE_FEATURE_CAMERA_UNDERWATER)) {
         return;
@@ -276,8 +285,9 @@ void lite_ocean_swash(inout vec4 color, LiteSurface surface) {
 
     float state = LiteWaveInfo.x;
     vec2 anchored = lite_water_anchored(position);
-    // Each wave reaches the waterline when the shore phase there passes a whole wave (u = 0).
-    float waves = (LiteWaveInfo.y + lite_wave_along_shore(anchored)) / LITE_WAVE_TAU;
+    // Each wave's crest reaches the waterline when the shore phase there passes a whole wave; its
+    // leading foam a little before (u = 0).
+    float waves = (LiteWaveInfo.y + lite_wave_along_shore(anchored)) / LITE_WAVE_TAU + LITE_SWASH_LEAD;
     float wave = floor(waves);
     float u = waves - wave;
     // Some waves run further than others, and further on some stretches of the beach. Shore run-up
@@ -286,19 +296,20 @@ void lite_ocean_swash(inout vec4 color, LiteSurface surface) {
     float reach = sea * runUp * (0.6 + 0.4 * lite_water_hash(ivec2(int(wave) & 1023, 77)))
         * (0.8 + 0.4 * lite_water_value_noise(anchored * 0.5));
     // The front runs up quickly, slows, and slides back down more slowly.
-    float front = u < 0.3 ? reach * sin(1.5708 * u / 0.3) : reach * (1.0 - smoothstep(0.3, 0.95, u));
+    float front = u < LITE_SWASH_RUN_UP ? reach * sin(1.5708 * u / LITE_SWASH_RUN_UP)
+        : reach * (1.0 - smoothstep(LITE_SWASH_RUN_UP, 0.95, u));
     float ragged = (lite_water_value_noise(anchored * 4.0 + vec2(wave * 3.0, 0.0)) - 0.5) * 0.3 * min(front, 1.0);
     float edge = front + ragged - run;
     float covered = step(0.0, edge) * step(0.02, front);
-    float draining = smoothstep(0.3, 0.95, u);
+    float draining = smoothstep(LITE_SWASH_RUN_UP, 0.95, u);
 
     // How bright the light here is, from the shaded colour over the texture, for the foam.
     vec3 texel = textureLod(LiteWaterAtlas, surface.uv, 0.0).rgb;
     float light = dot(color.rgb, vec3(0.299, 0.587, 0.114)) / max(dot(texel, vec3(0.299, 0.587, 0.114)), 0.04);
 
     // Wet sand: dark where this wave has been until it drains, and always a little at the waterline.
-    float highWater = u < 0.3 ? front : reach;
-    float wet = step(run, highWater) * (1.0 - smoothstep(0.3, 1.0, u));
+    float highWater = u < LITE_SWASH_RUN_UP ? front : reach;
+    float wet = step(run, highWater) * (1.0 - smoothstep(LITE_SWASH_RUN_UP, 1.0, u));
     float damp = 1.0 - smoothstep(0.0, 0.5 + 0.5 * state, run);
     vec3 ground = color.rgb * (1.0 - 0.25 * max(wet, damp * 0.6) * min(1.0, sea * 1.5));
     // The sheet: the beach seen through a little of the sea's own water (its colour under the

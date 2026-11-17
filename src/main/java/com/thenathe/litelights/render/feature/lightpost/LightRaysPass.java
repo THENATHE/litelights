@@ -39,9 +39,14 @@ final class LightRaysPass implements PostPass {
 
     private static final Optional<Vector4fc> CLEAR_TO_ZERO = Optional.of(new Vector4f());
 
-    private static final int AIR_SLICES = 10;
+    /**
+     * In air the slices reach as far as the sun shadow map does (fog098; they stopped at 72 blocks),
+     * thirteen of them, so near beams keep the spacing ten had over 72 blocks at the default reach.
+     */
+    private static final int AIR_SLICES = 13;
     private static final float AIR_FIRST_SLICE = 1.5f;
-    private static final float AIR_FARTHEST = 72.0f;
+    /** The share of the shadow map's reach the farthest slice goes to: the map is reliable to there. */
+    private static final float AIR_REACH_SHARE = 0.95f;
     private static final int WATER_SLICES = 10;
     private static final float WATER_FIRST_SLICE = 0.75f;
     private static final float WATER_FARTHEST = 28.0f;
@@ -132,7 +137,7 @@ final class LightRaysPass implements PostPass {
             medium.set(1.0f, 0.07f, 1.0f, 0.35f);
             return;
         }
-        float farthest = Math.min(AIR_FARTHEST, shadowDistance * 0.9f);
+        float farthest = shadowDistance * AIR_REACH_SHARE;
         int count = AIR_SLICES * sliceFactor;
         float ratio = (float) Math.pow(farthest / AIR_FIRST_SLICE, 1.0 / count);
         slices.set(count, AIR_FIRST_SLICE, ratio, farthest);

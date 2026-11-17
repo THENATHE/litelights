@@ -11,6 +11,10 @@ package com.thenathe.litelights.render.feature.weather;
  * overhead meet near the zenith. A band is one strip of quads from its lower edge to its top; the
  * shader draws the rays and the colours from bottom to top.
  *
+ * <p>The folds are broad and irregular: two fold waves of unrelated lengths add up, and a slow
+ * swell of their depth along the band leaves some stretches deeply folded and others nearly
+ * straight, so no run of evenly spaced humps shows along a band's lower edge.
+ *
  * <p>Where the line of sight runs along a sheet, through more of the glowing air, the sheet looks
  * brighter: that is what makes the folds stand out as bright bends in photographs. Each vertex
  * carries that factor to the shader.
@@ -39,6 +43,8 @@ final class AuroraCurtains {
     /** A brightening runs along a band in windows of this many seconds, on some of them. */
     private static final float SURGE_SECONDS = 45.0f;
 
+    private final float[] east = new float[SEGMENTS + 1];
+    private final float[] north = new float[SEGMENTS + 1];
     private final float[] bottomX = new float[SEGMENTS + 1];
     private final float[] bottomY = new float[SEGMENTS + 1];
     private final float[] bottomZ = new float[SEGMENTS + 1];
@@ -80,17 +86,24 @@ final class AuroraCurtains {
             float distance = bandDistance(band, hash);
             float halfLength = 900.0f + 700.0f * unit(hash, 1);
             float centre = (unit(hash, 2) - 0.5f) * 600.0f;
-            // The folds: the sheet's foot swings north and south, and along itself, so where the
-            // swing along is large enough the sheet folds back over itself.
-            float foldWave = (float) (Math.PI * 2.0 / (260.0 + 260.0 * unit(hash, 3)));
-            float foldDepth = (25.0f + 65.0f * unit(hash, 4)) * (0.6f + 0.4f * strength);
-            float foldBack = (0.25f + 0.95f * unit(hash, 5)) / foldWave;
+            // The folds: the sheet's foot swings north and south along two waves of unrelated
+            // lengths, the shorter one shallower, both deepened and flattened by a slow swell of
+            // their depth along the band. Along the main wave the sheet also swings east and west,
+            // so where that wave runs deep it folds back over itself.
+            float foldWave = (float) (Math.PI * 2.0 / (650.0 + 450.0 * unit(hash, 3)));
+            float foldDepth = (30.0f + 60.0f * unit(hash, 4)) * (0.6f + 0.4f * strength);
+            float foldBack = (0.5f + 0.9f * unit(hash, 5)) / foldWave;
+            float rippleWave = foldWave * (1.7f + 0.6f * unit(hash, 18));
+            float rippleDepth = foldDepth * (0.25f + 0.25f * unit(hash, 19));
+            float depthWave = (float) (Math.PI * 2.0 / (1500.0 + 1500.0 * unit(hash, 20)));
             float swellWave = (float) (Math.PI * 2.0 / (700.0 + 700.0 * unit(hash, 6)));
             float swellDepth = 30.0f + 90.0f * unit(hash, 7);
             // Slow drift of the folds along the band, a kilometre or two a second.
             float foldDrift = (0.02f + 0.03f * unit(hash, 8)) * (unit(hash, 9) < 0.5f ? -1.0f : 1.0f);
             float swellDrift = (0.006f + 0.01f * unit(hash, 10)) * (unit(hash, 11) < 0.5f ? -1.0f : 1.0f);
             float foldPhase = unit(hash, 12) * 6.2832f + foldDrift * seconds;
+            float ripplePhase = unit(hash, 21) * 6.2832f - 0.7f * foldDrift * seconds;
+            float depthPhase = unit(hash, 22) * 6.2832f + 0.3f * swellDrift * seconds;
             float swellPhase = unit(hash, 13) * 6.2832f + swellDrift * seconds;
             float edgePhase = unit(hash, 14) * 6.2832f;
             // A slow breath of the whole band, and now and then a brightening that runs along it.
@@ -105,21 +118,30 @@ final class AuroraCurtains {
             int redTop = colourByte(0.35f + 0.65f * unit(hash, 17));
 
             for (int point = 0; point <= SEGMENTS; point++) {
-                float along = point / (float) SEGMENTS;
-                float s = centre + (along * 2.0f - 1.0f) * halfLength;
+                float s = alongBand(centre, halfLength, point);
                 float foldAngle = s * foldWave + foldPhase;
-                float swellAngle = s * swellWave + swellPhase;
-                float east = s + foldBack * (float) Math.cos(foldAngle);
-                float north = distance + foldDepth * (float) Math.sin(foldAngle) + swellDepth * (float) Math.sin(swellAngle);
+                float depth = 0.55f + 0.45f * (float) Math.sin(s * depthWave + depthPhase);
+                east[point] = s + foldBack * depth * (float) Math.cos(foldAngle);
+                north[point] = distance + depth * (foldDepth * (float) Math.sin(foldAngle)
+                    + rippleDepth * (float) Math.sin(s * rippleWave + ripplePhase))
+                    + swellDepth * (float) Math.sin(s * swellWave + swellPhase);
+            }
+            for (int point = 0; point <= SEGMENTS; point++) {
+                float along = point / (float) SEGMENTS;
+                float s = alongBand(centre, halfLength, point);
+                float pointEast = east[point];
+                float pointNorth = north[point];
                 // The direction the sheet runs, for how edge-on it is seen.
-                float alongEast = 1.0f - foldBack * foldWave * (float) Math.sin(foldAngle);
-                float alongNorth = foldDepth * foldWave * (float) Math.cos(foldAngle) + swellDepth * swellWave * (float) Math.cos(swellAngle);
+                int before = Math.max(point - 1, 0);
+                int after = Math.min(point + 1, SEGMENTS);
+                float alongEast = east[after] - east[before];
+                float alongNorth = north[after] - north[before];
 
-                float drop = (east * east + north * north) / (2.0f * EARTH_RADIUS_KM);
+                float drop = (pointEast * pointEast + pointNorth * pointNorth) / (2.0f * EARTH_RADIUS_KM);
                 float lower = LOWER_EDGE_KM + 8.0f * (float) Math.sin(s * 0.004f + seconds * 0.03f + edgePhase) - drop;
                 float upper = TOP_KM - drop;
-                float worldX = (east * eastX + north * northX) * BLOCKS_PER_KM;
-                float worldZ = (east * eastZ + north * northZ) * BLOCKS_PER_KM;
+                float worldX = (pointEast * eastX + pointNorth * northX) * BLOCKS_PER_KM;
+                float worldZ = (pointEast * eastZ + pointNorth * northZ) * BLOCKS_PER_KM;
                 bottomX[point] = worldX;
                 bottomY[point] = lower * BLOCKS_PER_KM;
                 bottomZ[point] = worldZ;
@@ -128,8 +150,8 @@ final class AuroraCurtains {
                 topZ[point] = worldZ;
                 rays[point] = s / RAY_KM;
 
-                float ground = (float) Math.sqrt(east * east + north * north);
-                float edgeOn = edgeOnBrightening(alongEast, alongNorth, east, north);
+                float ground = (float) Math.sqrt(pointEast * pointEast + pointNorth * pointNorth);
+                float edgeOn = edgeOnBrightening(alongEast, alongNorth, pointEast, pointNorth);
                 float surge = 1.0f + surgeStrength * (float) Math.exp(-sq((s - surgeAt) / 250.0f));
                 float shown = alpha * endFade(along) * surge;
                 bottomAlpha[point] = shown * horizonFade(lower, ground);
@@ -150,6 +172,11 @@ final class AuroraCurtains {
             }
         }
         return quads;
+    }
+
+    /** Kilometres along a band, from its centre, at one of its points. */
+    private static float alongBand(float centre, float halfLength, int point) {
+        return centre + (point / (float) SEGMENTS * 2.0f - 1.0f) * halfLength;
     }
 
     /** How far north of the camera a band hangs, in km: the main band, one behind it, a far one low on the horizon, and high ones on strong nights. */

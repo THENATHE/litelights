@@ -17,9 +17,9 @@ uniform sampler2D FieldLightmap;
 
 layout(push_constant) uniform MistField {
     vec4 FieldColor;   // rgb colour before lighting, a extinction per block in the layer's core
-    vec4 FieldLayer;   // x bottom and y top of the layer, camera-relative heights; z share that is dust; w reach in blocks
-    vec4 FieldLight;   // xy block and sky light where the camera is (vanilla's light coordinates, 0 to 240); z, w unused
-    vec4 FieldSpare;   // unused
+    vec4 FieldLayer;   // x bottom and y top of the layer over its base; z share that is dust; w reach over the ground, in blocks
+    vec4 FieldLight;   // xy block and sky light where the camera is (vanilla's light coordinates, 0 to 240); zw the land map's (mist_field.fsh)
+    vec4 FieldMap;     // the land map's corner and the layer's slab (mist_field.fsh)
 };
 
 layout(location = 0) in vec2 texCoord;

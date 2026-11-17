@@ -42,6 +42,32 @@ public final class SkyFogMath {
         return (float) Math.exp(-distance * distance);
     }
 
+    /** Storm fog reaches its full density over about this many blocks from the eye (atmosphere.glsl). */
+    public static final float STORM_CLEAR = 12.0f;
+    /** And past that is this much denser than its density, so far off it hides what an even fog did. */
+    public static final float STORM_FAR_GAIN = 1.3f;
+
+    /**
+     * Storm fog's optical depth from the eye to a distance, for a density per block: thin close by,
+     * so a heavy storm's particles show around the player, the distance closing in as before (fog098).
+     */
+    public static float stormDepth(float distance, float density) {
+        return density * STORM_FAR_GAIN * (distance - STORM_CLEAR * (1.0f - (float) Math.exp(-distance / STORM_CLEAR)));
+    }
+
+    /**
+     * How far storm fog of this density takes to reach an optical depth: never nearer than this, as
+     * the depth is at least density x gain x (distance - {@link #STORM_CLEAR}).
+     */
+    public static float stormDistanceBeyond(float depth, float density) {
+        return depth / (density * STORM_FAR_GAIN) + STORM_CLEAR;
+    }
+
+    /** 0 while the sun is up, rising to 1 as it sinks a few degrees under the horizon (the same the other way at dawn). */
+    public static float sunGone(float sunSine) {
+        return 1.0f - LiteMath.smoothstep(-0.08f, 0.03f, sunSine);
+    }
+
     /**
      * A haze colour for a biome LiteLights has no entry for, from the biome's own colours: its fog
      * colour carries most of it, its sky colour a third and its water colour a little, so an

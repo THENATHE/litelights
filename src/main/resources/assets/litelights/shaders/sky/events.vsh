@@ -1,11 +1,18 @@
 #version 330
 #extension GL_ARB_separate_shader_objects : require
 
-// Night sky events (aurora, meteors, distant fireworks), drawn just after the sky. Positions are
+// Night sky events (the aurora and distant fireworks), drawn just after the sky. Positions are
 // directions from the camera scaled out to the sky's distance, so only the view rotation applies.
+//
+// They are drawn from the eye rather than the camera position. View bobbing moves the eye about a
+// tenth of a block off the camera position (the level's projection carries the bob's offset), and
+// the aurora's nearest curtains are only a few blocks out at the sky's scale, so drawn from the
+// camera they jumped against the stars with every step. From the eye only the bob's tilt is left,
+// which turns them with the stars and the sun (see lite_view_direction in post_common.glsl).
 
 #include <minecraft:dynamictransforms.glsl>
 #include <minecraft:projection.glsl>
+#include <litelights:frame.glsl>
 
 layout(location = 0) in vec3 Position;
 layout(location = 1) in vec2 UV0;
@@ -15,7 +22,7 @@ layout(location = 0) out vec2 texCoord0;
 layout(location = 1) out vec4 vertexColor;
 
 void main() {
-    gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+    gl_Position = ProjMat * ModelViewMat * vec4(Position + lite_view_origin(), 1.0);
     texCoord0 = UV0;
     vertexColor = Color;
 }
