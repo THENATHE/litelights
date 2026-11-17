@@ -97,6 +97,7 @@ public final class WaterRenderer {
     private boolean wakeShadingHeldOff;
     private final float[] windSample = new float[2];
     private float lastShaderSeconds = Float.NaN;
+    private final BlockPos.MutableBlockPos tintCursor = new BlockPos.MutableBlockPos();
 
     private @Nullable WaterUniforms uniforms;
     private @Nullable WaterBindings bindings;
@@ -238,6 +239,7 @@ public final class WaterRenderer {
             }
             columns.setRecordFlow((flags & WaterFlags.DRIFTING_FOAM) != 0);
             columns.setRecordWaves((flags & WaterFlags.OCEAN_WAVES) != 0);
+            columns.setShoreOnlyAgainstBlocks(water.edgeFoamBlocksOnly());
             columns.update(level, cameraX, cameraZ, fluidData);
             if (columns.hasOrigin()) {
                 flags |= WaterFlags.COLUMN_MAP;
@@ -347,7 +349,7 @@ public final class WaterRenderer {
             waterFlowTile = layout.flowTileBlocks(waterTile);
             lavaFlowTile = layout.flowTileBlocks(lavaTile);
         }
-        uniforms.params.set(water.mirrorStrength(), reflectionSteps(water.mirrorDetail()), waterTile, lavaTile);
+        uniforms.params.set(water.mirrorStrength(), water.mirrorDetail().reflectionSteps(), waterTile, lavaTile);
 
         // Device depth = A + B / view depth, from the level's projection (see lite_water_view_depth).
         Matrix4fc projection = LiteLightsRenderer.get().projection().unjittered();
@@ -367,7 +369,7 @@ public final class WaterRenderer {
         uniforms.anchor.set(Math.floorMod(blockX, ANCHOR_PERIOD), Math.floorMod(blockZ, ANCHOR_PERIOD),
             Math.floorMod(blockY, waterFlowTile), Math.floorMod(blockY, lavaFlowTile));
         if ((flags & WaterFlags.OCEAN_WAVES) != 0) {
-            fillWaves(frame);
+            fillWaves(frame, water);
         }
         uniforms.wakeWindow.set(wakes.shownOriginCellX() - blockX * 4, wakes.shownOriginCellZ() - blockZ * 4, 0, 0);
         uniforms.wakeParams.set(water.wakeFoam() ? 1.0f : 0.0f, levelState.worldPartialTicks, 0.0f, 0.0f);
@@ -376,9 +378,11 @@ public final class WaterRenderer {
     /**
      * The ocean waves' uniforms: the sea follows LiteLights' wind, which rain and storms make
      * stronger as they do for the particles (Surroundings), and its clock runs on the shaders' own
-     * seconds, so a held shader clock holds the sea too.
+     * seconds, so a held shader clock holds the sea too. The player's Shore run-up and Wave foam
+     * ride in the spare lanes (both 1 at the defaults, which the shaders treat as no change), and the
+     * biome's water tint for the swash in the last, packed 0xRRGGBB (exact in a float).
      */
-    private void fillWaves(FrameState frame) {
+    private void fillWaves(FrameState frame, RenderSettings.Water water) {
         ClientLevel level = Minecraft.getInstance().level;
         long seed = ((BiomeManagerAccessor) level.getBiomeManager()).litelights$biomeZoomSeed();
         long clockTime = level.getOverworldClockTime();
@@ -407,16 +411,42 @@ public final class WaterRenderer {
             uniforms.waveTrains[train].set(swell.trainValue(train, 0), swell.trainValue(train, 1),
                 swell.trainValue(train, 2), swell.trainValue(train, 3));
         }
-        uniforms.waveInfo.set(swell.seaState(), swell.shorePhase(), OceanSwell.shoreWavenumber(), 0.0f);
-        uniforms.waveWind.set(swell.windX(), swell.windZ(), 0.0f, 0.0f);
+        uniforms.waveInfo.set(swell.seaState(), swell.shorePhase(), OceanSwell.shoreWavenumber(), water.shoreRunUp());
+        uniforms.waveWind.set(swell.windX(), swell.windZ(), water.waveFoam(), seaTint(level, frame));
     }
 
-    private static int reflectionSteps(RenderSettings.MirrorDetail quality) {
-        return switch (quality) {
-            case COARSE -> 12;
-            case BALANCED -> 24;
-            case FINE -> 40;
-        };
+    /** Rings searched around the camera's column for the nearest water, in blocks. */
+    private static final int[] TINT_RINGS = {0, 2, 4, 8, 12, 16};
+
+    /**
+     * The swash's sheet takes the sea's colour: the biome's water tint at the water nearest the
+     * camera (its surface, as biomes change with height), which is the beach in view whenever the
+     * swash is close enough to see. With no water found, where the camera is.
+     */
+    private int seaTint(ClientLevel level, FrameState frame) {
+        tintCursor.set(frame.cameraBlockX, frame.cameraBlockY, frame.cameraBlockZ);
+        search:
+        for (int ring : TINT_RINGS) {
+            for (int dz = -1; dz <= 1; dz++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    // The first ring is the camera's own column; the others its eight neighbours that far out.
+                    boolean centre = dx == 0 && dz == 0;
+                    if (centre != (ring == 0)) {
+                        continue;
+                    }
+                    int x = frame.cameraBlockX + dx * ring;
+                    int z = frame.cameraBlockZ + dz * ring;
+                    double surface = columns.openWaterSurfaceY(x, z);
+                    if (!Double.isNaN(surface)) {
+                        tintCursor.set(x, (int) Math.floor(surface - 0.05), z);
+                        break search;
+                    }
+                }
+            }
+        }
+        // The biome's own colour, not the blended tint cache, which can hold a chunk's old biomes
+        // after they change (one value a frame, so no blending is needed).
+        return level.getBiome(tintCursor).value().getWaterColor() & 0xFFFFFF;
     }
 
     private void markRowsReady() {
@@ -758,6 +788,11 @@ public final class WaterRenderer {
         return swell.seaState();
     }
 
+    /** The water tint the swash's sheet takes now, 0xRRGGBB (QA). */
+    public int oceanShoreTint() {
+        return uniforms == null ? 0 : (int) uniforms.waveWind.w;
+    }
+
     public boolean oceanWavesDrawing() {
         return (activeFlags & WaterFlags.OCEAN_WAVES) != 0;
     }
@@ -793,6 +828,11 @@ public final class WaterRenderer {
         readings.put("swimmerTicks", wakes.sources().swimmerTicks());
         readings.put("entries", wakes.sources().entries());
         return readings;
+    }
+
+    /** The column map's raw column and shader texel at a world column, for the edge foam QA. */
+    public int[] fluidColumnForQa(int x, int z) {
+        return columns.columnForQa(x, z);
     }
 
     /** The wind's heading the swell follows now, in radians (x its cosine, z its sine). */

@@ -28,6 +28,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.fabric.api.event.Event;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
@@ -74,9 +75,12 @@ public final class ParticleSystem {
     /** Rows of features this system draws, marked ready on its first frame unless another mod handles them. */
     private static final String[] PARTICLE_ROWS = {
         "particles", "ambient_particles", "particles.snow_sand_sprites", "particles.enhanced_fire", "particles.ember_veins",
-        "weather.precipitation", "weather.rain_mist", "weather.drifting_sand", "weather.sandstorms", "weather.storm_atmosphere", "end_motes",
-        "weather.rain_drips", "weather.wall_streaks"
+        "particles.burn_marks", "weather.precipitation", "weather.rain_mist", "weather.drifting_sand", "weather.sandstorms",
+        "weather.storm_atmosphere", "end_motes", "weather.rain_drips", "weather.wall_streaks"
     };
+    /** Submit orders for fire's decals: after vanilla's own (order 0), soot before veins. */
+    private static final int BURN_MARK_ORDER = 1;
+    private static final int EMBER_VEIN_ORDER = 2;
     private static final String[] SKY_ROWS = {"weather.polar_lights", "weather.meteor_nights", "weather.far_fireworks"};
 
     private ParticleState published = new ParticleState(ParticleBudget.totalCap(RenderSettings.ParticleDensity.FULL));
@@ -92,6 +96,7 @@ public final class ParticleSystem {
     private final ParticleSprites sprites = new ParticleSprites();
     private final ParticleRenderer renderer = new ParticleRenderer(sprites);
     private final SkyEvents sky = new SkyEvents();
+    private final HazeDrift hazeDrift = new HazeDrift();
     private final SimulationWorker worker = new SimulationWorker(this::stepOnWorker);
     /** Worker-thread time spent stepping, summed (written by the worker only; read for the QA probe). */
     private volatile long workerNanos;
@@ -127,6 +132,7 @@ public final class ParticleSystem {
     public void register() {
         SkyEvents.claimPipelines();
         ParticleLayers.claimPipelines();
+        HazeField.get().register();
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
         LevelRenderEvents.COLLECT_SUBMITS.register(this::collect);
         LiteRenderEvents.FRAME_UPDATE.register(this::frameUpdate);
@@ -208,6 +214,7 @@ public final class ParticleSystem {
                 clear();
             }
             WeatherParticles.setReplacingVanilla(false);
+            HazeField.get().clear();
             sky.update(settings.weather(), false, 0L, 0L, 0L, 0.0f, 0.0f);
             return;
         }
@@ -222,11 +229,16 @@ public final class ParticleSystem {
         RenderSettings.ParticleDensity amount = running ? settings.particles().density() : RenderSettings.ParticleDensity.OFF;
         fitToReach(settings);
         queue.begin(amount, capScales, published.categoryCounts, published.count);
+        hazeDrift.tick(surroundings.wind[0], surroundings.wind[1]);
+        surroundings.hazeDriftX = hazeDrift.x();
+        surroundings.hazeDriftZ = hazeDrift.z();
+        HazeField.get().beginTick();
         if (amount != RenderSettings.ParticleDensity.OFF) {
             spawn(level, part);
         } else {
             fire.clear();
         }
+        HazeField.get().endTick(amount != RenderSettings.ParticleDensity.OFF && HazeField.wanted(settings));
         if (published.count > 0 || queue.count > 0) {
             startStep(amount);
         }
@@ -361,6 +373,7 @@ public final class ParticleSystem {
         next.clear();
         grid.forget();
         fire.clear();
+        HazeField.get().clear();
     }
 
     private void collect(LevelRenderContext context) {
@@ -369,7 +382,8 @@ public final class ParticleSystem {
         }
         long started = System.nanoTime();
         // Vanilla built last frame's vertices after this method returned; count that time too.
-        totals[VERTEX_NANOS] += renderer.batch().takeBuildNanos();
+        totals[VERTEX_NANOS] += renderer.batch().takeBuildNanos() + renderer.burnMarkBatch().takeBuildNanos()
+            + renderer.emberVeinBatch().takeBuildNanos();
         try {
             if (!sprites.refresh()) {
                 return;
@@ -379,14 +393,29 @@ public final class ParticleSystem {
             boolean hdStyle = settings.particles().snowSandSprites() == RenderSettings.SnowSandSprites.DETAILED;
             FrameState frame = LiteLightsRenderer.get().frame();
             renderer.build(published, camera.pos.x, camera.pos.y, camera.pos.z, camera.orientation,
-                frame.viewProjection, context.levelState().worldPartialTicks, hdStyle, rangeScales, stormFogOverParticles(frame));
+                frame.viewProjection, context.levelState().worldPartialTicks, hdStyle, rangeScales, stormFogOverParticles(frame),
+                settings.weather().mistStyle());
             if (fire.hasDecals()) {
                 // Wraps once an hour, so the pulse keeps a float's precision on old worlds.
                 float seconds = (surroundings.gameTime % 72000L + context.levelState().worldPartialTicks) / 20.0f;
                 fire.drawDecals(renderer, sprites, camera.pos.x, camera.pos.y, camera.pos.z, seconds);
             }
-            if (!renderer.batch().isEmpty()) {
-                context.submitNodeCollector().submitQuadParticleGroup(renderer.batch());
+            SubmitNodeCollector collector = context.submitNodeCollector();
+            boolean drew = !renderer.batch().isEmpty();
+            if (drew) {
+                collector.submitQuadParticleGroup(renderer.batch());
+            }
+            // The decals go after everything else in the solid phase, in their own orders, so the
+            // soot is laid on the face first and the veins glow over it.
+            if (!renderer.burnMarkBatch().isEmpty()) {
+                collector.order(BURN_MARK_ORDER).submitQuadParticleGroup(renderer.burnMarkBatch());
+                drew = true;
+            }
+            if (!renderer.emberVeinBatch().isEmpty()) {
+                collector.order(EMBER_VEIN_ORDER).submitQuadParticleGroup(renderer.emberVeinBatch());
+                drew = true;
+            }
+            if (drew) {
                 if (!rowsMarked) {
                     rowsMarked = true;
                     for (String row : PARTICLE_ROWS) {
@@ -435,10 +464,13 @@ public final class ParticleSystem {
     }
 
     /**
-     * This stream's value for shaders (featureValuesD.y): the wind's heading in radians, which the
-     * sway follows. Worked out even with every particle off.
+     * This stream's values for shaders: featureValuesD.y, the wind's heading in radians, which the
+     * sway follows, worked out even with every particle off; featureValuesB.xyz, the haze's drift.
      */
     private void frameUpdate(FrameState frame, RenderSettings settings) {
+        HazeDepth.get().beginFrame();
+        // The haze's noise drift (featureValuesB.xyz), between the last two ticks: still while paused.
+        hazeDrift.write(frame.featureValuesB, Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false));
         ClientLevel level = Minecraft.getInstance().level;
         if (level != null) {
             long seed = ((BiomeManagerAccessor) level.getBiomeManager()).litelights$biomeZoomSeed();
@@ -563,6 +595,11 @@ public final class ParticleSystem {
 
     public int burnMarks() {
         return fire.marks().count();
+    }
+
+    /** QA only: where each burn mark lies. */
+    public java.util.List<String> burnMarkPlaces() {
+        return fire.marks().describe();
     }
 
     public int emberVeins() {

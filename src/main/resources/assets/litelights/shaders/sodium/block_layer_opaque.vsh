@@ -9,9 +9,12 @@
 #include <sodium:globals.glsl>
 #include <sodium:fog.glsl>
 #include <sodium:chunk_vertex.glsl>
+#include <litelights:terrain_parts.glsl>
+#ifdef LITE_TERRAIN_LITELIGHTS
 #include <litelights:frame.glsl>
 #include <litelights:material.glsl>
 #include <litelights:hooks.glsl>
+#endif
 
 layout(location = 0) out vec4 lite_vertexColor;
 layout(location = 1) out vec2 lite_atlasUv;
@@ -50,9 +53,11 @@ void main() {
     position -= u_CameraOffset;
 #endif
     lite_atlasUv = _vert_tex_diffuse_coord + _vert_tex_diffuse_coord_bias * u_TexCoordShrink;
+#ifdef LITE_TERRAIN_SWAY
     if (lite_world_pass()) {
         position += lite_vegetation_offset(position, _vert_tex_diffuse_coord, _vert_tex_diffuse_coord_bias);
     }
+#endif
 
 #ifdef USE_FOG
     lite_fogDistance = getFragDistance(position);

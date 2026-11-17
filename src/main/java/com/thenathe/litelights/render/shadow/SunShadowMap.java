@@ -44,6 +44,8 @@ public final class SunShadowMap implements AutoCloseable {
     private boolean hasPrevious;
     private long fadeStartNanos;
     private boolean smoothFade;
+    /** The redraw under way was started in a hurry: drawn in one frame and swapped in without a fade. */
+    private boolean hurriedRedraw;
 
     /** Sections still to be drawn into the back map, and how many frames the redraw has left. */
     private final LongArrayList drawQueue = new LongArrayList();
@@ -125,6 +127,11 @@ public final class SunShadowMap implements AutoCloseable {
         return backView;
     }
 
+    /** Ends a fade at once: the front map alone is read from now on. */
+    public void endFade() {
+        smoothFade = false;
+    }
+
     /** Whether the front map is still being blended in from the previous one. */
     public boolean isFading() {
         return hasPrevious && smoothFade && System.nanoTime() - fadeStartNanos < FADE_NANOS;
@@ -142,9 +149,11 @@ public final class SunShadowMap implements AutoCloseable {
     /**
      * Starts a redraw centred on the camera with the current light. Picks the sections whose
      * casters can land inside the map: the shadow pass culls its own sections and never asks
-     * Sodium or vanilla which sections are visible.
+     * Sodium or vanilla which sections are visible. A hurried redraw (the time of day jumped or
+     * races) is drawn in one frame and swapped in without a fade, so the shadows snap to the sun;
+     * starting one while another is under way starts over with the new light.
      */
-    public void beginRedraw(Vector3f light, Vector3d camera, ShadowCasterStore store, boolean zeroToOneDepth) {
+    public void beginRedraw(Vector3f light, Vector3d camera, ShadowCasterStore store, boolean zeroToOneDepth, boolean hurried) {
         double radius = coverageRadius();
         drawingSpace.set(light, camera, radius, size, (float) radius + DEPTH_RADIUS_EXTRA, zeroToOneDepth);
         drawQueue.clear();
@@ -160,8 +169,10 @@ public final class SunShadowMap implements AutoCloseable {
             }
         });
         drawPosition = 0;
-        redrawFrames = Math.clamp((drawQueue.size() + SECTIONS_PER_FRAME - 1) / SECTIONS_PER_FRAME, MIN_REDRAW_FRAMES, MAX_REDRAW_FRAMES);
+        redrawFrames = hurried ? 1
+            : Math.clamp((drawQueue.size() + SECTIONS_PER_FRAME - 1) / SECTIONS_PER_FRAME, MIN_REDRAW_FRAMES, MAX_REDRAW_FRAMES);
         drawFramesLeft = redrawFrames;
+        hurriedRedraw = hurried;
     }
 
     /** The sections to draw this frame; empty once the redraw is complete. The list is reused next frame. */
@@ -199,7 +210,7 @@ public final class SunShadowMap implements AutoCloseable {
         back = texture;
         backView = view;
 
-        smoothFade = smooth;
+        smoothFade = smooth && !hurriedRedraw;
         fadeStartNanos = System.nanoTime();
         drawQueue.clear();
     }

@@ -74,7 +74,8 @@ class RemovedOptionsTest {
             assertFalse(options.get("weather.glass_frost").getAsBoolean());
             assertEquals("stationary", options.get("water.foam_motion").getAsString());
             assertFalse(saved.has("unreadable") && saved.getAsJsonObject("unreadable").size() > 0, "nothing was unreadable");
-            assertFalse(Files.exists(folder.resolve("litelights.json.schema2.bak")), "no migration was needed");
+            // Schema 2 files go through 0.9.7's glint step, which has nothing to move in this one.
+            assertTrue(Files.exists(folder.resolve("litelights.json.schema2.bak")), "the file was backed up before the glint step");
         } finally {
             registry.resetAll();
         }

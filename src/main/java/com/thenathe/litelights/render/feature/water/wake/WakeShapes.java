@@ -4,11 +4,21 @@ package com.thenathe.litelights.render.feature.water.wake;
  * How hard each kind of thing disturbs the water: a boat, a swimmer, something falling in. The game
  * side ({@link WakeSources}) and the offline prototype both go through here, so the pictures and the
  * game agree. Speeds are in blocks per tick (a boat at full speed on water does about 0.4, a
- * swimming player about 0.2); {@code strength} is the Wake strength setting (1 by default).
+ * player swimming at the surface about 0.1, sprint-swimming about 0.2 to 0.3); {@code strength} is the Wake strength setting (1 by default).
  */
 public final class WakeShapes {
     /** Slower than this, in blocks per tick, leaves no wake. */
     public static final double MINIMUM_SPEED = 0.02;
+    /**
+     * A swimmer (waves097: about twice the 0.1.8 wake, so a player swimming at the surface leaves a
+     * clear V and some foam, still well under a slow boat's): full strength at a surface swim's
+     * pace, a body a little longer and wider than the hitbox, pressing deeper.
+     */
+    static final double SWIMMER_FULL = 0.14;
+    static final double SWIMMER_HALF_LENGTH = 0.25;
+    static final double SWIMMER_RADIUS = 0.42;
+    static final double SWIMMER_DEPTH = 0.38;
+    static final double SWIMMER_FOAM = 0.5;
 
     private WakeShapes() {
     }
@@ -27,13 +37,13 @@ public final class WakeShapes {
     /** A player or mob swimming at the surface; {@code width} is its hitbox width. */
     public static void swimmer(WakeSourceList sources, double fromX, double fromZ, double toX, double toZ,
                                double headingX, double headingZ, double speed, double width, double strength) {
-        double pace = pace(speed, 0.2);
+        double pace = pace(speed, SWIMMER_FULL);
         if (pace <= 0.0) {
             return;
         }
         double size = Math.clamp(width / 0.6, 0.5, 3.0);
-        sources.addHull(fromX, fromZ, toX, toZ, headingX, headingZ, 0.15 * size, 0.32 * size,
-            0.4 * pace * strength * Math.sqrt(size), 0.045 * pace * strength, Math.min(1.0, 0.4 * pace * strength));
+        sources.addHull(fromX, fromZ, toX, toZ, headingX, headingZ, SWIMMER_HALF_LENGTH * size, SWIMMER_RADIUS * size,
+            SWIMMER_DEPTH * pace * strength * Math.sqrt(size), 0.05 * pace * strength, Math.min(1.0, SWIMMER_FOAM * pace * strength));
     }
 
     /**

@@ -60,6 +60,7 @@ final class FluidColumnMap implements AutoCloseable {
     private final long[] slotChunk = new long[SLOT_COUNT];
     private final boolean[] needsScan = new boolean[SLOT_COUNT];
     private final boolean[] needsUpload = new boolean[SLOT_COUNT];
+    private boolean shoreOnlyAgainstBlocks;
     private final int[] reflectiveColumns = new int[SLOT_COUNT];
     private final LongArrayList[] landingPositions = new LongArrayList[SLOT_COUNT];
     private final IntArrayList[] landingDrops = new IntArrayList[SLOT_COUNT];
@@ -147,6 +148,21 @@ final class FluidColumnMap implements AutoCloseable {
             needsUpload[slot] = slotChunk[slot] != NO_CHUNK;
         }
         shoreFieldUploadWanted = shoreFieldReady != null;
+    }
+
+    /**
+     * Edge foam against blocks only, or against any ground near the waterline. The shore masks are
+     * worked out as the texels are written, so a change writes every slot again; nothing is scanned.
+     */
+    void setShoreOnlyAgainstBlocks(boolean onlyAgainstBlocks) {
+        if (onlyAgainstBlocks == shoreOnlyAgainstBlocks) {
+            return;
+        }
+        shoreOnlyAgainstBlocks = onlyAgainstBlocks;
+        grid.setShoreOnlyAgainstBlocks(onlyAgainstBlocks);
+        for (int slot = 0; slot < SLOT_COUNT; slot++) {
+            needsUpload[slot] = slotChunk[slot] != NO_CHUNK;
+        }
     }
 
     /**
@@ -254,6 +270,14 @@ final class FluidColumnMap implements AutoCloseable {
     /** Every chunk in the window that exists has been scanned (for the QA harness). */
     boolean isComplete() {
         return complete;
+    }
+
+    /** QA only: a column's packed value and its shader texel, or zeros outside the map. */
+    int[] columnForQa(int x, int z) {
+        if (!contains(x, z)) {
+            return new int[] {0, 0};
+        }
+        return new int[] {grid.get(x, z), grid.texel(x, z)};
     }
 
     /** The surface height of the fluid in a column, or NaN, for the jump splash. */

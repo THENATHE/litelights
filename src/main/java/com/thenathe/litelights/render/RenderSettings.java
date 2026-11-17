@@ -128,12 +128,15 @@ public record RenderSettings(
         boolean glintMetalGlass,
         boolean glintSandStone,
         boolean submergedGlint,
-        float glintSoftness,
+        float glintWaterSoftness,
+        float glintWaterIntensity,
+        float glintGroundSoftness,
+        float glintGroundIntensity,
         boolean nightColorTone
     ) {
         public static final Lighting DEFAULTS = new Lighting(
             true, 1.0f, true, true, 2.0f, true, 1.5f, SunbeamQuality.MEDIUM, true, WaterSparkle.GENTLE, true, true, false, true,
-            0.15f, true);
+            0.5f, 0.5f, 0.5f, 0.5f, true);
 
         /** Whether anything glints above water. */
         public boolean landGlint() {
@@ -313,7 +316,22 @@ public record RenderSettings(
     /** Foam on flowing water stays put, or travels downstream with the current. */
     public enum FoamMotion { STATIONARY, DRIFTING }
 
-    public enum MirrorDetail { COARSE, BALANCED, FINE }
+    /** Reflection detail, and the screen-space steps each reflected ray takes (lite_water_trace). */
+    public enum MirrorDetail {
+        COARSE(12),
+        BALANCED(24),
+        FINE(40);
+
+        private final int reflectionSteps;
+
+        MirrorDetail(int reflectionSteps) {
+            this.reflectionSteps = reflectionSteps;
+        }
+
+        public int reflectionSteps() {
+            return reflectionSteps;
+        }
+    }
 
     public record Water(
         WaterPalette palette,
@@ -323,6 +341,7 @@ public record RenderSettings(
         float mirrorStrength,
         boolean biomeAndDepthColor,
         boolean edgeFoam,
+        boolean edgeFoamBlocksOnly,
         FoamMotion foamMotion,
         boolean lavaCrust,
         boolean floatingLeaves,
@@ -337,13 +356,15 @@ public record RenderSettings(
         boolean farDepthColour,
         boolean farEdgeFoam,
         boolean oceanWaves,
+        float shoreRunUp,
+        float waveFoam,
         boolean wakes,
         float wakeStrength,
         boolean wakeFoam
     ) {
         public static final Water DEFAULTS = new Water(
-            WaterPalette.VANILLA_COLOURS, true, true, MirrorDetail.BALANCED, 1.0f, true, true, FoamMotion.STATIONARY, true, true, true, false,
-            true, 4, 4, JumpSplash.ADVANCED, true, false, false, false, false, true, 1.0f, true);
+            WaterPalette.VANILLA_COLOURS, true, true, MirrorDetail.BALANCED, 1.0f, true, true, true, FoamMotion.STATIONARY, true, true, true, false,
+            true, 4, 4, JumpSplash.ADVANCED, true, false, false, false, false, 1.0f, 1.0f, true, 1.0f, true);
     }
 
     public record Vegetation(boolean swayingGrass, boolean swayingPlants, boolean swayingLeaves) {
@@ -363,12 +384,13 @@ public record RenderSettings(
         boolean spores,
         boolean enhancedFire,
         boolean emberVeins,
+        boolean burnMarks,
         boolean enhancedWater,
         SpawnDistance distance,
         DistanceFill distanceFill
     ) {
         public static final Particles DEFAULTS = new Particles(
-            ParticleDensity.FULL, SnowSandSprites.VANILLA, true, true, true, true, true, true, true,
+            ParticleDensity.FULL, SnowSandSprites.VANILLA, true, true, true, true, true, true, true, true,
             SpawnDistance.NEAR, DistanceFill.SPREAD);
     }
 
@@ -396,6 +418,13 @@ public record RenderSettings(
     public enum DistanceFill { SPREAD, FILL }
 
     public enum PrecipitationLook { VANILLA, VANILLA_PLUS, LITELIGHTS }
+
+    /**
+     * How the haze puffs (rain and snow mist, dust clouds, Nether ash haze, End mist) are drawn:
+     * soft 3D puffs, one low-resolution volume of mist drawn with the fog, or the flat camera-facing
+     * sprites they were before 0.9.7 (DECISIONS fog097).
+     */
+    public enum MistStyle { PUFFS, FIELD, BILLBOARDS }
 
     /**
      * How thick LiteLights' own weather is. Single particles (drops, flakes, grains, grit) are
@@ -432,10 +461,11 @@ public record RenderSettings(
         boolean rainDrips,
         boolean wallStreaks,
         Glass glass,
-        Storms storms
+        Storms storms,
+        MistStyle mistStyle
     ) {
         public static final Weather DEFAULTS = new Weather(PrecipitationLook.LITELIGHTS, WeatherDensity.MEDIUM, true, true, true, true, true, true,
-            true, SpawnDistance.NEAR, DistanceFill.SPREAD, true, true, Glass.DEFAULTS, Storms.DEFAULTS);
+            true, SpawnDistance.NEAR, DistanceFill.SPREAD, true, true, Glass.DEFAULTS, Storms.DEFAULTS, MistStyle.PUFFS);
     }
 
     /**

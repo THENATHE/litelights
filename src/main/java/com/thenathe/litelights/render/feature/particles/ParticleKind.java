@@ -46,6 +46,13 @@ public final class ParticleKind {
 
     public enum Layer { TRANSLUCENT, GLOW, SOFT }
 
+    /**
+     * The haze kinds, the large soft puffs that fill the air (DECISIONS fog097). Each is drawn as a
+     * 3D puff, as part of the Mist field or as a classic billboard, as Mist style says; the shaders
+     * know each by its place in this list after NONE (particle/puff.vsh).
+     */
+    public enum Haze { NONE, MIST, SAND, ASH, END }
+
     // --- Weather ---
     public static final ParticleKind RAIN = builder("rain", ParticleCategory.WEATHER).sprites("rain_drop")
         .shape(Shape.STREAK).gravity(0.06f).drag(0.98f).wind(0.18f).ground(Ground.SPLASH).range(40).build();
@@ -59,12 +66,12 @@ public final class ParticleKind {
         .sprites("snow_v_0", "snow_v_1", "snow_v_2", "snow_v_3").hdSprites("snow_hd_0", "snow_hd_1", "snow_hd_2", "snow_hd_3")
         .layer(Layer.SOFT).gravity(0.004f).drag(0.95f).wind(0.08f).wander(0.012f, 0.13f).ground(Ground.SETTLE).fade(6, 0.15f).range(36).build();
     public static final ParticleKind MIST = builder("mist", ParticleCategory.WEATHER).sprites("haze_0", "haze_1", "haze_2")
-        .layer(Layer.SOFT).nearFade(7.0f).drag(0.96f).wind(0.02f).wander(0.002f, 0.03f).fade(40, 0.35f).growth(1.3f).range(48).fixedRange().build();
+        .layer(Layer.SOFT).haze(Haze.MIST).nearFade(7.0f).drag(0.96f).wind(0.02f).wander(0.002f, 0.03f).fade(40, 0.35f).growth(1.3f).range(48).fixedRange().build();
     public static final ParticleKind SAND = builder("sand", ParticleCategory.WEATHER)
         .sprites("sand_v_0", "sand_v_1", "sand_v_2").hdSprites("sand_hd_0", "sand_hd_1", "sand_hd_2")
         .gravity(0.003f).drag(0.96f).wind(0.2f).wander(0.02f, 0.4f).ground(Ground.DIE).fade(4, 0.2f).range(32).build();
     public static final ParticleKind SAND_CLOUD = builder("sand_cloud", ParticleCategory.WEATHER)
-        .sprites("haze_0", "haze_1", "haze_2").layer(Layer.SOFT).nearFade(6.0f).drag(0.95f).wind(0.1f).wander(0.004f, 0.05f)
+        .sprites("haze_0", "haze_1", "haze_2").layer(Layer.SOFT).haze(Haze.SAND).nearFade(6.0f).drag(0.95f).wind(0.1f).wander(0.004f, 0.05f)
         .fade(16, 0.4f).growth(1.6f).range(40).fixedRange().build();
     // Sandstorm grains race along at well over the wind's speed, drawn as thin streaks along their
     // motion. They are soft particles so the storm's own sandy air covers them as it covers the
@@ -108,7 +115,7 @@ public final class ParticleKind {
 
     // --- Nether ---
     public static final ParticleKind ASH_HAZE = builder("ash_haze", ParticleCategory.NETHER).sprites("haze_0", "haze_1", "haze_2")
-        .layer(Layer.SOFT).nearFade(5.0f).drag(0.96f).wind(0.02f).wander(0.002f, 0.03f).fade(40, 0.4f).growth(1.4f).range(48).fixedRange().build();
+        .layer(Layer.SOFT).haze(Haze.ASH).nearFade(5.0f).drag(0.96f).wind(0.02f).wander(0.002f, 0.03f).fade(40, 0.4f).growth(1.4f).range(48).fixedRange().build();
     public static final ParticleKind ASH = builder("ash", ParticleCategory.NETHER).sprites("ash_0", "ash_1")
         .gravity(0.0015f).drag(0.94f).wind(0.04f).wander(0.006f, 0.15f).fade(10, 0.3f).range(28).build();
     public static final ParticleKind NETHER_EMBER = builder("nether_ember", ParticleCategory.NETHER).sprites("ember_1", "ember_2")
@@ -128,7 +135,7 @@ public final class ParticleKind {
     public static final ParticleKind END_SPECK = builder("end_speck", ParticleCategory.END).sprites("speck").nearFade(2.5f)
         .layer(Layer.GLOW).emissive().drag(0.9f).wander(0.002f, 0.08f).twinkle().fade(20, 0.3f).range(24).build();
     public static final ParticleKind END_MIST = builder("end_mist", ParticleCategory.END).sprites("haze_0", "haze_1", "haze_2")
-        .layer(Layer.SOFT).nearFade(5.0f).drag(0.96f).wander(0.0015f, 0.025f).fade(50, 0.4f).growth(1.3f).range(48).fixedRange().build();
+        .layer(Layer.SOFT).haze(Haze.END).nearFade(5.0f).drag(0.96f).wander(0.0015f, 0.025f).fade(50, 0.4f).growth(1.3f).range(48).fixedRange().build();
 
     public final int id;
     public final String name;
@@ -139,6 +146,7 @@ public final class ParticleKind {
     public final Shape shape;
     public final Frames frames;
     public final Layer layer;
+    public final Haze haze;
     public final Ground ground;
     public final boolean emissive;
     public final boolean twinkle;
@@ -185,6 +193,7 @@ public final class ParticleKind {
         this.shape = builder.shape;
         this.frames = builder.frames;
         this.layer = builder.layer;
+        this.haze = builder.haze;
         this.ground = builder.ground;
         this.emissive = builder.emissive;
         this.twinkle = builder.twinkle;
@@ -233,6 +242,7 @@ public final class ParticleKind {
         private Shape shape = Shape.BILLBOARD;
         private Frames frames = Frames.BY_SEED;
         private Layer layer = Layer.TRANSLUCENT;
+        private Haze haze = Haze.NONE;
         private Ground ground = Ground.NONE;
         private boolean emissive;
         private boolean twinkle;
@@ -281,6 +291,11 @@ public final class ParticleKind {
 
         Builder layer(Layer value) {
             this.layer = value;
+            return this;
+        }
+
+        Builder haze(Haze value) {
+            this.haze = value;
             return this;
         }
 

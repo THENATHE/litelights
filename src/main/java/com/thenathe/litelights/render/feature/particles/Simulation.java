@@ -53,8 +53,20 @@ final class Simulation {
             float speedY = from.velocityY[i] - kind.gravity;
             float speedZ = from.velocityZ[i];
             if (kind.windCoupling > 0.0f) {
-                speedX += (inputs.windX * kind.windBoost - speedX) * kind.windCoupling;
-                speedZ += (inputs.windZ * kind.windBoost - speedZ) * kind.windCoupling;
+                float windX = inputs.windX * kind.windBoost;
+                float windZ = inputs.windZ * kind.windBoost;
+                if (kind.haze != ParticleKind.Haze.NONE) {
+                    // Haze puffs each take the wind a little differently, so they don't drift in lockstep.
+                    float speed = hazeWindSpeed(seed);
+                    float veer = hazeWindVeer(seed);
+                    float cos = (float) Math.cos(veer);
+                    float sin = (float) Math.sin(veer);
+                    float turnedX = (windX * cos - windZ * sin) * speed;
+                    windZ = (windX * sin + windZ * cos) * speed;
+                    windX = turnedX;
+                }
+                speedX += (windX - speedX) * kind.windCoupling;
+                speedZ += (windZ - speedZ) * kind.windCoupling;
             }
             if (kind.wanderStrength > 0.0f) {
                 // Each particle wanders on its own phase, from its seed, so neighbours don't move in step.
@@ -104,6 +116,16 @@ final class Simulation {
             to.append(spawns.kind[i], spawns.x[i], spawns.y[i], spawns.z[i], spawns.velocityX[i], spawns.velocityY[i],
                 spawns.velocityZ[i], spawns.size[i], spawns.lifetime[i], spawns.color[i], spawns.light[i], spawns.seed[i]);
         }
+    }
+
+    /** A haze puff's share of the wind's speed, 0.65 to 1.35, from bits of its seed the sprite and wander don't use. */
+    static float hazeWindSpeed(int seed) {
+        return 0.65f + ((seed >>> 12) & 255) * (0.7f / 255.0f);
+    }
+
+    /** How far a haze puff's drift turns from the wind's heading, within about 20 degrees either way, in radians. */
+    static float hazeWindVeer(int seed) {
+        return (((seed >>> 20) & 255) / 255.0f - 0.5f) * 0.7f;
     }
 
     /** Writes particle {@code i} of {@code from} into {@code to} with its new position, motion and age. */

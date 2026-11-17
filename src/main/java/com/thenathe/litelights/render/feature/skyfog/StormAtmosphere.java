@@ -19,8 +19,8 @@ import com.thenathe.litelights.render.frame.WeatherPreview;
  * Each intensity is 0..1, eased in time (storms close in over several seconds) and already blended
  * across biome borders by the atmosphere sampler.
  *
- * <p>Read {@link #current()} on the render or client thread (or the first four values from
- * {@code LiteFeatureValuesB} in a shader: x sandstorm, y blizzard, z swamp fog, w snow fog). They are
+ * <p>Read {@link #current()} on the render or client thread; shaders get the storm fog they make
+ * (LiteStormFog), not these values. They are
  * 0 when their switches are off, when Immersive Storms is loaded, underground and in dimensions
  * whose weather switch is off, so sand, wind dust and dark rain can follow them directly.
  */

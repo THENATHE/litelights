@@ -4,6 +4,8 @@ import com.mojang.renderpearl.api.device.DeviceInfo;
 import com.mojang.renderpearl.api.pipeline.CompiledRenderPipeline;
 import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import com.thenathe.litelights.LiteLightsClient;
+import com.thenathe.litelights.render.pipeline.ShaderLoopCaps;
+import com.thenathe.litelights.render.pipeline.TerrainParts;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import net.minecraft.client.Minecraft;
@@ -104,6 +106,14 @@ public final class StartupTrace {
             summary = String.format(Locale.ROOT, "%d pipelines (%d with LiteLights shaders) compiled in %s; the driver linked them in %d ms%s",
                 RELOAD_COMPILES.count, RELOAD_COMPILES.withLiteLightsShaders, seconds(tookNanos), millis(RELOAD_COMPILES.totalNanos),
                 RELOAD_COMPILES.slowest());
+        }
+        String loopCaps = ShaderLoopCaps.builtState();
+        if (loopCaps != null) {
+            summary += "; shader loop caps " + loopCaps;
+        }
+        String terrainParts = TerrainParts.builtState();
+        if (terrainParts != null) {
+            summary += "; " + terrainParts;
         }
         if (tookNanos > SLOW_NANOS && !reloadShaderWarningShown) {
             reloadShaderWarningShown = true;

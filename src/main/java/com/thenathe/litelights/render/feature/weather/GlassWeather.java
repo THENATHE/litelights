@@ -10,6 +10,7 @@ import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.feature.particles.BiomeClimate;
 import com.thenathe.litelights.render.feature.skyfog.StormAtmosphere;
 import com.thenathe.litelights.render.frame.DimensionGate;
+import com.thenathe.litelights.render.frame.FrameClock;
 import com.thenathe.litelights.render.frame.FrameState;
 import com.thenathe.litelights.render.frame.WeatherPreview;
 import net.minecraft.client.Minecraft;
@@ -41,7 +42,6 @@ public final class GlassWeather {
     private final SurfaceWeather surfaces = new SurfaceWeather();
     private final SurfaceWeather.Conditions conditions = new SurfaceWeather.Conditions();
     private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-    private long lastNanos;
     private @Nullable ClientLevel lastLevel;
     private volatile boolean wantsMaps;
     private boolean rowsMarked;
@@ -96,14 +96,13 @@ public final class GlassWeather {
     private void update(FrameState frame, RenderSettings settings) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
-        long now = System.nanoTime();
-        float seconds = lastNanos == 0L ? 0.0f : Math.min(LONGEST_STEP, (now - lastNanos) / 1.0e9f);
-        lastNanos = now;
+        // Seconds of the world's time: frost, snow and sand keep up when the time races.
+        float seconds = FrameClock.gameSeconds(Math.min(LONGEST_STEP, FrameClock.frameSeconds()));
         if (level != lastLevel) {
             surfaces.reset();
             lastLevel = level;
         }
-        if (level == null || minecraft.isPaused()) {
+        if (level == null) {
             seconds = 0.0f;
         }
         boolean weatherHere = level != null && level.dimensionType().skybox() == DimensionType.Skybox.OVERWORLD

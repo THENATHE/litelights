@@ -698,8 +698,9 @@ public final class SettingsScreen extends Screen {
         }
     }
 
+    /** Measured against the list's shortest height, so the last row can scroll clear of the largest description box. */
     private int maxScroll() {
-        return Math.max(0, contentHeight - layout.listH());
+        return Math.max(0, contentHeight - layout.shortestListH());
     }
 
     private void scrollTo(int next) {
@@ -848,16 +849,16 @@ public final class SettingsScreen extends Screen {
 
         // The box keeps what it shows while the pointer is over it, so a long description can be
         // read and scrolled; anywhere else the hovered row, or the focused one, is described.
-        Object hovered = inList(pointerX, pointerY) ? rowSourceAt(pointerY) : null;
-        Object pointed = hovered;
-        if (pointed == null && !overDescription(pointerX, pointerY)) {
+        boolean reading = overDescription(pointerX, pointerY);
+        Object pointed = inList(pointerX, pointerY) ? rowSourceAt(pointerY) : null;
+        if (pointed == null && !reading) {
             pointed = focusedSource();
         }
         if (pointed != null && pointed != described) {
             described = pointed;
             describeScroll = 0;
         }
-        fitDescriptionBox(hovered);
+        fitDescriptionBox(reading);
 
         boolean inList = inList(pointerX, pointerY);
         int listMouseX = inList ? pointerX : -1;
@@ -1219,7 +1220,7 @@ public final class SettingsScreen extends Screen {
             return;
         }
         int x = layout.panelRight() - ScreenLayout.PAD - 2;
-        int thumbH = Math.max(12, layout.listH() * layout.listH() / contentHeight);
+        int thumbH = Math.max(12, layout.listH() * layout.listH() / (layout.listH() + max));
         int thumbY = layout.listY() + Math.round((layout.listH() - thumbH) * ((float) scroll / max));
         boolean hot = draggingScrollbar || onScrollbar(mouseX, mouseY);
         graphics.fill(x, layout.listY(), x + 3, layout.listBottom(), 0x22FFFFFF);
@@ -1284,34 +1285,34 @@ public final class SettingsScreen extends Screen {
         return layout.listW() - 2 - (withScrollbar ? DESCRIBE_BAR_W : 0);
     }
 
-    /** Whether the description is taller than the box may grow, so the box scrolls instead. */
-    private boolean describeScrolls() {
-        return layout.describeMaxH() > 0 && descriptionText(describeTextW(false)).height() > layout.describeMaxH();
-    }
-
+    /** How far the box's text scrolls: 0 when the description fits the box as it is now. */
     private int maxDescribeScroll() {
-        if (layout.describeH() == 0 || !describeScrolls()) {
+        if (layout.describeH() == 0 || descriptionText(describeTextW(false)).height() <= layout.describeH()) {
             return 0;
         }
         return Math.max(0, descriptionText(describeTextW(true)).height() - layout.describeH());
     }
 
     /**
-     * Sizes the box to the whole description, up to its largest size, and gives the list the rest.
-     * Only a description taller than that scrolls. A hovered row the growing box would cover is
-     * scrolled up to stay in view.
+     * Sizes the box to the description, up to its largest size, and gives the list the rest. The
+     * box never grows over the row it describes, so the row under the pointer stays where it is and
+     * can always be clicked: with too little room below that row, the box stops short and its text
+     * scrolls. With the pointer over the box, to read it, the box grows to the whole description
+     * and the list scrolls to keep the described row just above it.
      */
-    private void fitDescriptionBox(Object hovered) {
+    private void fitDescriptionBox(boolean reading) {
         if (layout.describeMaxH() == 0) {
             return;
         }
-        int wanted = describeScrolls() ? layout.describeMaxH() : descriptionText(describeTextW(false)).height();
-        ScreenLayout fitted = layout.withDescribeH(wanted);
+        int wanted = descriptionText(describeTextW(false)).height();
+        int rowBottom = rowBottom(described);
+        // A row cut off at the list's bottom counts as shown: reading brings it up whole.
+        boolean rowShown = rowBottom > layout.listY() && rowBottom <= layout.bodyBottom();
+        ScreenLayout fitted = reading ? layout.withDescribeH(wanted) : layout.withDescribeBelow(wanted, rowBottom);
         if (fitted != layout) {
             layout = fitted;
-            scroll = Math.clamp(scroll, 0, maxScroll());
-            int covered = hovered == null ? 0 : rowBottom(hovered) - layout.listBottom();
-            if (covered > 0) {
+            int covered = rowBottom - layout.listBottom();
+            if (reading && rowShown && covered > 0) {
                 scroll = Math.clamp(scroll + covered, 0, maxScroll());
             }
             placeWidgets();
@@ -1319,8 +1320,11 @@ public final class SettingsScreen extends Screen {
         describeScroll = Math.clamp(describeScroll, 0, maxDescribeScroll());
     }
 
-    /** Where a row ends on screen; the list's top when it isn't in the list. */
+    /** Where a row ends on screen; the list's top when it isn't in the list (or nothing is given). */
     private int rowBottom(Object source) {
+        if (source == null) {
+            return layout.listY();
+        }
         for (ListRow row : rows) {
             if (row.source() == source) {
                 return layout.listY() + row.y() + row.h() - scroll;
@@ -1329,9 +1333,10 @@ public final class SettingsScreen extends Screen {
         return layout.listY();
     }
 
+    /** Over the box, or the narrow gap between it and the list, where the pointer crosses into it. */
     private boolean overDescription(double x, double y) {
         return layout.describeH() > 0 && x >= layout.listX() - 5 && x < layout.listX() + layout.listW() + 5
-                && y >= layout.describeY() && y < layout.describeY() + layout.describeH();
+                && y >= layout.listBottom() && y < layout.describeY() + layout.describeH();
     }
 
     private void drawDescription(GuiGraphicsExtractor graphics, int pointerX, int pointerY) {
@@ -1458,6 +1463,87 @@ public final class SettingsScreen extends Screen {
             }
         }
         return null;
+    }
+
+    /** For QA: the names of the rows the description box can describe (settings and actions), top to bottom. */
+    public List<String> describableRowNames() {
+        List<String> names = new ArrayList<>();
+        for (ListRow row : rows) {
+            String name = describableName(row);
+            if (name != null) {
+                names.add(name);
+            }
+        }
+        return names;
+    }
+
+    private static String describableName(ListRow row) {
+        return switch (row.source()) {
+            case RowValue value -> value.label().getString();
+            case PageModel.Action action -> action.label().getString();
+            case null, default -> null;
+        };
+    }
+
+    private ListRow describableRow(String name) {
+        for (ListRow row : rows) {
+            if (name.equals(describableName(row))) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    /** For QA: the description of the setting or action with this name, or null when there is no such row. */
+    public Component rowDescription(String name) {
+        ListRow row = describableRow(name);
+        return row == null ? null : descriptionOf(row.source());
+    }
+
+    /** For QA: where the setting or action row with this name is drawn (x, top, width, height in GUI pixels), or null. */
+    public int[] rowBox(String name) {
+        ListRow row = describableRow(name);
+        return row == null ? null : new int[] {layout.listX(), layout.listY() + row.y() - scroll, layout.listW(), row.h()};
+    }
+
+    /**
+     * For QA: the middle of the control on the row with this name (its switch, slider, choice or
+     * button), or null when the control isn't wholly inside the list.
+     */
+    public int[] rowControlPoint(String name) {
+        ListRow row = describableRow(name);
+        if (row == null) {
+            return null;
+        }
+        for (Placed placed : row.widgets()) {
+            AbstractWidget widget = placed.widget();
+            if (!(widget instanceof ResetWidget)) {
+                boolean inside = widget.visible && widget.getY() >= layout.listY() && widget.getBottom() <= layout.listBottom();
+                return inside ? new int[] {widget.getX() + widget.getWidth() / 2, widget.getY() + widget.getHeight() / 2} : null;
+            }
+        }
+        return null;
+    }
+
+    /** For QA: the list's place in GUI pixels: x, top, width, bottom. */
+    public int[] listBox() {
+        return new int[] {layout.listX(), layout.listY(), layout.listW(), layout.listBottom()};
+    }
+
+    /** For QA: whether a choice's list (or another popup) is open. */
+    public boolean popupOpen() {
+        return popup.isOpen();
+    }
+
+    /** For QA: the setting or action whose control has the focus, as a click on it gives it, or "". */
+    public String focusedRowName() {
+        Object focused = focusedSource();
+        for (ListRow row : rows) {
+            if (focused != null && row.source() == focused) {
+                return describableName(row);
+            }
+        }
+        return "";
     }
 
     /**

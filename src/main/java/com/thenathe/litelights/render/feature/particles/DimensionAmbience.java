@@ -51,7 +51,7 @@ final class DimensionAmbience {
         switch (s.climate) {
             case BASALT_DELTAS -> {
                 if (particles.dustSpecks()) {
-                    air(s, queue, ParticleKind.ASH_HAZE, 0.3f * hazeScale, 30.0f, 10.0f, HAZE_COLOR, 2.4f, 1.5f, 220, false);
+                    ashHaze(s, queue, 0.3f * hazeScale);
                     air(s, queue, ParticleKind.ASH, 3.0f * scale, 24.0f, 12.0f, ASH_COLOR, 0.05f, 0.02f, 180, false);
                     air(s, queue, ParticleKind.NETHER_EMBER, 0.8f * scale, 24.0f, 10.0f, NETHER_EMBER_COLOR, 0.04f, 0.015f, 120, false);
                 }
@@ -87,8 +87,14 @@ final class DimensionAmbience {
         air(s, queue, ParticleKind.END_SPECK, 1.6f * scale, 18.0f, 8.0f, END_SPECK_COLOR, 0.03f, 0.01f, 160, false);
         RandomSource random = s.random;
         // Mist hangs low over the islands close by: Near's area and count at every distance.
-        int mist = ParticleBudget.countFromRate(0.6f * queue.rateScale(), random.nextFloat());
+        float mistRate = 0.6f * queue.rateScale();
         float mistAcross = 56.0f;
+        if (HazeField.wanted(s.settings)) {
+            offerEndMist(s, mistRate, mistAcross);
+            return;
+        }
+        boolean clumped = s.settings.weather().mistStyle() == RenderSettings.MistStyle.PUFFS;
+        int mist = ParticleBudget.countFromRate(clumped ? mistRate * HazeClumps.RATE_SCALE : mistRate, random.nextFloat());
         for (int i = 0; i < mist && queue.room(ParticleCategory.END) > 0; i++) {
             int x = (int) Math.floor(s.cameraX + (random.nextFloat() - 0.5f) * mistAcross);
             int z = (int) Math.floor(s.cameraZ + (random.nextFloat() - 0.5f) * mistAcross);
@@ -99,10 +105,53 @@ final class DimensionAmbience {
             if (ground <= s.level.getMinY() || Math.abs(ground - s.cameraY) > 18.0f) {
                 continue;
             }
+            if (clumped && !HazeClumps.keep(x, z, s.hazeDriftX, s.hazeDriftZ, random.nextFloat())) {
+                continue;
+            }
             double y = ground + 0.3 + random.nextFloat() * 1.4;
             queue.add(ParticleKind.END_MIST, x + random.nextFloat(), y, z + random.nextFloat(), 0.0f, 0.0f, 0.0f,
                 1.8f + random.nextFloat() * 1.2f, 220 + random.nextInt(80), END_MIST_COLOR, s.lightAt(x, y, z), random.nextInt());
         }
+    }
+
+    /** Ash haze puffs' size on average over their life (2.4 to 3.9 blocks, growing by 1.4), and their lifetime (220 to 330 ticks). */
+    private static final float ASH_HAZE_SIZE = 3.15f * 1.2f;
+    private static final int ASH_HAZE_LIFETIME = 275;
+    /** End mist's size on average over its life (1.8 to 3 blocks, growing by 1.3), and its lifetime (220 to 300 ticks). */
+    private static final float END_MIST_SIZE = 2.4f * 1.15f;
+    private static final int END_MIST_LIFETIME = 260;
+
+    /** Basalt deltas' ash haze: puffs in the open air around the camera, or the Mist field's share of them. */
+    private static void ashHaze(Surroundings s, SpawnQueue queue, float rate) {
+        if (HazeField.wanted(s.settings)) {
+            // The puffs fill a box 30 blocks across and 10 high around the camera, each reaching about a third of its size past it.
+            float layer = 10.0f + ASH_HAZE_SIZE * 0.6f;
+            float extinction = HazeField.extinction(rate, ASH_HAZE_LIFETIME, (HAZE_COLOR >>> 24) / 255.0f, ASH_HAZE_SIZE, 30.0f * 30.0f, layer);
+            HazeField.get().offer(ParticleKind.Haze.ASH, extinction, HAZE_COLOR, s.cameraY - layer * 0.5, s.cameraY + layer * 0.5,
+                s.lightAt(s.cameraX, s.cameraY, s.cameraZ));
+            return;
+        }
+        boolean clumped = s.settings.weather().mistStyle() == RenderSettings.MistStyle.PUFFS;
+        air(s, queue, ParticleKind.ASH_HAZE, clumped ? rate * HazeClumps.RATE_SCALE : rate, 30.0f, 10.0f, HAZE_COLOR, 2.4f, 1.5f, 220, false,
+            clumped);
+    }
+
+    /** The Mist field's share of the End's low mist, over the island under the camera. */
+    private static void offerEndMist(Surroundings s, float rate, float across) {
+        int x = (int) Math.floor(s.cameraX);
+        int z = (int) Math.floor(s.cameraZ);
+        if (!s.level.hasChunk(x >> 4, z >> 4)) {
+            return;
+        }
+        int ground = s.level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
+        if (ground <= s.level.getMinY() || Math.abs(ground - s.cameraY) > 18.0f) {
+            return;
+        }
+        // Puff centres 0.3 to 1.7 blocks up, each reaching about a quarter of its size above that.
+        double top = ground + 1.7 + END_MIST_SIZE * 0.25;
+        float extinction = HazeField.extinction(rate, END_MIST_LIFETIME, (END_MIST_COLOR >>> 24) / 255.0f, END_MIST_SIZE, across * across,
+            (float) (top - ground));
+        HazeField.get().offer(ParticleKind.Haze.END, extinction, END_MIST_COLOR, ground, top, s.lightAt(s.cameraX, ground + 1.0, s.cameraZ));
     }
 
     /**
@@ -112,6 +161,12 @@ final class DimensionAmbience {
      */
     private static void air(Surroundings s, SpawnQueue queue, ParticleKind kind, float rate, float nearAcross, float high,
                             int color, float size, float sizeSpread, int lifetime, boolean onGround) {
+        air(s, queue, kind, rate, nearAcross, high, color, size, sizeSpread, lifetime, onGround, false);
+    }
+
+    /** As above; {@code clumped} keeps a share of the puffs by where they gather (HazeClumps). */
+    private static void air(Surroundings s, SpawnQueue queue, ParticleKind kind, float rate, float nearAcross, float high,
+                            int color, float size, float sizeSpread, int lifetime, boolean onGround, boolean clumped) {
         RandomSource random = s.random;
         float across = kind.fixedRange ? nearAcross : nearAcross * s.ambientReach;
         int count = ParticleBudget.countFromRate(rate, random.nextFloat());
@@ -120,6 +175,9 @@ final class DimensionAmbience {
             double y = s.cameraY + (random.nextFloat() - 0.5f) * high;
             double z = s.cameraZ + (random.nextFloat() - 0.5f) * across;
             if (!s.level.getBlockState(s.cursor.set(x, y, z)).isAir()) {
+                continue;
+            }
+            if (clumped && !HazeClumps.keep(x, z, s.hazeDriftX, s.hazeDriftZ, random.nextFloat())) {
                 continue;
             }
             if (onGround) {

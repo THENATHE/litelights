@@ -1,6 +1,8 @@
 #version 330
 #extension GL_ARB_separate_shader_objects : require
 
+#include <litelights:loop_caps.glsl>
+
 // Spreads the outlined pixels of the level, each by its own amount: every pixel adds a Gaussian
 // with its own sigma, so a distant item gets a thin glow and a near one a wide glow in the same
 // frame. Across (LITE_OUTLINE_ACROSS) reads outline_level_prepare's (coverage, sigma) and writes the
@@ -14,6 +16,9 @@ layout(push_constant) uniform Spread {
     vec4 Step;    // xy one mask pixel along the spread, in texture units; z pixels reached each way
 };
 
+// The safety cap (loop_caps.glsl): EnchantmentOutline reaches at most 64 pixels each way (MAX_TAPS).
+const int LITE_OUTLINE_MAX_REACH = 96;
+
 layout(location = 0) in vec2 texCoord;
 layout(location = 0) out vec4 fragColor;
 
@@ -24,7 +29,7 @@ float weight(float offset, float sigma) {
 }
 
 void main() {
-    int reach = int(Step.z);
+    int reach = lite_loop_count(Step.z, LITE_OUTLINE_MAX_REACH);
     float spread = 0.0;
     float spreadSigma = 0.0;
     for (int i = -reach; i <= reach; i++) {

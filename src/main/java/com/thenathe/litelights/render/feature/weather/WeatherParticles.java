@@ -4,6 +4,8 @@ import com.thenathe.litelights.config.PreviewWeather;
 import com.thenathe.litelights.render.RenderSettings;
 import com.thenathe.litelights.render.feature.particles.BiomeClimate;
 import com.thenathe.litelights.render.feature.particles.ColumnGrid;
+import com.thenathe.litelights.render.feature.particles.HazeClumps;
+import com.thenathe.litelights.render.feature.particles.HazeField;
 import com.thenathe.litelights.render.feature.particles.ParticleBudget;
 import com.thenathe.litelights.render.feature.particles.ParticleCategory;
 import com.thenathe.litelights.render.feature.particles.ParticleKind;
@@ -179,10 +181,15 @@ public final class WeatherParticles {
         // A blizzard closes in: much more mist, and nearer.
         float blizzard = s.storm.blizzard();
         float rate = 1.6f * s.rain * (1.0f + 3.0f * blizzard) * scale;
-        RandomSource random = s.random;
-        int count = ParticleBudget.countFromRate(rate, random.nextFloat());
         float nearest = 7.0f - 3.0f * blizzard;
         float farthest = nearest + 24.0f - 6.0f * blizzard;
+        if (HazeField.wanted(s.settings)) {
+            offerMist(s, grid, rate, nearest, farthest, blizzard, rainKept, snowKept);
+            return;
+        }
+        boolean clumped = s.settings.weather().mistStyle() == RenderSettings.MistStyle.PUFFS;
+        RandomSource random = s.random;
+        int count = ParticleBudget.countFromRate(clumped ? rate * HazeClumps.RATE_SCALE : rate, random.nextFloat());
         for (int i = 0; i < count && queue.room(ParticleCategory.WEATHER) > 0; i++) {
             float angle = random.nextFloat() * (float) (Math.PI * 2.0);
             float distance = nearest + random.nextFloat() * (farthest - nearest);
@@ -198,6 +205,9 @@ public final class WeatherParticles {
             if (!keeps(snowMist ? snowKept : rainKept, random)) {
                 continue;
             }
+            if (clumped && !HazeClumps.keep(x, z, s.hazeDriftX, s.hazeDriftZ, random.nextFloat())) {
+                continue;
+            }
             double y = ground + 0.6 + random.nextFloat() * (1.4f + 5.0f * blizzard);
             int color = snowMist ? SNOW_MIST_COLOR : RAIN_MIST_COLOR;
             // A blizzard's mist is thicker: it is what closes the view in.
@@ -205,6 +215,50 @@ public final class WeatherParticles {
             queue.add(ParticleKind.MIST, x, y, z, s.wind[0], 0.0f, s.wind[1], 5.0f + random.nextFloat() * 3.0f,
                 180 + random.nextInt(80), color, grid.lightAt(x, z), random.nextInt());
         }
+    }
+
+    /** Mist puffs' size on average over their life (5 to 8 blocks, growing by 1.3). */
+    private static final float MIST_SIZE = 6.5f * 1.15f;
+    private static final int MIST_LIFETIME = 220;
+
+    /**
+     * The Mist field's share of rain and snow mist: what {@link #mist} would spawn at the camera's own
+     * column, as extinction over the ring and layer the puffs fill (HazeField.extinction).
+     */
+    private static void offerMist(Surroundings s, ColumnGrid grid, float rate, float nearest, float farthest, float blizzard,
+                                  float rainKept, float snowKept) {
+        byte fall = previewedFall(grid.precipitationAt(s.cameraX, s.cameraZ));
+        double ground = fieldGround(s, grid);
+        if (fall == ColumnGrid.PRECIPITATION_NONE || Double.isNaN(ground)) {
+            return;
+        }
+        boolean snow = fall == ColumnGrid.PRECIPITATION_SNOW;
+        float kept = snow ? snowKept : rainKept;
+        int color = snow ? SNOW_MIST_COLOR : RAIN_MIST_COLOR;
+        float alpha = Math.min(1.0f, (color >>> 24) / 255.0f * (1.0f + 1.2f * blizzard));
+        // Puff centres reach 2 + 5 blizzard blocks up, and each puff about a quarter of its size above that.
+        double top = ground + 2.0 + 5.0 * blizzard + MIST_SIZE * 0.25;
+        float extinction = HazeField.extinction(rate * kept, MIST_LIFETIME, alpha, MIST_SIZE, HazeField.ring(nearest, farthest),
+            (float) (top - ground)) * skyExposure(s);
+        HazeField.get().offer(ParticleKind.Haze.MIST, extinction, color, ground, top, grid.lightAt(s.cameraX, s.cameraZ));
+    }
+
+    /**
+     * The ground the Mist field lies on: the camera's column, or just under the camera where that
+     * column is a roof over it or isn't known yet. NaN where the haze wouldn't spawn (ground far
+     * above or below).
+     */
+    private static double fieldGround(Surroundings s, ColumnGrid grid) {
+        double ground = grid.groundHeight(s.cameraX, s.cameraZ);
+        if (ground == Double.NEGATIVE_INFINITY || ground > s.cameraY) {
+            ground = s.cameraY - 1.62;
+        }
+        return Math.abs(ground - s.cameraY) > 24.0 ? Double.NaN : ground;
+    }
+
+    /** The field only fills the air out in the open: puffs never spawn under a roof, so a room stays clear. */
+    private static float skyExposure(Surroundings s) {
+        return Math.clamp((s.skyLightAtCamera - 6) / 8.0f, 0.0f, 1.0f);
     }
 
     private static void driftingSand(Surroundings s, SpawnQueue queue, ColumnGrid grid, float scale, float thicknessScale) {
@@ -225,6 +279,17 @@ public final class WeatherParticles {
                 50 + random.nextInt(40), grainColor(climate), grid.lightAt(spot[0], spot[2]), random.nextInt());
         }
         // Low, thin drifts of dust skim the ground.
+        if (HazeField.wanted(s.settings)) {
+            BiomeClimate here = grid.climateAt(s.cameraX, s.cameraZ);
+            double ground = fieldGround(s, grid);
+            if (here.isSandy() && !Double.isNaN(ground)) {
+                float extinction = HazeField.extinction(0.8f * thicknessScale, 80, 0.5f, 1.1f * 1.3f, HazeField.ring(6.0f, RADIUS), 1.6f)
+                    * skyExposure(s);
+                HazeField.get().offer(ParticleKind.Haze.SAND, extinction, blownSandColor(here), ground, ground + 1.6,
+                    grid.lightAt(s.cameraX, s.cameraZ));
+            }
+            return;
+        }
         int drifts = ParticleBudget.countFromRate(0.8f * thicknessScale, random.nextFloat());
         for (int i = 0; i < drifts && queue.room(ParticleCategory.WEATHER) > 0; i++) {
             double[] spot = groundSpot(s, grid, 6.0f, RADIUS);
@@ -253,8 +318,14 @@ public final class WeatherParticles {
         // Clouds of dust roll through, nearer and thicker the stronger the storm. They go first:
         // grains would fill the budget on their own. Cloud particles Off leaves them out.
         float cloudsKept = s.settings.weather().storms().sandClouds(s.thunder);
-        int clouds = cloudsKept <= 0.0f ? 0
-            : ParticleBudget.countFromRate(4.0f * CLOUD_COVERAGE * strength * thicknessScale * cloudsKept, random.nextFloat());
+        float cloudRate = cloudsKept <= 0.0f ? 0.0f : 4.0f * CLOUD_COVERAGE * strength * thicknessScale * cloudsKept;
+        boolean field = HazeField.wanted(s.settings);
+        if (field) {
+            offerDustClouds(s, grid, cloudRate, stormAtmosphere);
+        }
+        boolean clumped = s.settings.weather().mistStyle() == RenderSettings.MistStyle.PUFFS;
+        int clouds = field || cloudRate <= 0.0f ? 0
+            : ParticleBudget.countFromRate(clumped ? cloudRate * HazeClumps.RATE_SCALE : cloudRate, random.nextFloat());
         for (int i = 0; i < clouds && queue.room(ParticleCategory.WEATHER) > 0; i++) {
             double[] spot = groundSpot(s, grid, 2.0f, RADIUS + 6.0f);
             if (spot == null) {
@@ -262,6 +333,9 @@ public final class WeatherParticles {
             }
             BiomeClimate climate = grid.climateAt(spot[0], spot[2]);
             if (!sandstormLand(climate, stormAtmosphere)) {
+                continue;
+            }
+            if (clumped && !HazeClumps.keep(spot[0], spot[2], s.hazeDriftX, s.hazeDriftZ, random.nextFloat())) {
                 continue;
             }
             double y = spot[1] + 0.6 + random.nextFloat() * 7.0;
@@ -290,6 +364,24 @@ public final class WeatherParticles {
             queue.add(ParticleKind.SANDSTORM_GRAIN, spot[0], y, spot[2], s.wind[0] * boost, -0.01f, s.wind[1] * boost, 0.035f,
                 40 + random.nextInt(40), blownSandColor(climate), grid.lightAt(spot[0], spot[2]), random.nextInt());
         }
+    }
+
+    /** Dust clouds' size on average over their life (2.4 to 4.4 blocks, growing by 1.6). */
+    private static final float DUST_CLOUD_SIZE = 3.4f * 1.3f;
+    private static final int DUST_CLOUD_LIFETIME = 130;
+
+    /** The Mist field's share of a sandstorm's dust clouds, as {@link #offerMist} does for mist. */
+    private static void offerDustClouds(Surroundings s, ColumnGrid grid, float rate, boolean stormAtmosphere) {
+        BiomeClimate here = grid.climateAt(s.cameraX, s.cameraZ);
+        double ground = fieldGround(s, grid);
+        if (rate <= 0.0f || !sandstormLand(here, stormAtmosphere) || Double.isNaN(ground)) {
+            return;
+        }
+        // Cloud centres go up to 7.6 blocks, and each reaches about a quarter of its size above that.
+        double top = ground + 7.6 + DUST_CLOUD_SIZE * 0.25;
+        float extinction = HazeField.extinction(rate, DUST_CLOUD_LIFETIME, 0x90 / 255.0f, DUST_CLOUD_SIZE, HazeField.ring(2.0f, RADIUS + 6.0f),
+            (float) (top - ground)) * skyExposure(s);
+        HazeField.get().offer(ParticleKind.Haze.SAND, extinction, sandColor(here), ground, top, grid.lightAt(s.cameraX, s.cameraZ));
     }
 
     /**

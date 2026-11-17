@@ -2,6 +2,7 @@
 #define LITELIGHTS_WATER_REFLECTION_GLSL
 
 #include <litelights:frame.glsl>
+#include <litelights:loop_caps.glsl>
 #include <litelights:water/uniforms.glsl>
 
 // Screen-space reflections against the opaque scene copied just before translucent terrain, and
@@ -67,7 +68,15 @@ vec3 lite_water_shaded_sky(vec3 direction, vec4 shade) {
 // interpolating 1 / w, so each step costs one fetch and no matrix work. When a step goes from in front of the scene to behind
 // it, the crossing is refined, and accepted only if the ray there is less than a block or two
 // behind the surface, so rays passing behind thin things carry on.
+//
+// The safety caps (loop_caps.glsl): Fine reflection detail takes 40 steps and 5 refinements, the
+// most any setting asks for (WaterRenderer, RenderSettings.MirrorDetail).
+const int LITE_WATER_TRACE_MAX_STEPS = 64;
+const int LITE_WATER_TRACE_MAX_REFINEMENTS = 8;
+
 vec4 lite_water_trace(vec3 origin, vec3 direction, float jitter, int steps, int refinements) {
+    steps = lite_loop_cap(steps, LITE_WATER_TRACE_MAX_STEPS);
+    refinements = lite_loop_cap(refinements, LITE_WATER_TRACE_MAX_REFINEMENTS);
     vec4 startClip = LiteViewProjection * vec4(origin, 1.0);
     vec4 endClip = LiteViewProjection * vec4(origin + direction * 512.0, 1.0);
     const float nearestW = 0.05;

@@ -98,6 +98,82 @@ final class ParticleLayers {
     static final SingleQuadParticle.Layer SOFT = new SingleQuadParticle.Layer(true, TextureAtlas.LOCATION_PARTICLES, SOFT_PIPELINE, SOFT_OIT);
 
     /**
+     * The haze kinds' classic billboards (Mist style: Classic billboards): the soft shader with
+     * LITE_HAZE, which fades them out against the opaque scene's distance (HazeDepth) and breaks
+     * them up with the drifting world-space noise. A layer of their own, so snow and sand grains
+     * keep the plain soft shader.
+     */
+    private static final RenderPipeline HAZE_BILLBOARD_PIPELINE = RenderPipeline.builder()
+        .withBindGroupLayout(BindGroupLayouts.GLOBALS)
+        .withBindGroupLayout(BindGroupLayouts.PROJECTION)
+        .withBindGroupLayout(BindGroupLayouts.DYNAMIC_TRANSFORMS)
+        .withBindGroupLayout(BindGroupLayouts.FOG)
+        .withBindGroupLayout(BindGroupLayouts.SAMPLER0_SAMPLER2)
+        .withBindGroupLayout(HazeDepth.LAYOUT)
+        .withLocation(LiteLightsClient.id("pipeline/haze_billboard"))
+        .withVertexShader(SOFT_SHADER)
+        .withFragmentShader(SOFT_SHADER)
+        .withShaderDefine("LITE_HAZE")
+        .withVertexBinding(0, DefaultVertexFormat.PARTICLE)
+        .withPrimitiveTopology(PrimitiveTopology.QUADS)
+        .withColorTargetState(new ColorTargetState(OVER_KEEP_ALPHA))
+        .withDepthStencilState(new DepthStencilState(CompareOp.GREATER_THAN_OR_EQUAL, false))
+        .build();
+
+    private static final OitPipelineSet HAZE_BILLBOARD_OIT = OitPipelineSet.builder("litelights_haze_billboard", RenderPipeline.builder()
+            .withBindGroupLayout(BindGroupLayouts.SAMPLER0_SAMPLER2)
+            .withBindGroupLayout(BindGroupLayouts.DYNAMIC_TRANSFORMS)
+            .withBindGroupLayout(BindGroupLayouts.FOG)
+            .withBindGroupLayout(HazeDepth.LAYOUT)
+            .withVertexShader(SOFT_SHADER)
+            .withFragmentShader(SOFT_SHADER)
+            .withShaderDefine("LITE_HAZE")
+            .withVertexBinding(0, DefaultVertexFormat.PARTICLE)
+            .withPrimitiveTopology(PrimitiveTopology.QUADS))
+        .build();
+
+    static final SingleQuadParticle.Layer HAZE_BILLBOARD = new SingleQuadParticle.Layer(true, TextureAtlas.LOCATION_PARTICLES,
+        HAZE_BILLBOARD_PIPELINE, HAZE_BILLBOARD_OIT);
+
+    /**
+     * 3D haze puffs (Mist style: 3D puffs, the default): particle/puff traces each puff's ellipsoid
+     * against the opaque scene's distance (HazeDepth). Blended like the soft layer; no culling, as the
+     * vertex shader builds the proxy quad.
+     */
+    private static final Identifier PUFF_SHADER = LiteLightsClient.id("particle/puff");
+
+    private static final RenderPipeline PUFF_PIPELINE = RenderPipeline.builder()
+        .withBindGroupLayout(BindGroupLayouts.GLOBALS)
+        .withBindGroupLayout(BindGroupLayouts.PROJECTION)
+        .withBindGroupLayout(BindGroupLayouts.DYNAMIC_TRANSFORMS)
+        .withBindGroupLayout(BindGroupLayouts.FOG)
+        .withBindGroupLayout(BindGroupLayouts.SAMPLER0_SAMPLER2)
+        .withBindGroupLayout(HazeDepth.LAYOUT)
+        .withLocation(LiteLightsClient.id("pipeline/haze_puff"))
+        .withVertexShader(PUFF_SHADER)
+        .withFragmentShader(PUFF_SHADER)
+        .withVertexBinding(0, DefaultVertexFormat.PARTICLE)
+        .withPrimitiveTopology(PrimitiveTopology.QUADS)
+        .withCull(false)
+        .withColorTargetState(new ColorTargetState(OVER_KEEP_ALPHA))
+        .withDepthStencilState(new DepthStencilState(CompareOp.GREATER_THAN_OR_EQUAL, false))
+        .build();
+
+    private static final OitPipelineSet PUFF_OIT = OitPipelineSet.builder("litelights_haze_puff", RenderPipeline.builder()
+            .withBindGroupLayout(BindGroupLayouts.SAMPLER0_SAMPLER2)
+            .withBindGroupLayout(BindGroupLayouts.DYNAMIC_TRANSFORMS)
+            .withBindGroupLayout(BindGroupLayouts.FOG)
+            .withBindGroupLayout(HazeDepth.LAYOUT)
+            .withVertexShader(PUFF_SHADER)
+            .withFragmentShader(PUFF_SHADER)
+            .withVertexBinding(0, DefaultVertexFormat.PARTICLE)
+            .withPrimitiveTopology(PrimitiveTopology.QUADS)
+            .withCull(false))
+        .build();
+
+    static final SingleQuadParticle.Layer PUFF = new SingleQuadParticle.Layer(true, TextureAtlas.LOCATION_PARTICLES, PUFF_PIPELINE, PUFF_OIT);
+
+    /**
      * Burn marks: the soft shader blended over the face (lit by the lightmap, faint edges kept),
      * without culling or depth writes. Lies a hair above the face, so the depth test keeps it there.
      */
@@ -152,6 +228,10 @@ final class ParticleLayers {
     static void claimPipelines() {
         PipelineOwners.claim(RenderFeature.PARTICLES, SOFT_PIPELINE, SOFT_OIT.depthBoundsPipeline(), SOFT_OIT.transmittancePipeline(),
             SOFT_OIT.accumulatePipeline(), BURN_MARK_PIPELINE, EMBER_VEIN_PIPELINE);
+        PipelineOwners.claim(RenderFeature.PARTICLES, HAZE_BILLBOARD_PIPELINE, HAZE_BILLBOARD_OIT.depthBoundsPipeline(),
+            HAZE_BILLBOARD_OIT.transmittancePipeline(), HAZE_BILLBOARD_OIT.accumulatePipeline(), PUFF_PIPELINE, PUFF_OIT.depthBoundsPipeline(),
+            PUFF_OIT.transmittancePipeline(), PUFF_OIT.accumulatePipeline());
+        HazeDepth.claimPipelines();
     }
 
     static SingleQuadParticle.Layer of(ParticleKind.Layer layer) {

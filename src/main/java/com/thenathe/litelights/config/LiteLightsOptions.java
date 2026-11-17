@@ -68,6 +68,9 @@ public final class LiteLightsOptions {
 
     public enum WeatherDensity { LIGHT, MEDIUM, HEAVY, DENSE }
 
+    /** Shown as 3D puffs, Mist field and Classic billboards: how mist, dust clouds and haze puffs are drawn. */
+    public enum MistStyle { PUFFS, FIELD, BILLBOARDS }
+
     /** The six storm types, each with its own fog and cloud particle rows. Haboob is a sandstorm with thunder. */
     public enum StormType { RAIN, THUNDERSTORM, SNOW, BLIZZARD, SANDSTORM, HABOOB }
 
@@ -108,6 +111,22 @@ public final class LiteLightsOptions {
             .at(Pages.GENERAL, "world_colours").register();
     public static final BoolOption NATURAL_FOLIAGE = BoolOption.builder("general.natural_foliage", true)
             .at(Pages.GENERAL, "world_colours").register();
+
+    // Read by each resource reload, not per frame (render.pipeline.ShaderLoopCaps).
+    public static final BoolOption SHADER_LOOP_CAPS = BoolOption.builder("general.shader_loop_caps", true)
+            .at(Pages.GENERAL, "compatibility").tag("litelights.option.general.shader_loop_caps.tag").register();
+
+    // Mac troubleshooting: parts of the terrain and block-model shaders, compiled in or out by each
+    // resource reload (render.pipeline.TerrainParts). Every part is in by default.
+    public static final BoolOption VANILLA_TERRAIN_SHADING = BoolOption.builder("general.mac.vanilla_terrain_shading", false)
+            .at(Pages.GENERAL, "compatibility/mac").register();
+    public static final BoolOption TERRAIN_WATER = terrainPart("water");
+    public static final BoolOption TERRAIN_CAUSTICS = terrainPart("caustics");
+    public static final BoolOption TERRAIN_GLASS = terrainPart("glass");
+    public static final BoolOption TERRAIN_SHADOWS = terrainPart("shadows");
+    public static final BoolOption TERRAIN_LIGHT = terrainPart("light");
+    public static final BoolOption TERRAIN_FOG = terrainPart("fog");
+    public static final BoolOption TERRAIN_SWAY = terrainPart("sway");
 
     // Sky
 
@@ -163,17 +182,20 @@ public final class LiteLightsOptions {
     public static final EnumOption<WaterSparkle> WATER_SPARKLE = EnumOption.builder("lighting.water_sparkle",
                     WaterSparkle.class, WaterSparkle.GENTLE)
             .at(Pages.LIGHTING, "glint").feature("glint").needs(GLINT_WATER).register();
+    // The glint sliders (0.9.7, followb097) replace Glint softness: 50% is each one's default, and
+    // GlintScale says what the rest of the range means. Glint under water follows the water's.
+    public static final FloatOption GLINT_WATER_SOFTNESS = glintSlider("lighting.glint_water_softness", LiteLightsOptions::waterGlint);
+    public static final FloatOption GLINT_WATER_INTENSITY = glintSlider("lighting.glint_water_intensity", LiteLightsOptions::waterGlint);
     public static final BoolOption GLINT_ICE_SNOW = BoolOption.builder("lighting.glint_ice_snow", true)
             .at(Pages.LIGHTING, "glint").cost(Cost.LOW).feature("glint").register();
     public static final BoolOption GLINT_METAL_GLASS = BoolOption.builder("lighting.glint_metal_glass", true)
             .at(Pages.LIGHTING, "glint").cost(Cost.LOW).feature("glint").register();
     public static final BoolOption GLINT_SAND_STONE = BoolOption.builder("lighting.glint_sand_stone", false)
             .at(Pages.LIGHTING, "glint").cost(Cost.LOW).feature("glint").register();
+    public static final FloatOption GLINT_GROUND_SOFTNESS = glintSlider("lighting.glint_ground_softness", LiteLightsOptions::groundGlint);
+    public static final FloatOption GLINT_GROUND_INTENSITY = glintSlider("lighting.glint_ground_intensity", LiteLightsOptions::groundGlint);
     public static final BoolOption SUBMERGED_GLINT = BoolOption.builder("lighting.submerged_glint", true)
             .at(Pages.LIGHTING, "glint").cost(Cost.LOW).feature("glint").register();
-    public static final FloatOption GLINT_SOFTNESS = FloatOption.builder("lighting.glint_softness", 0.15F, 0.0F, 1.0F, 0.05F)
-            .at(Pages.LIGHTING, "glint").feature("glint")
-            .enabledWhen(LiteLightsOptions::anyGlint).register();
 
     // Colour grading
 
@@ -215,7 +237,7 @@ public final class LiteLightsOptions {
             .at(Pages.SHADOWS, "more").feature("mob_shadows").needs(WORLD_SHADOWS).cost(Cost.MEDIUM).register();
     public static final BoolOption SHADOWS_IN_WATER = BoolOption.builder("shadows.in_water", true)
             .at(Pages.SHADOWS, "more").feature("underwater_shadows").needs(WORLD_SHADOWS).cost(Cost.LOW).register();
-    public static final EnumOption<FarShadows> FAR_SHADOWS = EnumOption.builder("shadows.far", FarShadows.class, FarShadows.SCREEN_SPACE)
+    public static final EnumOption<FarShadows> FAR_SHADOWS = EnumOption.builder("shadows.far", FarShadows.class, FarShadows.ADVANCED)
             .at(Pages.SHADOWS, "far_terrain").feature("far_shadows").needs(WORLD_SHADOWS).cost(Cost.LOW)
             .choiceCost(FarShadows.OFF, Cost.FREE).choiceCost(FarShadows.ADVANCED, Cost.HIGH).register();
 
@@ -238,11 +260,19 @@ public final class LiteLightsOptions {
             .at(Pages.WATER, "reflections").feature("reflections").enabledWhen(LiteLightsOptions::anyMirrors).register();
     public static final BoolOption EDGE_FOAM = BoolOption.builder("water.edge_foam", true)
             .at(Pages.WATER, "surface").cost(Cost.LOW).register();
+    public static final BoolOption EDGE_FOAM_BLOCKS_ONLY = BoolOption.builder("water.edge_foam_blocks_only", true)
+            .at(Pages.WATER, "surface").needs(EDGE_FOAM).register();
     public static final EnumOption<FoamMotion> FOAM_MOTION = EnumOption.builder("water.foam_motion", FoamMotion.class, FoamMotion.STATIONARY)
             .at(Pages.WATER, "surface").cost(Cost.FREE).choiceCost(FoamMotion.DRIFTING, Cost.LOW)
             .enabledWhen(LiteLightsOptions::anyFoam).tag("litelights.tag.experimental").register();
     public static final BoolOption OCEAN_WAVES = BoolOption.builder("water.ocean_waves", false)
             .at(Pages.WATER, "surface").cost(Cost.LOW).tag("litelights.tag.experimental").register();
+    // How far the swash runs up the beach in fair weather, and how thick the surf's foam lines are.
+    // At 1 each draws the waves exactly as before the rows existed (0.9.7, waves097).
+    public static final FloatOption SHORE_RUN_UP = FloatOption.builder("water.shore_run_up", 1.0F, 1.0F, 2.0F, 0.25F)
+            .at(Pages.WATER, "surface").needs(OCEAN_WAVES).format(ValueFormat.BLOCKS).register();
+    public static final FloatOption WAVE_FOAM = FloatOption.builder("water.wave_foam", 1.0F, 0.25F, 2.0F, 0.05F)
+            .at(Pages.WATER, "surface").needs(OCEAN_WAVES).format(ValueFormat.PERCENT).register();
     public static final BoolOption CAUSTICS = BoolOption.builder("water.caustics", true)
             .at(Pages.WATER, "surface").cost(Cost.LOW).register();
     public static final BoolOption FLOATING_LEAVES = BoolOption.builder("water.floating_leaves", true)
@@ -302,6 +332,8 @@ public final class LiteLightsOptions {
             .at(Pages.PARTICLES, "enhanced").cost(Cost.LOW).enabledWhen(LiteLightsOptions::particlesOn).register();
     public static final BoolOption EMBER_VEINS = BoolOption.builder("particles.ember_veins", true)
             .at(Pages.PARTICLES, "enhanced").cost(Cost.LOW).needs(ENHANCED_FIRE).enabledWhen(LiteLightsOptions::particlesOn).register();
+    public static final BoolOption BURN_MARKS = BoolOption.builder("particles.burn_marks", true)
+            .at(Pages.PARTICLES, "enhanced").cost(Cost.LOW).needs(ENHANCED_FIRE).enabledWhen(LiteLightsOptions::particlesOn).register();
     public static final BoolOption ENHANCED_WATER = BoolOption.builder("particles.enhanced_water", true)
             .at(Pages.PARTICLES, "enhanced").cost(Cost.LOW).enabledWhen(LiteLightsOptions::particlesOn).register();
 
@@ -322,6 +354,12 @@ public final class LiteLightsOptions {
             "rain_snow", WEATHER_DISTANCE);
     public static final BoolOption RAIN_MIST = BoolOption.builder("weather.rain_mist", true)
             .at(Pages.WEATHER, "rain_snow").cost(Cost.LOW).register();
+    // New in 0.9.7 (fog097); it covers the Nether's ash haze and the End's mist too, which have no
+    // rows of their own here, so it sits with the mist row rather than under Storms.
+    public static final EnumOption<MistStyle> MIST_STYLE = EnumOption.builder("weather.mist_style", MistStyle.class, MistStyle.FIELD)
+            .at(Pages.WEATHER, "rain_snow").cost(Cost.LOW).choiceCost(MistStyle.PUFFS, Cost.MEDIUM)
+            .choiceCost(MistStyle.BILLBOARDS, Cost.LOW)
+            .enabledWhen(LiteLightsOptions::particlesOn).register();
     public static final BoolOption STORM_ATMOSPHERE = BoolOption.builder("weather.storm_atmosphere", true)
             .at(Pages.WEATHER, "storms").cost(Cost.MEDIUM).credit().register();
     private static final Map<StormType, StormRows> STORMS = registerStorms();
@@ -566,9 +604,31 @@ public final class LiteLightsOptions {
                 .enabledWhen(LiteLightsOptions::particlesOn).register();
     }
 
+    /** A Mac troubleshooting part, on by default; it means nothing while vanilla terrain shading is on. */
+    private static BoolOption terrainPart(String name) {
+        return BoolOption.builder("general.mac.terrain_" + name, true)
+                .at(Pages.GENERAL, "compatibility/mac")
+                .enabledWhen(() -> !LiteLightsOptions.VANILLA_TERRAIN_SHADING.on()).register();
+    }
+
     private static BoolOption end(String name, Cost cost) {
         return BoolOption.builder("dimensions.end." + name, true)
                 .at(Pages.DIMENSIONS, "end").cost(cost).feature("end_" + name).register();
+    }
+
+    private static FloatOption glintSlider(String id, BooleanSupplier enabled) {
+        return FloatOption.builder(id, 0.5F, 0.0F, 1.0F, 0.01F)
+                .at(Pages.LIGHTING, "glint").feature("glint").enabledWhen(enabled).register();
+    }
+
+    /** Whether the water's glint sliders do anything: glint on water, or under it. */
+    public static boolean waterGlint() {
+        return GLINT_WATER.on() || SUBMERGED_GLINT.on();
+    }
+
+    /** Whether the ground's glint sliders do anything: glint on any of the other materials. */
+    public static boolean groundGlint() {
+        return GLINT_ICE_SNOW.on() || GLINT_METAL_GLASS.on() || GLINT_SAND_STONE.on();
     }
 
     /** Whether any glint is on: above water by material, or under water. */

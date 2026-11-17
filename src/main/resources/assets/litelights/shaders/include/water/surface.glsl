@@ -10,13 +10,14 @@
 #include <litelights:water/reflection.glsl>
 #include <litelights:water/large_textures.glsl>
 #include <litelights:water/waves.glsl>
+#include <litelights:terrain_parts.glsl>
 
 // Water, lava and ice surfaces, and caustics on blocks under water. Called from the terrain and
-// block-model fragment shaders after lighting, before fog (see hooks/water.glsl).
+// block-model fragment shaders after lighting, before fog (see hooks/water.glsl). Mac
+// troubleshooting can compile the surfaces (LITE_TERRAIN_WATER) and the caustics and swash
+// (LITE_TERRAIN_CAUSTICS) out of lite_water_surface (terrain_parts.glsl).
 
 const vec3 LITE_FOAM_COLOUR = vec3(0.90, 0.95, 1.0);
-// The hue Realistic water takes when Biome and depth colour is off: a clear blue-green.
-const vec3 LITE_REALISTIC_WATER = vec3(0.24, 0.52, 0.66);
 
 // Four long-crested waves. Their wave vectors are whole multiples of 2*pi/2048, so the pattern
 // repeats exactly with the 2048-block anchor (see lite_water_anchored).
@@ -216,7 +217,7 @@ vec3 lite_water_reflect(vec3 seen, vec3 surfacePosition, vec2 lightCoord, vec4 s
     if (lite_scene_copy_valid() && reflectance > 0.03) {
         // A fixed step offset: a random one per texel or pixel turns distant reflections to noise.
         float jitter = 0.5;
-        int steps = int(LiteWaterParams.y);
+        int steps = lite_loop_count(LiteWaterParams.y, LITE_WATER_TRACE_MAX_STEPS);
         vec4 hit = lite_water_trace(surfacePosition, direction, jitter, steps, steps > 16 ? 5 : 3);
         reflection = mix(reflection, hit.rgb, hit.a);
     }
@@ -234,8 +235,9 @@ const float LITE_WAKE_TILT = 0.6;
 
 // A wake's light on the water: its crests and the slopes facing the sun or moon catch the light,
 // troughs and the far slopes fall into shade, in four bands on the texel grid; and foam, in whole
-// texels, where the field has some, broken into lace by a fixed noise so it frays as it thins.
-// Mirrored in WakeLook (tests).
+// texels, where the field has some, broken into lace by a fixed noise so it frays as it thins, with
+// the same faint grain as the waves' and edge foam (waves097). Mirrored in WakeLook (tests), less the
+// grain.
 vec3 lite_wake_colour(vec3 seen, LiteWake wake, vec3 light, vec3 surfacePosition, float texelsPerBlock) {
     vec2 anchored = lite_water_anchored(surfacePosition);
     float dither = lite_wave_dither(ivec2(floor(anchored * texelsPerBlock)));
@@ -245,7 +247,9 @@ vec3 lite_wake_colour(vec3 seen, LiteWake wake, vec3 light, vec3 surfacePosition
     if (LiteWakeParams.x > 0.5 && wake.foam > 0.0) {
         float lace = lite_water_value_noise(anchored * 3.0);
         float amount = wake.foam * 1.4 - 0.25 + (lace - 0.5) * 0.6;
-        seen = mix(seen, LITE_FOAM_COLOUR * light, lite_wave_foam_texel(amount, dither) * 0.9 * wake.reach);
+        float fine = lite_wave_fine(lite_wave_footprint(surfacePosition));
+        vec3 foamColour = LITE_FOAM_COLOUR * light * lite_wave_grain(anchored, fine);
+        seen = mix(seen, foamColour, lite_wave_foam_cover(amount, dither, fine) * 0.9 * wake.reach);
     }
     return seen;
 }
@@ -306,7 +310,7 @@ vec3 lite_water_drifting_foam(vec3 seen, LiteFluidColumn column, vec3 surfacePos
         float wash = 0.5 + 0.5 * sin(time * 0.9 + noise * 2.0);
         float outer = reach + 0.12 + 0.1 * wash;
         foam = max(foam, (1.0 - smoothstep(0.0, 0.03, abs(distanceToShore - outer))) * 0.5 * (1.0 - wash));
-        seen = mix(seen, LITE_FOAM_COLOUR * light, foam * 0.85 * column.inMap);
+        seen = mix(seen, lite_foam_grained(LITE_FOAM_COLOUR, surfacePosition) * light, foam * 0.85 * column.inMap);
     }
     if (lite_water(LITE_WATER_FALLING_WATER)) {
         float landing = lite_water_landing_trail(surfacePosition, flow);
@@ -339,7 +343,7 @@ vec3 lite_water_surface_details(vec3 seen, LiteFluidColumn column, vec3 position
             float wash = 0.5 + 0.5 * sin(time * 0.9 + noise * 2.0);
             float outer = reach + 0.12 + 0.1 * wash;
             foam = max(foam, (1.0 - smoothstep(0.0, 0.03, abs(distanceToShore - outer))) * 0.5 * (1.0 - wash));
-            seen = mix(seen, LITE_FOAM_COLOUR * light, foam * 0.85 * column.inMap);
+            seen = mix(seen, lite_foam_grained(LITE_FOAM_COLOUR, surfacePosition) * light, foam * 0.85 * column.inMap);
         }
         if (lite_water(LITE_WATER_FALLING_WATER)) {
             float landing = lite_fluid_landing(surfacePosition);
@@ -467,15 +471,16 @@ void lite_shade_water(inout vec4 color, LiteSurface surface, vec3 dpdx, vec3 dpd
         vec2 tilt = swell.slope + wake.slope * (LITE_WAKE_TILT * wake.reach);
         seen = lite_water_reflect(seen, surfacePosition, surface.lightCoord, shade, hue, realistic, time, tilt);
     }
-    if (swell.sea > 0.0) {
-        seen = lite_ocean_swell_colour(seen, swell, light, surfacePosition);
-    }
     if (wake.reach > 0.0) {
         seen = lite_wake_colour(seen, wake, light, surfacePosition, texelsPerBlock);
     }
 
     if (topFace && atSurface) {
         seen = lite_water_surface_details(seen, column, surface.position, surfacePosition, light, time);
+    }
+    // After the foam, so a passing crest's light lies over it (waves097).
+    if (swell.sea > 0.0) {
+        seen = lite_ocean_swell_colour(seen, swell, light, surfacePosition);
     }
     if (!topFace && lite_water(LITE_WATER_FALLING_WATER) && column.present && !column.lava) {
         seen = lite_water_falling_white(seen, column, surface.position, surfacePosition, axisNormal, light, time);
@@ -539,7 +544,7 @@ void lite_shade_ice(inout vec4 color, LiteSurface surface) {
     vec3 reflection = lite_water_shaded_sky(direction, shade) * lite_water_sky_visibility(surface.lightCoord);
     if (surface.normal.y > 0.5 && lite_scene_copy_valid() && !lite_feature(LITE_FEATURE_CAMERA_UNDERWATER)) {
         float jitter = lite_water_hash(ivec2(gl_FragCoord.xy));
-        vec4 hit = lite_water_trace(surface.position, direction, jitter, max(8, int(LiteWaterParams.y) / 2), 2);
+        vec4 hit = lite_water_trace(surface.position, direction, jitter, max(8, lite_loop_count(LiteWaterParams.y, LITE_WATER_TRACE_MAX_STEPS) / 2), 2);
         reflection = mix(reflection, hit.rgb, hit.a);
     }
     color.rgb = mix(color.rgb, reflection, clamp(fresnel * LiteWaterParams.x * 0.8, 0.0, 1.0));
@@ -593,6 +598,7 @@ void lite_water_oit_alpha(inout vec4 color, LiteSurface surface) {
 }
 
 void lite_water_surface(inout vec4 color, LiteSurface surface) {
+#if defined(LITE_TERRAIN_WATER) || defined(LITE_TERRAIN_CAUSTICS)
     if (LiteWaterFlags.x == 0) {
         return;
     }
@@ -603,21 +609,30 @@ void lite_water_surface(inout vec4 color, LiteSurface surface) {
     vec2 duvdy = dFdy(surface.uv);
 
     if (lite_is_water_sprite(surface.uv)) {
+#ifdef LITE_TERRAIN_WATER
         lite_shade_water(color, surface, dpdx, dpdy, duvdx, duvdy);
+#endif
     } else if (lite_is_lava_sprite(surface.uv)) {
+#ifdef LITE_TERRAIN_WATER
         lite_shade_lava(color, surface, dpdx, dpdy, duvdx, duvdy);
+#endif
     } else {
+#ifdef LITE_TERRAIN_WATER
         bool ice = surface.material == LITE_MATERIAL_ICE || lite_is_ice_sprite(surface.uv);
         if (ice && lite_water(LITE_WATER_ICE_REFLECTIONS)) {
             lite_shade_ice(color, surface);
         }
+#endif
+#ifdef LITE_TERRAIN_CAUSTICS
         if (lite_water(LITE_WATER_CAUSTICS)) {
             lite_apply_caustics(color, surface);
         }
         if (lite_water(LITE_WATER_OCEAN_WAVES)) {
             lite_ocean_swash(color, surface);
         }
+#endif
     }
+#endif
 }
 
 #endif

@@ -32,8 +32,10 @@ layout(std140) uniform LiteWater {
     vec4 LiteWaveTrains[4];       // ocean waves out at sea: xy wave vector (radians per block), z phase now,
                                   // w share of the swell (0 = unused); see OceanSwell
     vec4 LiteWaveInfo;            // x sea state 0 (calm) to 1 (storm), y the shore waves' phase now (whole waves
-                                  // counted up to 1024), z their wave number (radians per block), w unused
-    vec4 LiteWaveWind;            // xy the wind's direction; z, w unused
+                                  // counted up to 1024), z their wave number (radians per block), w Shore
+                                  // run-up (1 to 2: how far the swash runs in fair weather; 1 = default)
+    vec4 LiteWaveWind;            // xy the wind's direction; z Wave foam (0.25 to 2: the surf's and the
+                                  // swash's foam lines thinner or thicker; 1 = default); w unused
     vec4 LiteGlassSprites[3];          // block atlas rectangles of snow, sand and red sand (weather on
                                        // glass draws in them), or off the atlas while unknown
     ivec4 LiteWakeWindow;         // wakes: xy the field's first cell less the camera block's (4 cells a block);

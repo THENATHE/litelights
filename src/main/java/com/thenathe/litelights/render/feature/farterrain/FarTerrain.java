@@ -24,7 +24,9 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.fog.FogData;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.material.FogType;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4fc;
 import org.jspecify.annotations.Nullable;
 
@@ -63,6 +65,8 @@ public final class FarTerrain {
     private static final float FOG_PUSHED_OUT = 1.0e8f;
     /** The top of a full water block above sea level's block: sea level is the first block above the water. */
     private static final float SEA_SURFACE_BELOW_SEA_LEVEL = 1.0f - 8.0f / 9.0f;
+    /** Blocks around the player's body the screen-space far-shadow trace also leaves out (arms, a held item). */
+    private static final float PLAYER_MARGIN = 1.0f;
 
     private static final boolean VOXY_LOADED = FabricLoader.getInstance().isModLoaded("voxy");
     private static final boolean DISTANT_HORIZONS_LOADED = FabricLoader.getInstance().isModLoaded("distanthorizons");
@@ -262,6 +266,26 @@ public final class FarTerrain {
             && (frame.featureFlags & FrameFlags.FEATURE_LITE_FOG) != 0;
     }
 
+    /**
+     * Where the player the camera follows stands, for the screen-space far-shadow trace to leave
+     * out: their body in third person, and what they hold, fill much of the screen and would
+     * otherwise cast a shadow over the land in front of them. A sphere round the middle of the body,
+     * a block wider than it all round, takes in the arms and a held sword or bow.
+     */
+    private void placePlayer() {
+        Minecraft minecraft = Minecraft.getInstance();
+        Entity player = minecraft.getCameraEntity();
+        if (player == null) {
+            values.playerReach = 0.0f;
+            return;
+        }
+        Vec3 camera = minecraft.gameRenderer.gameRenderState().levelRenderState.cameraRenderState.pos;
+        float partialTick = minecraft.gameRenderer.gameRenderState().levelRenderState.worldPartialTicks;
+        Vec3 feet = player.getPosition(partialTick);
+        values.playerCentre.set((float) (feet.x - camera.x), (float) (feet.y + player.getBbHeight() * 0.5 - camera.y), (float) (feet.z - camera.z));
+        values.playerReach = Math.max(player.getBbHeight(), player.getBbWidth()) * 0.5f + PLAYER_MARGIN;
+    }
+
     private void shade(GpuTexture colorTexture, GpuTextureView colorView, GpuTextureView depthView, boolean farTerrain, boolean distantHorizons) {
         FrameState frame = LiteLightsRenderer.get().frame();
         RenderSettings.FarShadows mode = farShadowMode(frame);
@@ -294,6 +318,7 @@ public final class FarTerrain {
                 .levelRenderState.cameraRenderState.pos.y);
         GpuTextureView farShadow = null;
         if (values.farShadows) {
+            placePlayer();
             try {
                 farShadow = shadows.draw(depthView, values, mode, distantHorizons);
                 RenderFeatureStatus.succeeded(RenderFeature.FAR_SHADOWS);

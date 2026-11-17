@@ -12,7 +12,9 @@
 // behind the camera. The darker of the two wins.
 //
 // In these passes FarSwitches holds the heightfield's values: x its lowest block height, y blocks
-// it covers around the camera, z how far to march in blocks, w unused.
+// it covers around the camera, z how far to march in blocks, w unused; and FarWaterSwitches the
+// player the camera follows: xyz the middle of their body, camera-relative, w how far around it
+// the screen march ignores what it sees (0: nobody).
 
 #include <litelights:farterrain/source.glsl>
 
@@ -33,6 +35,23 @@ vec2 lite_far_project(vec3 position, mat4 viewProjection) {
     return clip.w > 0.05 ? clip.xy / clip.w * 0.5 + 0.5 : vec2(-1.0);
 }
 
+// The player's own body and what they hold fill much of the screen in third person; they never
+// cast far shadows.
+bool lite_far_is_player(vec3 seenPosition) {
+    return FarWaterSwitches.w > 0.0 && distance(seenPosition, FarWaterSwitches.xyz) < FarWaterSwitches.w;
+}
+
+// Only land can cast a far shadow. The sky, the sun and the moon leave the depth buffer at the far
+// plane (lite_far_has_depth), and the land at the edge of the render distance, which the
+// render-distance fade has mostly turned the sky's colour (brightest round a low sun), counts as
+// sky too: four fifths of the way through the fade (LiteFogRange; pushed out of reach while a far
+// mod draws beyond it) it reads as sky, and would otherwise darken the land in front of it, as if
+// the sun cast a shadow.
+bool lite_far_can_cast(vec3 seenPosition) {
+    float skyFromHere = mix(LiteFogRange.x, LiteFogRange.y, 0.8);
+    return length(seenPosition.xz) < skyFromHere && !lite_far_is_player(seenPosition);
+}
+
 float lite_far_screen_visibility(vec3 position, float distance, vec3 light) {
     #ifdef LITE_FAR_SOURCE_DH
     mat4 viewProjection = inverse(FarInverseProjection);
@@ -51,12 +70,13 @@ float lite_far_screen_visibility(vec3 position, float distance, vec3 light) {
         }
         float depth = texture(SceneDepth, uv).r;
         if (lite_far_has_depth(depth)) {
-            float seen = length(lite_far_position(uv, depth));
+            vec3 seenPosition = lite_far_position(uv, depth);
+            float seen = length(seenPosition);
             float along = length(point);
             // In front of the ray by more than the step error, and not so far in front that it is
             // a separate thing the ray passes behind.
             float gap = along - seen;
-            if (gap > step * 0.5 && gap < travelled * 0.6 + 16.0) {
+            if (gap > step * 0.5 && gap < travelled * 0.6 + 16.0 && lite_far_can_cast(seenPosition)) {
                 vec2 edge = min(uv, 1.0 - uv);
                 return 1.0 - smoothstep(0.0, 0.05, min(edge.x, edge.y));
             }

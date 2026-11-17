@@ -187,7 +187,7 @@ class ConfigFileTest {
         for (boolean on : new boolean[] {true, false}) {
             JsonObject root = com.google.gson.JsonParser.parseString(
                 "{\"schema\": 1, \"options\": {\"water.jump_splash\": " + on + ", \"water.edge_foam\": false}}").getAsJsonObject();
-            assertEquals(2, ConfigMigrations.standard().migrate(root, 1));
+            assertEquals(ConfigMigrations.CURRENT_SCHEMA, ConfigMigrations.standard().migrate(root, 1));
             JsonObject options = root.getAsJsonObject("options");
             assertEquals(on ? "advanced" : "off", options.get("water.jump_splash").getAsString());
             assertFalse(options.get("water.edge_foam").getAsBoolean(), "everything else is left as it was");

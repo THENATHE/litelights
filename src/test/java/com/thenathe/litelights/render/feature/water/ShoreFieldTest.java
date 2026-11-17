@@ -93,6 +93,67 @@ class ShoreFieldTest {
     }
 
     @Test
+    void theSwashCanRunTwoBlocksUpAFlatBeach() {
+        // Shore run-up's longest: the field must carry the swash's strength past two blocks.
+        straightBeach(63);
+        compute();
+        for (int z = 96; z <= 99; z++) {
+            assertTrue(ShoreField.swell(at(128, z)) > 0.95f, "z " + z);
+        }
+        assertEquals(-3.5f, ShoreField.distance(at(128, 96)), 0.13f);
+    }
+
+    @Test
+    void aSeaWallKeepsTheSwashOffTheLowGroundBehindIt() {
+        straightBeach(63);
+        // A wall a block high along the waterline from x 100 to 160, the beach behind it at the
+        // water's level again.
+        fill(100, 99, 160, 99, false, 0, 64);
+        compute();
+        assertEquals(0.0f, ShoreField.swell(at(130, 99)), "the wall itself");
+        assertEquals(0.0f, ShoreField.swell(at(130, 98)), "just behind the wall");
+        assertEquals(0.0f, ShoreField.swell(at(130, 97)), "further behind");
+        assertTrue(ShoreField.swell(at(90, 98)) > 0.95f, "open beach past the wall's end");
+        assertTrue(ShoreField.swell(at(99, 98)) > 0.95f, "beside the wall's end, reached from the open beach");
+    }
+
+    @Test
+    void theSwashWrapsRoundAPostOnTheBeach() {
+        straightBeach(63);
+        land(128, 99, 66);
+        compute();
+        assertEquals(0.0f, ShoreField.swell(at(128, 99)), "the post");
+        assertTrue(ShoreField.swell(at(128, 98)) > 0.95f, "behind it, reached past its sides");
+    }
+
+    @Test
+    void aStepUpTheBeachEndsTheSwash() {
+        straightBeach(63);
+        fill(0, 0, N - 1, 97, false, 0, 64);
+        compute();
+        assertTrue(ShoreField.swell(at(128, 98)) > 0.95f, "the flat strip at the water");
+        assertEquals(0.0f, ShoreField.swell(at(128, 97)), "the step");
+        assertEquals(0.0f, ShoreField.swell(at(128, 96)), "above the step");
+    }
+
+    @Test
+    void anIceSheetTakesNoSwashAndKeepsItOffTheBeachBehindIt() {
+        straightBeach(63);
+        // Three rows of sea frozen over along the shore from x 100 to 160.
+        for (int z = 100; z <= 102; z++) {
+            for (int x = 100; x <= 160; x++) {
+                columns[x + z * N] = FluidColumnGrid.column(Double.NaN, MIN_Y, 63, false, true, false, false);
+                kinds[x + z * N] = 0;
+            }
+        }
+        compute();
+        assertTrue(ShoreField.distance(at(130, 101)) > 0.0f, "the ice lies on the water's side of the shore");
+        assertEquals(0.0f, ShoreField.swell(at(130, 99)), "the beach behind the ice");
+        assertEquals(0.0f, ShoreField.swell(at(130, 97)));
+        assertTrue(ShoreField.swell(at(60, 99)) > 0.95f, "open beach elsewhere");
+    }
+
+    @Test
     void aPondInAnOceanBiomeAndARiverStayCalm() {
         fill(0, 0, N - 1, N - 1, false, 0, 63);
         fill(40, 40, 46, 46, true, OCEAN, 0);

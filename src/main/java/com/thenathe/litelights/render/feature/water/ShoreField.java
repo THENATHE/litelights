@@ -18,7 +18,8 @@ import java.util.Arrays;
  *   <li>G, B: the direction toward the shore (x, z) as signed bytes, the way waves come in: down the
  *       distance's slope, on the water and up the beach alike.</li>
  *   <li>A: how much ocean swell the column gets, 0 to 255. Water: its own; a beach column at the
- *       waterline: that of the water beside it, for the swash; everything else 0.</li>
+ *       waterline that the swash can reach from the water across other such columns: that of the
+ *       water beside it; everything else 0.</li>
  * </ul>
  *
  * <p>Distances are Euclidean, from a two-pass propagation of each column's nearest source
@@ -54,6 +55,7 @@ public final class ShoreField {
     private final boolean[] water = new boolean[CELLS];
     private final boolean[] land = new boolean[CELLS];
     private final boolean[] mask = new boolean[CELLS];
+    private final boolean[] reached = new boolean[CELLS];
     private final int[] nearestWater = new int[CELLS];
     private final int[] nearest = new int[CELLS];
     private final float[] intoLand = new float[CELLS];
@@ -90,15 +92,20 @@ public final class ShoreField {
         directionsAndTexels(columns, texels);
     }
 
-    /** Water and land columns; dry land well below the water beside it is a drop, which counts as neither. */
+    /**
+     * Water and land columns; dry land well below the water beside it is a drop, which counts as
+     * neither, and so does ice: the sea carries on under it, so it turns no waves and takes no swash,
+     * and the beach behind an ice sheet is out of the swash's reach.
+     */
     private void classify(int[] columns) {
         for (int i = 0; i < CELLS; i++) {
             int column = columns[i];
             boolean known = (column & FluidColumnGrid.KNOWN) != 0;
             boolean fluid = FluidColumnGrid.hasFluid(column);
             boolean lava = (column & FluidColumnGrid.LAVA) != 0;
+            boolean ice = (column & FluidColumnGrid.ICE) != 0;
             water[i] = fluid && !lava;
-            land[i] = known && (!fluid || lava);
+            land[i] = known && (!fluid || lava) && !ice;
         }
         for (int z = 0; z < N; z++) {
             for (int x = 0; x < N; x++) {
@@ -187,6 +194,57 @@ public final class ShoreField {
                 strength[i] = (columns[i] & FluidColumnGrid.KNOWN) != 0 ? smooth[i] : 0.0f;
             }
         }
+        keepReachableBeach();
+    }
+
+    /**
+     * The swash runs up from the water across the beach, so a beach column keeps its strength only
+     * when a neighbour nearer the water (water, or a beach column that keeps its own) leads to it.
+     * Low ground behind a sea wall, a raised path or a step gets none, however far the waves run.
+     * Only strictly nearer neighbours count, diagonals included, so the swash wraps round a post but
+     * never creeps sideways along the back of a wall.
+     */
+    private void keepReachableBeach() {
+        for (int i = 0; i < CELLS; i++) {
+            reached[i] = water[i];
+        }
+        // Each pass reaches at least one more column up the beach, which ends BEACH_REACH from the
+        // water, so a handful of passes settle it; the cap only guards against a mistake.
+        boolean changed = true;
+        for (int pass = 0; changed && pass < 16; pass++) {
+            changed = false;
+            for (int z = 0; z < N; z++) {
+                for (int x = 0; x < N; x++) {
+                    int i = x + z * N;
+                    if (!reached[i] && land[i] && strength[i] > 0.0f && reachedFromNearer(x, z)) {
+                        reached[i] = true;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < CELLS; i++) {
+            if (land[i] && !reached[i]) {
+                strength[i] = 0.0f;
+            }
+        }
+    }
+
+    private boolean reachedFromNearer(int x, int z) {
+        float own = intoLand[x + z * N];
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                int nx = x + dx;
+                int nz = z + dz;
+                if ((dx != 0 || dz != 0) && nx >= 0 && nz >= 0 && nx < N && nz < N) {
+                    int neighbour = nx + nz * N;
+                    if (reached[neighbour] && intoLand[neighbour] < own) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /** The swell of the water beside a beach column, when the beach's top is at that water's level. */

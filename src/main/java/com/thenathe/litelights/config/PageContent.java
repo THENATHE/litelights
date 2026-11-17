@@ -7,7 +7,8 @@ import net.minecraft.network.chat.Component;
 /**
  * What a {@link PageContributor} can add to a page. Rows go into the current section: rows added
  * before any {@link #section} call go at the top of the page, above the first caption.
- * Choosing a section that already holds options appends after them.
+ * Choosing a section that already holds options appends after them, above any sub-headings, so
+ * a sub-section's rows stay together at the end of their section.
  */
 public interface PageContent {
     /** The id of the page being built. */

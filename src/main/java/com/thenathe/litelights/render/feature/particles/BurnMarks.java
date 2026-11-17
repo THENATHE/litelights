@@ -28,8 +28,6 @@ final class BurnMarks {
     private static final float FADE_TICKS = 240.0f;
     private static final int MARK_RGB = 0xFFFFFF;
     private static final float MARK_ALPHA = 0xD0 / 255.0f;
-    /** Lies this far in front of the face; a little more than the veins, which may share a face. */
-    private static final float FACE_LIFT = 0.006f;
     private static final float DRAW_RANGE = 40.0f;
     private static final Direction[] WALLS = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
 
@@ -62,6 +60,16 @@ final class BurnMarks {
 
     int count() {
         return count;
+    }
+
+    /** QA only: each mark as "fire x y z -> face of x y z". */
+    java.util.List<String> describe() {
+        java.util.List<String> marks = new java.util.ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            marks.add(BlockPos.of(fires[i]).toShortString() + " -> " + Direction.from3DDataValue(faces[i]).getName() + " of "
+                + BlockPos.of(supports[i]).toShortString());
+        }
+        return marks;
     }
 
     /** A plain fire is burning here: keeps its mark dark, or places one if a face can hold it. */
@@ -195,7 +203,7 @@ final class BurnMarks {
         for (int i = 0; i < count; i++) {
             long position = supports[i];
             int face = faces[i];
-            float lift = 0.5f + FACE_LIFT;
+            float lift = 0.5f + ParticleRenderer.DECAL_LIFT;
             float x = (float) (BlockPos.getX(position) + 0.5 - cameraX) + EmberVeinReach.FACE_X[face] * lift;
             float y = (float) (BlockPos.getY(position) + 0.5 - cameraY) + EmberVeinReach.FACE_Y[face] * lift;
             float z = (float) (BlockPos.getZ(position) + 0.5 - cameraZ) + EmberVeinReach.FACE_Z[face] * lift;

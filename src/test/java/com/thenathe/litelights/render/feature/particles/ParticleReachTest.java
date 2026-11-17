@@ -14,13 +14,13 @@ class ParticleReachTest {
         RenderSettings.Weather d = RenderSettings.Weather.DEFAULTS;
         return new RenderSettings.Weather(d.precipitation(), density, d.rainMist(), d.driftingSand(), d.sandstorms(),
             d.stormAtmosphere(), d.polarLights(), d.meteorNights(), d.farFireworks(), distance, fill, d.rainDrips(), d.wallStreaks(),
-            d.glass(), d.storms());
+            d.glass(), d.storms(), d.mistStyle());
     }
 
     private static RenderSettings.Particles particles(SpawnDistance distance, DistanceFill fill) {
         RenderSettings.Particles d = RenderSettings.Particles.DEFAULTS;
         return new RenderSettings.Particles(d.density(), d.snowSandSprites(), d.fireflySwarms(), d.dustSpecks(), d.pollen(),
-            d.spores(), d.enhancedFire(), d.emberVeins(), d.enhancedWater(), distance, fill);
+            d.spores(), d.enhancedFire(), d.emberVeins(), d.burnMarks(), d.enhancedWater(), distance, fill);
     }
 
     @Test

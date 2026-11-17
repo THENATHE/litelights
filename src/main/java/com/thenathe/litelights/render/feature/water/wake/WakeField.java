@@ -64,13 +64,17 @@ public final class WakeField {
     private static final float RIM_HEIGHT = 0.55f;
     private static final float RIM_REACH = 1.7f;
 
+    /** A hull's foam: the band along its sides (half its width, in radii), its churned trail's length and width. */
+    private static final float FOAM_BAND = 0.24f;
+    private static final float FOAM_TRAIL = 1.6f;
+    private static final float FOAM_CHURN = 0.8f;
     /** Foam left each tick: it thins out over a second or two. */
     private static final float FOAM_KEEP = 0.972f;
     /** How much foam spreads to its neighbours each tick, so trails widen as they age. */
     private static final float FOAM_SPREAD = 0.035f;
     /** Crests higher than this whiten, more the higher they are. */
     private static final float CREST_FOAM_FROM = 0.1f;
-    private static final float CREST_FOAM_RATE = 0.7f;
+    private static final float CREST_FOAM_RATE = 0.6f;
 
     /** Smaller than this is flat water: the area with waves in it stops growing and ends. */
     private static final float QUIET_HEIGHT = 0.5f / HEIGHT_STEPS;
@@ -452,7 +456,9 @@ public final class WakeField {
         float axisZ = (float) sources.headingZ(source);
         float halfLength = (float) (sources.halfLength(source) * CELLS_PER_BLOCK);
         float radius = (float) (sources.radius(source) * CELLS_PER_BLOCK);
-        float trail = radius * 2.0f;
+        // The foam is a fifth narrower and shorter than the hull's own dent and rim (waves097), so a
+        // boat's wake reads as water first; the waves it makes are untouched.
+        float trail = radius * FOAM_TRAIL;
         int reach = (int) Math.ceil(halfLength + trail + radius) + 1;
         int fromX = Math.max(0, (int) Math.floor(centreX) - reach);
         int toX = Math.min(SIZE, (int) Math.floor(centreX) + reach + 1);
@@ -474,13 +480,13 @@ public final class WakeField {
                     float offX = relX - axisX * clamped;
                     float offZ = relZ - axisZ * clamped;
                     float distance = (float) Math.sqrt(offX * offX + offZ * offZ);
-                    float band = 1.0f - Math.abs(distance / radius - 1.05f) / 0.3f;
+                    float band = 1.0f - Math.abs(distance / radius - 1.02f) / FOAM_BAND;
                     float bowness = halfLength > 0.0f ? 0.5f + 0.5f * clamped / halfLength : 1.0f;
                     added = Math.max(0.0f, band) * (0.35f + 0.65f * bowness);
-                } else if (onAxis > -halfLength - trail && across < radius) {
+                } else if (onAxis > -halfLength - trail && across < radius * FOAM_CHURN) {
                     // The churned water right behind it.
                     float behind = (-halfLength - onAxis) / trail;
-                    added = (1.0f - behind) * bump(across / radius) * 0.6f;
+                    added = (1.0f - behind) * bump(across / (radius * FOAM_CHURN)) * 0.6f;
                 }
                 if (added > 0.0f) {
                     int i = slot(wx, wz);

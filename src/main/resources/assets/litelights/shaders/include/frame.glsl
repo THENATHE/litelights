@@ -28,8 +28,8 @@ layout(std140) uniform LiteFrame {
     vec4 LiteScreen;                 // xy framebuffer size, zw reciprocal
     ivec4 LiteFlags;                 // x LITE_FEATURE_* bits, y LITE_LOCK_* bits, z LITE_PASS_*, w material grid shift
     vec4 LiteFeatureValuesA;         // x where LiteLights' water hands its depth look over to Voxy's, else 0; y where LiteLights' own land ends while Voxy draws beyond it, else 0 (far terrain); z, w unused (water keeps its values in its own block)
-    vec4 LiteFeatureValuesB;         // unused (sky-fog's values follow the block, below)
-    vec4 LiteFeatureValuesC;         // light-post: x glint smoothness, y glint strength, z night tone strength, w ray landing strength
+    vec4 LiteFeatureValuesB;         // xyz the haze's noise drift in blocks, wrapped at 2048 (particles-weather, fog097, include/particle/haze.glsl); w unused
+    vec4 LiteFeatureValuesC;         // light-post: x water glint softness and intensity (packed), y glint switches with the ground's softness and intensity above them, z night tone strength, w ray landing strength
     vec4 LiteFeatureValuesD;         // x unused; y wind heading in radians (particles-weather); z sway switches, w sway amplitude (vegetation)
     // Sky and fog (sky-fog stream, render.feature.skyfog). Positions and heights are in blocks.
     vec4 LiteHazeColor;              // rgb haze colour lit for the time of day, a = haze density per block at its base height

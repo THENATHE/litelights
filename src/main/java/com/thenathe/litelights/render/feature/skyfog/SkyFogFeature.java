@@ -13,6 +13,7 @@ import com.thenathe.litelights.render.feature.weather.SkyEventSchedule;
 import com.thenathe.litelights.render.feature.weather.WeatherCompat;
 import com.thenathe.litelights.render.frame.CelestialLight;
 import com.thenathe.litelights.render.frame.DimensionGate;
+import com.thenathe.litelights.render.frame.FrameClock;
 import com.thenathe.litelights.render.frame.FrameFlags;
 import com.thenathe.litelights.render.feature.farterrain.FarTerrain;
 import com.thenathe.litelights.render.frame.FrameState;
@@ -65,7 +66,6 @@ public final class SkyFogFeature {
     private boolean landKnown;
     private float exposure = 1.0f;
     private float groundHeight;
-    private long lastFrameNanos;
 
     // This frame's decisions, read by the sky and cloud hooks.
     private boolean liteSky;
@@ -145,9 +145,8 @@ public final class SkyFogFeature {
     }
 
     private void onFrameUpdate(FrameState frame, RenderSettings settings) {
-        long now = System.nanoTime();
-        float seconds = lastFrameNanos == 0L ? 0.0f : Math.min((now - lastFrameNanos) / 1.0e9f, 0.25f);
-        lastFrameNanos = now;
+        // Stands still while the game is paused, so the fog's easing waits with everything else.
+        float seconds = Math.min(FrameClock.frameSeconds(), 0.25f);
         liteSky = false;
         realisticSky = false;
         skyPassWanted = false;
@@ -270,7 +269,7 @@ public final class SkyFogFeature {
     private float fillStorm(FrameState frame, RenderSettings settings, boolean weatherAllowed, float seconds) {
         boolean stormsHere = !WeatherCompat.stormAtmosphereHandledElsewhere() && weatherAllowed && !skyless;
         storm.update(land, rain, thunder, stormsHere && settings.weather().stormAtmosphere(), stormsHere && settings.weather().sandstorms(),
-            exposure, seconds);
+            exposure, FrameClock.gameSeconds(seconds));
         float stormPart = storm.density(settings.weather().storms(), thunder);
         float rainPart = weatherAllowed && !skyless ? rainFog(settings.weather().storms()) : 0.0f;
         float density = stormPart;

@@ -47,7 +47,8 @@ class WeatherPageTest {
             sections.computeIfAbsent(Pages.parentSection(option.section()), key -> new ArrayList<>()).add(option.id());
         }
         assertEquals(List.of("rain_snow", "storms", "details", "glass", "events"), List.copyOf(sections.keySet()));
-        assertEquals(List.of("weather.precipitation", "weather.density", "weather.distance", "weather.distance_fill", "weather.rain_mist"),
+        assertEquals(List.of("weather.precipitation", "weather.density", "weather.distance", "weather.distance_fill", "weather.rain_mist",
+            "weather.mist_style"),
             sections.get("rain_snow"));
         List<String> storms = new ArrayList<>(List.of("weather.storm_atmosphere"));
         for (String type : new String[] {"rain", "thunderstorm", "snow", "blizzard", "sandstorm", "haboob"}) {
@@ -143,6 +144,7 @@ class WeatherPageTest {
             assertFalse(LiteLightsOptions.FAR_FIREWORKS.on());
             assertEquals(LiteLightsOptions.SpawnDistance.VERY_FAR, LiteLightsOptions.WEATHER_DISTANCE.get());
             assertEquals(LiteLightsOptions.DistanceFill.FILL, LiteLightsOptions.WEATHER_DISTANCE_FILL.get());
+            assertEquals(LiteLightsOptions.MistStyle.FIELD, LiteLightsOptions.MIST_STYLE.get(), "Mist style (0.9.7) starts at Mist field");
             for (StormType type : StormType.values()) {
                 assertEquals(StormFog.NORMAL, LiteLightsOptions.storm(type).fog().get(), "new rows start at their defaults");
                 assertEquals(StormClouds.FOLLOW_DENSITY, LiteLightsOptions.storm(type).clouds().get());
@@ -157,8 +159,37 @@ class WeatherPageTest {
             assertFalse(options.get("weather.polar_lights").getAsBoolean());
             assertEquals("normal", options.get("weather.storms.haboob.fog").getAsString());
             assertEquals("follow_density", options.get("weather.storms.rain.clouds").getAsString());
+            assertEquals("field", options.get("weather.mist_style").getAsString());
             assertFalse(saved.has("unreadable") && saved.getAsJsonObject("unreadable").size() > 0, "nothing was unreadable");
-            assertFalse(Files.exists(folder.resolve("litelights.json.schema2.bak")), "no migration was needed");
+            // Schema 2 files go through 0.9.7's glint step, which has nothing to move in this one.
+            assertTrue(Files.exists(folder.resolve("litelights.json.schema2.bak")), "the file was backed up before the glint step");
+        } finally {
+            registry.resetAll();
+        }
+    }
+
+    @Test
+    void mistStyleKeepsItsChoiceThroughASave() throws IOException {
+        Path path = folder.resolve("litelights.json");
+        Files.writeString(path, """
+                {
+                  "schema": 2,
+                  "options": {
+                    "weather.mist_style": "puffs",
+                    "weather.rain_mist": false
+                  }
+                }""");
+        OptionRegistry registry = LiteLightsConfig.registry();
+        try {
+            ConfigFile file = new ConfigFile(path, registry, ConfigMigrations.standard());
+            file.load();
+            assertEquals(LiteLightsOptions.MistStyle.PUFFS, LiteLightsOptions.MIST_STYLE.get());
+            assertEquals(List.of(LiteLightsOptions.MistStyle.PUFFS, LiteLightsOptions.MistStyle.FIELD, LiteLightsOptions.MistStyle.BILLBOARDS),
+                LiteLightsOptions.MIST_STYLE.choices());
+            file.save();
+            JsonObject options = JsonParser.parseString(Files.readString(path)).getAsJsonObject().getAsJsonObject("options");
+            assertEquals("puffs", options.get("weather.mist_style").getAsString());
+            assertFalse(options.get("weather.rain_mist").getAsBoolean());
         } finally {
             registry.resetAll();
         }

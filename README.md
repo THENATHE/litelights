@@ -12,7 +12,7 @@ LiteLights is a client-side Fabric mod for Minecraft 26.3. It adds shadows, bett
 - **Lighting:** bloom, sunbeams (above and under water), glint on water, ice, metal and glass, colour grading by time of day, and enchantment outlines on held items and armour.
 - **Water:** natural colours with depth, reflections, caustics, edge foam, large water textures, splashes, ocean waves (Experimental) and wakes behind boats and swimmers.
 - **Sky and fog:** LiteLights' own sun, moon and stars, clouds in one or two layers, haze with mist banks and biome colours, the aurora borealis, meteor showers and distant fireworks.
-- **Weather:** its own rain and snow, storm fog for each kind of storm, sandstorms and haboobs, rain drips and wall streaks, and frost, snow and sand on windows.
+- **Weather:** its own rain and snow, rolling mist along the ground (or soft 3D puffs if you prefer), storm fog for each kind of storm, sandstorms and haboobs, rain drips and wall streaks, and frost, snow and sand on windows.
 - **Particles and plants:** fireflies, dust, pollen, better fire and smoke, ember veins, and swaying grass, plants and leaves.
 - **Far terrain:** Voxy and Distant Horizons land gets the same haze, light and water.
 - **Overlays:** softer blocks like grass and sand spill onto harder ones, with textures made from whatever resource packs you have loaded. This one needs Continuity.
@@ -33,7 +33,15 @@ Everything is in LiteLights' settings screen (through Mod Menu or a keybind you 
 - If you have Particle Rain, Immersive Storms, Weather Glass, Wakes, Big Water or Streams Reflowing, LiteLights turns off its own version of whatever that mod does, and the settings screen tells you which.
 - Voxy and Distant Horizons both work (one at a time). Punchy! works too, outlines included.
 
-**On a Mac:** LiteLights only asks for OpenGL 4.1, so it should run, but I haven't been able to test it on real Apple hardware yet. An earlier version froze on a friend's M4 Max as the world loaded. My best guess is the Mac's driver choking on LiteLights' big terrain shaders the first time it draws them, but I haven't been able to confirm it. If that happens to you, try Minecraft's Vulkan backend (Video Settings). If it still freezes, please send me the lines in `logs/latest.log` that start with `LiteLights:`, which say how far it got (if one of them is a "slow start-up step" warning, send the lines under it too), along with the macOS hang report from `~/Library/Logs/DiagnosticReports` and any `hs_err_pid*.log` from the game folder.
+**On a Mac:** LiteLights only asks for OpenGL 4.1, so it should run, but I haven't been able to test it on real Apple hardware yet. An earlier version froze on a friend's M4 Max as the world loaded, on both OpenGL and Vulkan. My best guess is the Mac's graphics driver choking on LiteLights' big terrain shaders, but I haven't been able to confirm it. LiteLights now also caps the few shader loops that could run away on bad data (Shader loop safety caps, on by default under General > Compatibility; I don't recommend turning them off), but that isn't confirmed to fix the freeze either. If it freezes for you, these steps help me find the part that breaks:
+
+1. Load a world with the default settings. If it loads, you're all set.
+2. If it freezes, quit the game (Force Quit if you have to) and start it again. From the title screen, open LiteLights' settings (through Mod Menu, or Video Settings with Sodium) and go to General > Compatibility > Mac troubleshooting. Turn on **Use vanilla terrain shading**, close the settings and load the world again.
+3. If it still freezes, the problem isn't in LiteLights' block shading. Send me the log.
+4. If it loads, go back to Mac troubleshooting, turn **Use vanilla terrain shading** off and turn off every switch under it. Then turn them back on one at a time, closing the settings and loading the world after each, until it freezes. If it freezes even with all of them off, stop there.
+5. Send me the log from the run that froze, and tell me which switch you turned on last.
+
+Each change takes effect when you close the settings. For the log, send me the lines in `logs/latest.log` that start with `LiteLights:`, which say how far it got and which parts were in (if one of them is a "slow start-up step" warning, send the lines under it too), along with the macOS hang report from `~/Library/Logs/DiagnosticReports` and any `hs_err_pid*.log` from the game folder. Until I've fixed it, you can keep playing with every switch on except the one that froze.
 
 If something breaks, please open an issue with your log and mod list and I'll take a look.
 

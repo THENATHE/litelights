@@ -36,8 +36,6 @@ final class EmberVeins {
     private static final int SETTLE_TICKS = 4;
     /** And searches are at least this many ticks apart. */
     private static final int SEARCH_INTERVAL = 10;
-    /** Lies this far in front of the face, so the depth test keeps the overlay on top of it. */
-    private static final float FACE_LIFT = 0.004f;
     private static final float DRAW_RANGE = 48.0f;
     /** Hot orange; the sprite holds the yellow cores and the red edges. */
     private static final int VEIN_RGB = 0xFFA040;
@@ -304,7 +302,7 @@ final class EmberVeins {
                 continue;
             }
             int color = alpha << 24 | VEIN_RGB;
-            float lift = 0.5f + FACE_LIFT;
+            float lift = 0.5f + ParticleRenderer.DECAL_LIFT;
             for (int face = 0; face < 6; face++) {
                 if ((faces[i] & 1 << face) == 0) {
                     continue;

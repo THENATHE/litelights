@@ -22,9 +22,12 @@
 #ifndef MULTIDRAW_TERRAIN
     #include <minecraft:chunksection.glsl>
 #endif
+#include <litelights:terrain_parts.glsl>
+#ifdef LITE_TERRAIN_LITELIGHTS
 #include <litelights:frame.glsl>
 #include <litelights:material.glsl>
 #include <litelights:hooks.glsl>
+#endif
 
 layout(location = 0) in vec3 Position;
 layout(location = 1) in vec4 Color;
@@ -45,7 +48,7 @@ layout(location = 6) out vec2 lightCoord;
 
 void main() {
     vec3 pos = Position + (ChunkPosition - CameraBlockPos) + CameraOffset;
-#ifdef LITELIGHTS_VERTEX_IN_MESH
+#if defined(LITELIGHTS_VERTEX_IN_MESH) && defined(LITE_TERRAIN_SWAY)
     if (lite_world_pass()) {
         pos += lite_vegetation_offset(pos, UV0, lite_vegetation_corner(LITELIGHTS_VERTEX_IN_MESH, Color.a));
     }

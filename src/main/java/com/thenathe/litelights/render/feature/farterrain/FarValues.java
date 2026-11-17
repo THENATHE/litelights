@@ -2,6 +2,7 @@ package com.thenathe.litelights.render.feature.farterrain;
 
 import java.nio.ByteBuffer;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 /**
  * The push constants of the far-terrain passes, in the order of {@code FarTerrainValues} in
@@ -34,6 +35,12 @@ final class FarValues {
     float heightfieldMinY;
     float heightfieldReach;
     float marchDistance;
+    /**
+     * In the shadow passes, the player the camera follows: the middle of their body, camera-relative,
+     * and how far around it the screen-space trace ignores what it sees (0: nobody to leave out).
+     */
+    final Vector3f playerCentre = new Vector3f();
+    float playerReach;
 
     void writeForTerrain(ByteBuffer buffer) {
         writeCommon(buffer);
@@ -51,7 +58,7 @@ final class FarValues {
         writeCommon(buffer);
         buffer.putFloat(80, heightfieldMinY).putFloat(84, heightfieldReach).putFloat(88, marchDistance).putFloat(92, 0.0f);
         writeRange(buffer);
-        buffer.putFloat(112, 0.0f).putFloat(116, 0.0f).putFloat(120, 0.0f).putFloat(124, 0.0f);
+        buffer.putFloat(112, playerCentre.x).putFloat(116, playerCentre.y).putFloat(120, playerCentre.z).putFloat(124, playerReach);
     }
 
     private void writeCommon(ByteBuffer buffer) {

@@ -4,8 +4,8 @@
 // Owned by the light-post stream. Called for every shaded fragment (terrain, block models,
 // entities, items) after lighting and the water hook, before fog, in world passes only.
 //
-// LiteFeatureValuesC (see LightPostFrame): x glint smoothness 0..1, y glint strength, z night tone
-// strength, w light-ray landing strength.
+// LiteFeatureValuesC (see LightPostFrame): x the water's glint tuning, y the glint switches and the
+// ground's glint tuning, z night tone strength, w light-ray landing strength.
 //
 // The vertex shaders include the hooks too (for the vegetation hook), and they can't take screen
 // derivatives, which pixel_lock.glsl uses. Every LiteLights fragment shader includes shadow.glsl

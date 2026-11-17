@@ -6,13 +6,15 @@ package com.thenathe.litelights.render.post;
  * slots run after the hand and the screen overlays, just before the HUD.
  *
  * <p>Light-post owns {@link #BLOOM}, {@link #LIGHT_RAYS}, {@link #ANTI_ALIASING} and
- * {@link #TONEMAP}; water owns {@link #UNDERWATER}. Water's reflections are traced in its own
+ * {@link #TONEMAP}; water owns {@link #UNDERWATER}; particles-weather owns {@link #MIST_FIELD}. Water's reflections are traced in its own
  * surface shader, not in the chain. A new slot goes where its pass must run; see
  * docs/ARCHITECTURE.md.
  */
 public enum PostSlot {
     /** Passes that only run while the camera is under water: the depth blur (water stream). */
     UNDERWATER(Stage.WORLD),
+    /** Particles-weather: the Mist field (Mist style: Mist field), before bloom so it covers what glows behind it. */
+    MIST_FIELD(Stage.WORLD),
     /** Light-post: reads bright and emissive pixels into the quarter-resolution bloom chain. */
     BLOOM(Stage.WORLD),
     /** Light-post: sunbeam slices, added to the level. */

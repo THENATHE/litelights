@@ -1,12 +1,14 @@
 package com.thenathe.litelights.render.feature.lightpost;
 
 import com.thenathe.litelights.config.DimensionOptions.Aspect;
+import com.thenathe.litelights.config.GlintScale;
 import com.thenathe.litelights.render.LiteMath;
 import com.thenathe.litelights.render.RenderSettings;
 import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.frame.DimensionGate;
+import com.thenathe.litelights.render.frame.FrameClock;
 import com.thenathe.litelights.render.frame.FrameFlags;
 import com.thenathe.litelights.render.frame.FrameState;
 import com.thenathe.litelights.render.frame.WeatherPreview;
@@ -20,8 +22,9 @@ import net.minecraft.world.level.LightLayer;
  * surface-hook bits and {@code featureValuesC}, and what the post passes need to decide whether to
  * run (camera under water, the sun, the dimension's switches).
  *
- * <p>featureValuesC: x glint smoothness, y the glint switches ({@link #glintSwitches}), z night tone
- * strength, w light-ray landing strength (1 at each ray setting's default).
+ * <p>featureValuesC: x the water's glint softness and intensity ({@link #waterGlintTuning}), y the
+ * glint switches with the ground's softness and intensity above them ({@link #glintSwitches}), z
+ * night tone strength, w light-ray landing strength (1 at each ray setting's default).
  */
 final class LightPostFrame implements LiteRenderEvents.FrameUpdate {
     /**
@@ -43,7 +46,7 @@ final class LightPostFrame implements LiteRenderEvents.FrameUpdate {
     private float sunPower;
     private double dayTime;
     private float thunderClear = 1.0f;
-    private long lastFrameNanos;
+    private boolean thunderEased;
 
     @Override
     public void onFrameUpdate(FrameState frame, RenderSettings settings) {
@@ -82,7 +85,7 @@ final class LightPostFrame implements LiteRenderEvents.FrameUpdate {
             flags |= FrameFlags.FEATURE_BLOOM_MASK;
         }
         frame.featureFlags |= flags;
-        frame.featureValuesC.set(lighting.glintSoftness(), glintSwitches(lighting), 1.0f, landing);
+        frame.featureValuesC.set(waterGlintTuning(lighting), glintSwitches(lighting), 1.0f, landing);
 
         if (!surfaceRowsReady) {
             // The surface effects draw from the first world frame on (the shaders compiled, or the
@@ -95,12 +98,21 @@ final class LightPostFrame implements LiteRenderEvents.FrameUpdate {
     /**
      * The glint switches as the shader reads them (LITE_GLINT_* in light_post/surface_light.glsl):
      * bit 0 water, 1 ice and snow, 2 metal and glass, 3 sand and stone, and from bit 4 the water
-     * sparkle's motion (0 still, 1 gentle, 2 lively). A small whole number, exact as a float.
+     * sparkle's motion (0 still, 1 gentle, 2 lively). From bit 8 the ground's softness and
+     * intensity ({@link GlintScale#pack}). A whole number below 2^24, so exact as a float.
      */
     static float glintSwitches(RenderSettings.Lighting lighting) {
         int switches = (lighting.glintWater() ? 1 : 0) | (lighting.glintIceSnow() ? 2 : 0)
             | (lighting.glintMetalGlass() ? 4 : 0) | (lighting.glintSandStone() ? 8 : 0);
-        return switches | lighting.waterSparkle().ordinal() << 4;
+        int ground = GlintScale.pack(GlintScale.groundSoftness(lighting.glintGroundSoftness()),
+            GlintScale.groundIntensity(lighting.glintGroundIntensity()));
+        return switches | lighting.waterSparkle().ordinal() << 4 | ground << 8;
+    }
+
+    /** The water's glint softness and intensity in one exact float ({@link GlintScale#pack}); glint under water uses them too. */
+    static float waterGlintTuning(RenderSettings.Lighting lighting) {
+        return GlintScale.pack(GlintScale.waterSoftness(lighting.glintWaterSoftness()),
+            GlintScale.waterIntensity(lighting.glintWaterIntensity()));
     }
 
     private float rayLandingStrength(RenderSettings.Lighting lighting) {
@@ -148,15 +160,14 @@ final class LightPostFrame implements LiteRenderEvents.FrameUpdate {
 
     private void easeThunder(float thunderLevel) {
         float target = 1.0f - LiteMath.smoothstep(0.0f, 1.0f, thunderLevel);
-        long now = System.nanoTime();
-        if (lastFrameNanos == 0L) {
+        if (!thunderEased) {
             thunderClear = target;
+            thunderEased = true;
         } else {
-            float seconds = Math.min((now - lastFrameNanos) / 1.0e9f, 0.25f);
+            float seconds = FrameClock.gameSeconds(Math.min(FrameClock.frameSeconds(), 0.25f));
             float ease = WeatherPreview.settling() ? PREVIEW_THUNDER_EASE_SECONDS : THUNDER_EASE_SECONDS;
             thunderClear += (target - thunderClear) * (1.0f - (float) Math.exp(-seconds / ease));
         }
-        lastFrameNanos = now;
     }
 
     /** 1 in clear weather, easing to 0 in thunder (storms, blizzards, sandstorms): sunbeams fade with it. */

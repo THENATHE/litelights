@@ -58,6 +58,9 @@ public final class Surroundings {
     public long gameTime;
     public long clockTime;
     public final float[] wind = new float[2];
+    /** How far the haze's pattern has drifted with the wind (HazeDrift), for where puffs gather (HazeClumps). */
+    public double hazeDriftX;
+    public double hazeDriftZ;
     /**
      * The Weather and Particle distances: spawn areas are multiplied by the reach, and spawn rates
      * by the fill (1 with Spread, the area's growth with Fill). See {@link ParticleReach}.

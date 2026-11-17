@@ -306,4 +306,46 @@ class WakeFieldTest {
         }
         return most;
     }
+    /** Foam cells over a quarter and the summed and largest wave height after 80 ticks at a steady speed. */
+    private static double[] wakeAfter(boolean boat, double speed) {
+        WakeField field = new WakeField();
+        field.moveWindow(-32, -32);
+        field.fillWater(true);
+        WakeSourceList sources = new WakeSourceList();
+        double x = -20.0;
+        for (int tick = 0; tick < 80; tick++) {
+            sources.clear();
+            if (boat) {
+                WakeShapes.boat(sources, x, 0.0, x + speed, 0.0, 1.0, 0.0, speed, 1.0);
+            } else {
+                WakeShapes.swimmer(sources, x, 0.0, x + speed, 0.0, 1.0, 0.0, speed, 0.6, 1.0);
+            }
+            field.step(sources);
+            x += speed;
+        }
+        double foamCells = 0.0;
+        double heights = 0.0;
+        double highest = 0.0;
+        for (int cellZ = -128; cellZ < 128; cellZ++) {
+            for (int cellX = -128; cellX < 128; cellX++) {
+                foamCells += field.foamAt(cellX, cellZ) > 0.25f ? 1.0 : 0.0;
+                heights += Math.abs(field.heightAt(cellX, cellZ));
+                highest = Math.max(highest, Math.abs(field.heightAt(cellX, cellZ)));
+            }
+        }
+        return new double[] {foamCells, heights, highest};
+    }
+
+    @Test
+    void aSwimmerAtTheSurfaceLeavesAClearWakeThatStaysUnderABoats() {
+        double[] surfaceSwim = wakeAfter(false, 0.1);
+        double[] sprintSwim = wakeAfter(false, 0.25);
+        double[] slowBoat = wakeAfter(true, 0.15);
+        double[] boatAtSprint = wakeAfter(true, 0.25);
+        assertTrue(surfaceSwim[0] > 30.0, "foam behind a surface swim: " + surfaceSwim[0]);
+        assertTrue(surfaceSwim[2] > 0.08, "crests a surface swim throws up: " + surfaceSwim[2]);
+        assertTrue(surfaceSwim[0] < slowBoat[0] && surfaceSwim[1] < slowBoat[1], "smaller than a slow boat's");
+        assertTrue(sprintSwim[0] < boatAtSprint[0] * 0.6 && sprintSwim[1] < boatAtSprint[1] * 0.6,
+            "a sprint swim's well under a boat's at the same speed");
+    }
 }

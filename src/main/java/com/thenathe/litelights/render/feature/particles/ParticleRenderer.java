@@ -1,6 +1,7 @@
 package com.thenathe.litelights.render.feature.particles;
 
 import com.thenathe.litelights.render.LiteMath;
+import com.thenathe.litelights.render.RenderSettings;
 import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.util.LightCoordsUtil;
 import org.joml.Matrix4f;
@@ -18,6 +19,14 @@ final class ParticleRenderer {
     private static final float FLAT_X = (float) -Math.sqrt(0.5);
     private static final float FLAT_W = (float) Math.sqrt(0.5);
     private static final float HALF = (float) Math.sqrt(0.5);
+    /**
+     * How far fire's decals lie in front of their block face. Fire's flames along a block's side
+     * stand a hundredth of a texel (1/1600 of a block) out from it, so the decals sit closer than
+     * that, to be drawn under the flames rather than over them. The depth buffer (32-bit float,
+     * reversed) still tells them from the face itself well past their 48-block reach, and Sodium's
+     * vertex grid (1/32768 of a block) keeps the flames where vanilla puts them.
+     */
+    static final float DECAL_LIFT = 0.0003f;
     /**
      * Soft particles take LiteLights' air in front of them (particle/soft.vsh): where the storm fog
      * alone lets less than this through, the puff is the fog's colour against fog and can't be seen.
@@ -51,6 +60,12 @@ final class ParticleRenderer {
     }
 
     private final ParticleBatch batch = new ParticleBatch();
+    /**
+     * Fire's decals, each in a batch of its own: vanilla draws the layers of one batch in no set
+     * order, and the veins must lie over the soot where the two share a face.
+     */
+    private final ParticleBatch burnMarkBatch = new ParticleBatch();
+    private final ParticleBatch emberVeinBatch = new ParticleBatch();
     private final ParticleSprites sprites;
     private int drawnLastFrame;
     /** QA only: draw soft particles however much fog hides them, to time what skipping them saves. */
@@ -69,6 +84,14 @@ final class ParticleRenderer {
         return batch;
     }
 
+    ParticleBatch burnMarkBatch() {
+        return burnMarkBatch;
+    }
+
+    ParticleBatch emberVeinBatch() {
+        return emberVeinBatch;
+    }
+
     int drawnLastFrame() {
         return drawnLastFrame;
     }
@@ -78,8 +101,11 @@ final class ParticleRenderer {
      * particle quads are.
      */
     void build(ParticleState state, double cameraX, double cameraY, double cameraZ, Quaternionf cameraRotation,
-               Matrix4f viewProjection, float partialTick, boolean hdStyle, float[] rangeScales, float stormFogDensity) {
+               Matrix4f viewProjection, float partialTick, boolean hdStyle, float[] rangeScales, float stormFogDensity,
+               RenderSettings.MistStyle mistStyle) {
         batch.clear();
+        burnMarkBatch.clear();
+        emberVeinBatch.clear();
         drawnLastFrame = 0;
         copyFrustum(viewProjection);
         if (state.count == 0) {
@@ -96,8 +122,14 @@ final class ParticleRenderer {
         // Past this distance the storm fog hides soft particles completely (no fog: never).
         float fogHidden = stormFogDensity > 0.0f && !fogCullOff ? HIDDEN_BY_FOG_DEPTH / stormFogDensity : Float.MAX_VALUE;
         float fogHiddenSquared = fogHidden * fogHidden;
+        boolean puffs = mistStyle == RenderSettings.MistStyle.PUFFS;
         for (int i = 0; i < state.count; i++) {
             ParticleKind kind = ParticleKind.byId(state.kind[i]);
+            boolean haze = kind.haze != ParticleKind.Haze.NONE;
+            if (haze && mistStyle == RenderSettings.MistStyle.FIELD) {
+                // The Mist field draws the haze; puffs left from before the switch aren't drawn.
+                continue;
+            }
             // Most weather is behind the camera or out to the side: turn it away on this tick's
             // position alone, before reading anything else of it, with room for a tick's motion and
             // the kind's largest size.
@@ -129,13 +161,17 @@ final class ParticleRenderer {
 
             float alpha = (state.color[i] >>> 24) / 255.0f;
             if (lifeTicks < kind.fadeInTicks) {
-                alpha *= lifeTicks / kind.fadeInTicks;
+                float fadeIn = lifeTicks / kind.fadeInTicks;
+                // Haze eases in and out of nothing where it is, with no moment it visibly starts.
+                alpha *= haze ? fadeIn * fadeIn * (3.0f - 2.0f * fadeIn) : fadeIn;
             }
             float remaining = 1.0f - lifeShare;
             if (remaining < kind.fadeOutShare) {
-                alpha *= remaining / kind.fadeOutShare;
+                float fadeOut = remaining / kind.fadeOutShare;
+                alpha *= haze ? fadeOut * fadeOut * (3.0f - 2.0f * fadeOut) : fadeOut;
             }
-            if (kind.nearFade > 0.0f) {
+            // A 3D puff thins out around the eye in its own shader, so flying through one is a soft veil.
+            if (kind.nearFade > 0.0f && !(haze && puffs)) {
                 // Puffs close to the camera fill the view as flat squares; they thin out instead.
                 float near = ((float) Math.sqrt(distanceSquared) - kind.nearFade * 0.5f) / (kind.nearFade * 0.5f);
                 if (near <= 0.0f) {
@@ -168,6 +204,17 @@ final class ParticleRenderer {
             int light = kind.emissive ? LightCoordsUtil.FULL_BRIGHT : state.light[i];
             SingleQuadParticle.Layer layer = ParticleLayers.of(kind.layer);
 
+            if (haze) {
+                if (puffs) {
+                    batch.add(ParticleLayers.PUFF, x, y, z, 0.0f, 0.0f, 0.0f, 0.0f, ParticleBatch.PUFF,
+                        ParticleBatch.puffSize(size), 0.0f, ParticleBatch.puffCode(kind.haze, state.seed[i]), 0.0f, color, light);
+                } else {
+                    addHazeBillboard(x, y, z, size, frame, color, light, cameraUpX, cameraUpY, cameraUpZ);
+                }
+                HazeDepth.get().want();
+                drawnLastFrame++;
+                continue;
+            }
             switch (kind.shape) {
                 case BILLBOARD -> {
                     if (frame[4] < 1.0f || frame[5] < 1.0f) {
@@ -203,21 +250,52 @@ final class ParticleRenderer {
     }
 
     /**
+     * A classic haze billboard (Mist style: Classic billboards), trimmed to its sprite like other soft
+     * billboards, but kept upright: its up is the world's up turned to face the eye, not the camera's
+     * up, so it never rolls or swims as the view turns. Looking straight up or down at it, where the
+     * world's up says nothing, the camera's up stands in.
+     */
+    private void addHazeBillboard(float x, float y, float z, float size, float[] frame, int color, int light,
+                                  float cameraUpX, float cameraUpY, float cameraUpZ) {
+        float distance = (float) Math.sqrt(x * x + y * y + z * z);
+        float upX = cameraUpX;
+        float upY = cameraUpY;
+        float upZ = cameraUpZ;
+        if (distance > 1.0e-4f) {
+            float along = y / distance;
+            float uprightX = -x / distance * along;
+            float uprightY = 1.0f - along * along;
+            float uprightZ = -z / distance * along;
+            float length = (float) Math.sqrt(uprightX * uprightX + uprightY * uprightY + uprightZ * uprightZ);
+            if (length > 0.05f) {
+                upX = uprightX / length;
+                upY = uprightY / length;
+                upZ = uprightZ / length;
+            }
+        }
+        float halfHeight = size * frame[5];
+        batch.add(ParticleLayers.HAZE_BILLBOARD, x, y, z, upX * halfHeight, upY * halfHeight, upZ * halfHeight,
+            size * frame[4], ParticleBatch.STREAK, frame[0], frame[1], frame[2], frame[3], color, light);
+    }
+
+    /**
      * Adds a square covering one block face (half a block each way from its centre), for fire's
-     * decals. Call after {@link #build} in the same frame. The centre is camera-relative; a frame
-     * is u0, u1, v0, v1, and the flips mirror it so one sprite gives four looks.
+     * decals, to that decal's own batch. Call after {@link #build} in the same frame. The centre is
+     * camera-relative; a frame is u0, u1, v0, v1, and the flips mirror it so one sprite gives four
+     * looks.
      */
     void addFace(SingleQuadParticle.Layer layer, float x, float y, float z, int face, float[] frame, boolean flipU, boolean flipV,
                  int color, int light) {
         if (!inView(x, y, z, 0.75f)) {
             return;
         }
+        ParticleBatch target = layer == ParticleLayers.EMBER_VEIN ? emberVeinBatch : burnMarkBatch;
         float[] rotation = FACE_ROTATIONS[face];
         float u0 = flipU ? frame[1] : frame[0];
         float u1 = flipU ? frame[0] : frame[1];
         float v0 = flipV ? frame[3] : frame[2];
         float v1 = flipV ? frame[2] : frame[3];
-        batch.add(layer, x, y, z, rotation[0], rotation[1], rotation[2], rotation[3], 0.5f, u0, u1, v0, v1, color, light);
+        target.add(layer, x, y, z, rotation[0], rotation[1], rotation[2], rotation[3], 0.5f, u0, u1, v0, v1, color, light);
     }
 
     /**

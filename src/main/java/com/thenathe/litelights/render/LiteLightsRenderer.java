@@ -13,6 +13,7 @@ import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.compat.SodiumSupport;
 import com.thenathe.litelights.render.frame.CelestialLight;
 import com.thenathe.litelights.render.frame.DimensionGate;
+import com.thenathe.litelights.render.frame.FrameClock;
 import com.thenathe.litelights.render.frame.FrameFlags;
 import com.thenathe.litelights.render.frame.FrameState;
 import com.thenathe.litelights.render.frame.FrameUniforms;
@@ -79,7 +80,6 @@ public final class LiteLightsRenderer {
     private final Vector3d previousCamera = new Vector3d();
     private final Vector3d camera = new Vector3d();
     private boolean hasPreviousFrame;
-    private final long startNanos = System.nanoTime();
 
     private @Nullable FrameUniforms uniforms;
     private @Nullable UniformBinder binder;
@@ -246,6 +246,7 @@ public final class LiteLightsRenderer {
         materials.update(currentLevel != null);
         binder.setMaterials(materials.view());
 
+        FrameClock.update(minecraft);
         float partialTicks = levelState.worldPartialTicks;
         // The settings screen's weather preview stands in for the world's weather in everything
         // LiteLights draws; the world's own weather is never touched.
@@ -308,8 +309,14 @@ public final class LiteLightsRenderer {
         casters.update(camera.x, camera.z, sunMap.coverageRadius() * CASTER_RANGE_FACTOR);
         try {
             GpuTextureView blockAtlas = minecraft.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).getTextureView();
-            if (!sunMap.isDrawing() && !sunMap.isFading()) {
-                startRedrawIfDue(distance);
+            // When the time of day jumps or races, the map follows the sun at once rather than
+            // waiting for a fade, and a jump restarts a redraw that is still drawing the old light.
+            boolean hurried = FrameClock.timeHurried();
+            if (hurried) {
+                sunMap.endFade();
+            }
+            if (!sunMap.isDrawing() && !sunMap.isFading() || FrameClock.timeJumped()) {
+                startRedrawIfDue(distance, hurried);
             }
             if (sunMap.isDrawing()) {
                 boolean clear = sunMap.isFirstRedrawFrame();
@@ -375,7 +382,7 @@ public final class LiteLightsRenderer {
     }
 
     /** Starts a redraw of the sun map if the light, the camera or the casters in range call for one. */
-    private void startRedrawIfDue(int distance) {
+    private void startRedrawIfDue(int distance, boolean hurried) {
         Vector3d anchor = sunMap.frontAnchor();
         double nearestChange = sunMap.hasMap()
             ? casters.nearestChangeWithin(anchor.x, anchor.z, sunMap.coverageRadius(), camera.x, camera.z)
@@ -391,7 +398,7 @@ public final class LiteLightsRenderer {
             lastRedrawNanos = System.nanoTime();
             redrawCount++;
             lastRedrawReason = reason;
-            sunMap.beginRedraw(celestial.shadowLightDirection(), camera, casters, isZeroToOneDepth());
+            sunMap.beginRedraw(celestial.shadowLightDirection(), camera, casters, isZeroToOneDepth(), hurried);
         }
     }
 
@@ -480,8 +487,7 @@ public final class LiteLightsRenderer {
         frame.dimensionKind = dimensionKind(currentLevel);
 
         float sunAngleTurns = (float) (Math.atan2(-celestial.sunDirection().x, celestial.sunDirection().y) / (Math.PI * 2.0));
-        float seconds = FROZEN_SHADER_SECONDS >= 0.0f ? FROZEN_SHADER_SECONDS
-            : (float) (((System.nanoTime() - startNanos) / 1.0e9) % 3600.0);
+        float seconds = FROZEN_SHADER_SECONDS >= 0.0f ? FROZEN_SHADER_SECONDS : FrameClock.animationSeconds();
         frame.time.set(sunAngleTurns - (float) Math.floor(sunAngleTurns), seconds, 0.0f, 0.0f);
         frame.weather.set(rain, thunder, 0.0f, 0.0f);
     }
@@ -579,6 +585,14 @@ public final class LiteLightsRenderer {
     /** Section rebuilds that were dropped because their caster geometry was unchanged. */
     public long unchangedCasterRebuilds() {
         return casters == null ? 0 : casters.unchangedRebuilds();
+    }
+
+    /** QA: degrees between the light the sun map was drawn with and the light now (0 without a map). */
+    public float shadowLagDegreesForQa() {
+        if (sunMap == null || sunMap.drawnLightDirection() == null) {
+            return 0.0f;
+        }
+        return (float) Math.toDegrees(sunMap.drawnLightDirection().angle(celestial.shadowLightDirection()));
     }
 
     public ShadowRedrawRules.Reason lastRedrawReason() {

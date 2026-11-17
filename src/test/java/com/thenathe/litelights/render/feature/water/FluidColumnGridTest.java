@@ -178,4 +178,47 @@ class FluidColumnGridTest {
         assertEquals(0, shore & FluidColumnGrid.EAST);
         assertEquals(FluidColumnGrid.WEST, shore & FluidColumnGrid.WEST);
     }
+    @Test
+    void thinWaterOnFlatGroundFoamsOnlyWhenEveryEdgeCounts() {
+        FluidColumnGrid grid = new FluidColumnGrid();
+        // Flowing water a quarter of a block deep lying on grass whose top is at y 63, running out
+        // onto the same grass to the east, with a stone block standing beside it to the west.
+        grid.set(0, 0, water(63.25));
+        grid.set(1, 0, FluidColumnGrid.column(Double.NaN, MIN_Y, 63, false, false, false, false));
+        grid.set(-1, 0, FluidColumnGrid.column(Double.NaN, MIN_Y, 64, false, false, false, false));
+        int everyEdge = blue(grid.texel(0, 0));
+        assertEquals(FluidColumnGrid.EAST, everyEdge & FluidColumnGrid.EAST, "off: the flat ground it runs out on is a shore");
+        assertEquals(FluidColumnGrid.WEST, everyEdge & FluidColumnGrid.WEST);
+        grid.setShoreOnlyAgainstBlocks(true);
+        int blocksOnly = blue(grid.texel(0, 0));
+        assertEquals(0, blocksOnly & FluidColumnGrid.EAST, "on: no block stands beside it there");
+        assertEquals(FluidColumnGrid.WEST, blocksOnly & FluidColumnGrid.WEST, "the stone block still is");
+    }
+
+    @Test
+    void onlyAgainstBlocksKeepsEveryShoreOfAPondAndNeverFoamsWaterOnWater() {
+        FluidColumnGrid grid = pond();
+        int[] before = new int[25];
+        for (int i = 0; i < 25; i++) {
+            before[i] = grid.texel(i % 5 - 2, i / 5 - 2);
+        }
+        grid.setShoreOnlyAgainstBlocks(true);
+        for (int i = 0; i < 25; i++) {
+            assertEquals(before[i], grid.texel(i % 5 - 2, i / 5 - 2), "a source pond's shore is the same either way");
+        }
+        // Flowing water stepping down beside the pond: water on water is never a shore.
+        grid.set(3, 0, water(62.5));
+        grid.set(4, 0, water(61.75));
+        assertEquals(0, blue(grid.texel(2, 0)) & FluidColumnGrid.EAST);
+        assertEquals(0, blue(grid.texel(3, 0)) & (FluidColumnGrid.EAST | FluidColumnGrid.WEST));
+    }
+    @Test
+    void iceIsNeverAShore() {
+        FluidColumnGrid grid = pond();
+        // The pond's east side frozen over at the surface, the way vanilla freezes water.
+        grid.set(3, 0, FluidColumnGrid.column(Double.NaN, MIN_Y, LAND_TOP, false, true, false, false));
+        assertEquals(0, blue(grid.texel(2, 0)) & FluidColumnGrid.EAST, "the water carries on under the ice");
+        grid.setShoreOnlyAgainstBlocks(true);
+        assertEquals(0, blue(grid.texel(2, 0)) & FluidColumnGrid.EAST);
+    }
 }

@@ -95,6 +95,7 @@ final class FireEffects {
     /** Whether Enhanced fire ran this tick; block changes are ignored while it doesn't. */
     private boolean active;
     private boolean veinsOn;
+    private boolean marksOn;
     private ClientLevel level;
     private long gameTime;
     private double cameraX;
@@ -152,6 +153,8 @@ final class FireEffects {
         cameraX = s.cameraX;
         cameraY = s.cameraY;
         cameraZ = s.cameraZ;
+        // Switched back on, the marks return under the known fires when the next scan pass ends.
+        marksOn = s.settings.particles().burnMarks();
         scanStep(s);
         updateDecals(s);
         spawnParticles(s, queue);
@@ -170,6 +173,9 @@ final class FireEffects {
             searchVeins(s.level);
         }
         veins.tick(s.level);
+        if (!marksOn) {
+            marks.clear();
+        }
         marks.tick();
     }
 
@@ -281,7 +287,9 @@ final class FireEffects {
                 veins.markDirty(gameTime);
             }
             if (newType >= 0 && leavesMarks(newType)) {
-                marks.fireAt(level, key);
+                if (marksOn) {
+                    marks.fireAt(level, key);
+                }
             } else if (oldType >= 0 && leavesMarks(oldType)) {
                 marks.fireGone(key);
             }
@@ -365,6 +373,9 @@ final class FireEffects {
             veins.markDirty(gameTime);
         }
         marks.keepOnly(fires);
+        if (!marksOn) {
+            return;
+        }
         for (ObjectIterator<Long2ByteMap.Entry> iterator = fires.long2ByteEntrySet().fastIterator(); iterator.hasNext(); ) {
             Long2ByteMap.Entry entry = iterator.next();
             if (leavesMarks(entry.getByteValue())) {

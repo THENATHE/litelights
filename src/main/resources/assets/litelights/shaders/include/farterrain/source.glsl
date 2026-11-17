@@ -16,7 +16,7 @@ layout(push_constant) uniform FarTerrainValues {
     vec4 FarDepthInfo;          // x 1 when depth is reversed (far = 0), y 1 when depth is 0..1, zw one far shadow texel in texture units
     vec4 FarSwitches;           // x 1 when the pixels include another mod's far terrain, y relight it, z far shadows (1 on), w far water
     vec4 FarShadowRange;        // x, y where far shadows fade in (horizontal blocks), z camera-relative height of the sea surface, w 1 to fog far terrain
-    vec4 FarWaterSwitches;      // x 1 when far water was captured from the far mod's translucent pass this frame, y far caustics, z far depth colour, w far edge foam
+    vec4 FarWaterSwitches;      // x 1 when far water was captured from the far mod's translucent pass this frame, y far caustics, z far depth colour, w far edge foam (the far-shadow passes: the player, see far_shadow.fsh)
 };
 
 bool lite_far_has_depth(float depth) {

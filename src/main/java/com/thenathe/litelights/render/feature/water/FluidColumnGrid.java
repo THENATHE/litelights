@@ -62,6 +62,8 @@ public final class FluidColumnGrid {
     private static final int CANOPY_RADIUS = 2;
 
     private final int[] columns = new int[SIZE * SIZE];
+    /** Edge foam only against blocks: see {@link #shoreMask}. */
+    private boolean shoreOnlyAgainstBlocks;
     /** The window of world columns the grid holds now; anything outside it reads as unknown. */
     private boolean windowSet;
     private int windowMinX;
@@ -180,21 +182,44 @@ public final class FluidColumnGrid {
     }
 
     /**
+     * Whether a dry neighbour must stand beside the water, a block in the water's own top layer, to
+     * be a shore (Foam only against blocks, on by default). Off, ground that only reaches half a
+     * block under the surface counts too, which lines thin flowing water spread over flat ground with
+     * foam where it simply runs out.
+     */
+    public void setShoreOnlyAgainstBlocks(boolean onlyAgainstBlocks) {
+        shoreOnlyAgainstBlocks = onlyAgainstBlocks;
+    }
+
+    /**
      * Neighbours that end this column's fluid at its level: a solid block that reaches the
      * waterline, or the other kind of fluid. Only what is known counts: a neighbour in a chunk that
      * isn't loaded, outside the grid's window, or dry but lower than the waterline (the fluid runs
      * over the edge) is never a shore, so foam only ever draws against land that is really there.
+     * Water beside water, at any height, is never a shore either, and nor is ice.
+     *
+     * <p>With only blocks counting, the waterline is at least the top of the block the surface is
+     * in: the neighbour needs a block in that same layer. For a source block's surface that is the
+     * same rule as before (whole blocks reaching half a block under it); it differs only for water
+     * less than half a block deep, which no longer foams where it runs out on flat ground.
      */
     int shoreMask(int x, int z, int column) {
         int mask = 0;
-        int waterline = heightSteps(column) - HEIGHT_STEPS_PER_BLOCK / 2;
+        int height = heightSteps(column);
+        int waterline = height - HEIGHT_STEPS_PER_BLOCK / 2;
+        if (shoreOnlyAgainstBlocks) {
+            int surfaceBlockTop = ((height - 1) / HEIGHT_STEPS_PER_BLOCK + 1) * HEIGHT_STEPS_PER_BLOCK;
+            waterline = Math.max(waterline, surfaceBlockTop);
+        }
         for (int[] neighbour : NEIGHBOURS) {
             int other = get(x + neighbour[0], z + neighbour[1]);
             if ((other & KNOWN) == 0) {
                 continue;
             }
             boolean otherFluid = hasFluid(other) && (other & LAVA) != (column & LAVA);
-            boolean solidAtWaterline = !hasFluid(other) && solidTopSteps(other) >= waterline;
+            // Ice is no shore: the water carries on under it, so no foam lines an ice sheet or roof.
+            boolean ice = (other & ICE) != 0;
+            boolean solidAtWaterline = !hasFluid(other) && !ice && solidTopSteps(other) >= waterline;
             if (otherFluid || solidAtWaterline) {
                 mask |= neighbour[2];
             }

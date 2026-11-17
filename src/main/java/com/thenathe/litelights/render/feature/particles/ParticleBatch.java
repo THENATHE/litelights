@@ -13,9 +13,14 @@ import net.minecraft.client.renderer.state.level.QuadParticleRenderState;
  * without allocating, and a negative scale marks a streak, a quad stretched along a direction and
  * turned to face the camera around it (rain). For a streak the rotation slots carry the half-length
  * axis (x, y, z) and the half width (w) instead of a quaternion.
+ *
+ * <p>A scale of {@link #PUFF} marks a 3D haze puff (fog097): all four corners stay at its centre and
+ * particle/puff.vsh builds the quad around it, so the texture slots carry the puff instead (see
+ * {@link #puffSize} and {@link #puffCode}); the rotation slots are unused.
  */
 final class ParticleBatch extends QuadParticleRenderState {
     static final float STREAK = -1.0f;
+    static final float PUFF = -2.0f;
 
     /** Render-thread time vanilla's particle renderer spends building this batch's vertices, summed. */
     private long buildNanos;
@@ -25,6 +30,19 @@ final class ParticleBatch extends QuadParticleRenderState {
         long started = System.nanoTime();
         super.buildLayer(layer, bufferBuilder);
         buildNanos += System.nanoTime() - started;
+    }
+
+    /** A puff's first texture slot: 1 plus its size, so the sign of either corner survives a size of 0. */
+    static float puffSize(float size) {
+        return 1.0f + size;
+    }
+
+    /**
+     * A puff's second texture slot: 1 plus its kind (0 to 3, ParticleKind.Haze after NONE) plus four
+     * times a byte of its seed. Whole numbers up to 1024, which a float holds exactly.
+     */
+    static float puffCode(ParticleKind.Haze haze, int seed) {
+        return 1.0f + (haze.ordinal() - 1) + 4.0f * ((seed >>> 4) & 255);
     }
 
     long takeBuildNanos() {
@@ -42,6 +60,14 @@ final class ParticleBatch extends QuadParticleRenderState {
         float upX;
         float upY;
         float upZ;
+        if (scale == PUFF) {
+            // The corner is the signs of the texture coordinates, in the billboard's order.
+            builder.addVertex(x, y, z).setUv(u0, -v0).setColor(color).setLight(lightCoords);
+            builder.addVertex(x, y, z).setUv(u0, v0).setColor(color).setLight(lightCoords);
+            builder.addVertex(x, y, z).setUv(-u0, v0).setColor(color).setLight(lightCoords);
+            builder.addVertex(x, y, z).setUv(-u0, -v0).setColor(color).setLight(lightCoords);
+            return;
+        }
         if (scale < 0.0f) {
             // Up along the streak; right across it, perpendicular to the line of sight (the camera is at
             // 0,0,0). Right is (position x up), so right x up points back at the camera and the quad

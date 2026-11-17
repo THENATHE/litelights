@@ -80,7 +80,8 @@ vec3 lite_night_tone(vec3 color, vec2 lightCoord, float strength) {
 // --- Glint ------------------------------------------------------------------------------------
 
 // LiteFeatureValuesC.y holds the glint switches (LightPostFrame): which materials glint above
-// water, and how the water's sparkles move.
+// water, and how the water's sparkles move; above bit 8, the ground's softness and intensity.
+// LiteFeatureValuesC.x holds the water's softness and intensity.
 const int LITE_GLINT_WATER = 1;
 const int LITE_GLINT_ICE_SNOW = 2;
 const int LITE_GLINT_METAL_GLASS = 4;
@@ -89,6 +90,13 @@ const int LITE_GLINT_MOTION_SHIFT = 4;   // 0 still (viewpoint only), 1 gentle, 
 
 int lite_lp_glint_switches() {
     return int(LiteFeatureValuesC.y + 0.5);
+}
+
+// A softness and an intensity packed by GlintScale.pack: softness in hundredths from -1 in the
+// low byte, intensity in hundredths in the next. Softness 0 to 1 is the scale of the old Glint
+// softness slider; below 0 is crisper still, above 1 softer still.
+vec2 lite_lp_glint_tuning(int packed) {
+    return vec2(float(packed & 255) * 0.01 - 1.0, float((packed >> 8) & 255) * 0.01);
 }
 
 // The switch a material's glint belongs to, or 0 for materials that never glint (plants and
@@ -159,13 +167,19 @@ vec3 lite_glint(LiteSurface surface) {
         // Sand and stone: only a glimmer while the sun is low.
         strength *= 1.0 - smoothstep(0.2, 0.42, LiteSunDirection.w);
     }
+    // Water's sliders also tune everything that glints while the camera is under water.
+    vec2 tuning = lite_lp_glint_tuning(water || underwater ? int(LiteFeatureValuesC.x + 0.5) : switches >> 8);
+    float smoothness = clamp(tuning.x, 0.0, 1.0);
+    float crisp = max(-tuning.x, 0.0);           // ground below the old 0: rarer, smaller, crisper sparkles
+    float spread = max(tuning.x - 1.0, 0.0);     // water past the old 1: a wider, flatter sheen
+    strength *= tuning.y;
     if (strength <= 0.001) {
         return vec3(0.0);
     }
 
     bool locked = lite_locked(LITE_LOCK_GLINT);
     vec3 position = locked ? lite_pixel_lock_face(surface.position, axis) : surface.position;
-    float cellsPerBlock = locked ? LITE_TEXELS_PER_BLOCK : 48.0;
+    float cellsPerBlock = locked ? LITE_TEXELS_PER_BLOCK : 48.0 * (1.0 + crisp);
     vec3 inside = lite_lp_pattern_position(position) - axis * (0.25 / cellsPerBlock);
     vec3 cell = floor(inside * cellsPerBlock);
     vec3 random = lite_hash33(cell) - 0.5;
@@ -173,10 +187,9 @@ vec3 lite_glint(LiteSurface surface) {
     float time = LiteTime.y;
     int motion = water ? (switches >> LITE_GLINT_MOTION_SHIFT) & 3 : 0;
 
-    float smoothness = LiteFeatureValuesC.x;
     // Water's tilts stay within what its small waves give, so its sparkles gather around the sun's
     // reflection instead of dotting the whole lake.
-    vec3 tilt = random * mix(water ? 0.5 : 1.1, 0.04, smoothness);
+    vec3 tilt = random * (mix(water ? 0.5 : 1.1, 0.04, smoothness) * (1.0 - 1.6 * spread));
     float sparkle = step(chance.x, lite_lp_glint_share(group));
     if (motion > 0) {
         // The slow wave drift: every cell's tilt turns a little over a few seconds (periods that
@@ -190,8 +203,8 @@ vec3 lite_glint(LiteSurface surface) {
         sparkle *= smoothstep(0.0, 1.0, pulse * max(period * 0.48, 1.2));
     }
     vec3 microNormal = normalize(surface.normal + tilt);
-    float shininess = mix(700.0, 28.0, smoothness);
-    float energy = mix(3.2, 0.35, smoothness);
+    float shininess = mix(700.0, 28.0, smoothness) * (1.0 + 2.0 * crisp) / (1.0 + 4.0 * spread);
+    float energy = mix(3.2, 0.35, smoothness) / (1.0 + 2.0 * spread);
     vec3 viewDirection = normalize(position - lite_view_origin());
 
     float highlight;

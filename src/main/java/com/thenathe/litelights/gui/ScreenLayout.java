@@ -125,6 +125,23 @@ public record ScreenLayout(
                 listX, listY, listW, newListBottom, newListBottom + 4, h, describeMaxH, footerY);
     }
 
+    /**
+     * The same layout with the box sized for a description {@code wantedH} high, but never reaching
+     * up over a row that ends at {@code rowBottom}: the box stops below that row (or stays at its
+     * smallest size) and its text scrolls instead.
+     */
+    public ScreenLayout withDescribeBelow(int wantedH, int rowBottom) {
+        return withDescribeH(Math.min(wantedH, bodyBottom() - 4 - rowBottom));
+    }
+
+    /**
+     * The list's height with the description box at its largest. The list scrolls against this
+     * height, so its last row can always be brought up clear of the biggest box.
+     */
+    public int shortestListH() {
+        return describeMaxH == 0 ? listH() : bodyBottom() - describeMaxH - 4 - listY;
+    }
+
     /** Where the list (and the description box under it) must end, above the footer's rule. */
     public int bodyBottom() {
         return footerY - 5;

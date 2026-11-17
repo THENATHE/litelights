@@ -87,6 +87,21 @@ public final class PageModel implements PageContent {
         public List<Entry> entries() {
             return entries;
         }
+
+        /**
+         * A contributor's row: after the section's own options but above its first sub-heading, so
+         * a sub-section's rows stay together at the end of the section (Compatibility's notices
+         * above Mac troubleshooting).
+         */
+        private void addContributed(Entry entry) {
+            for (int i = 0; i < entries.size(); i++) {
+                if (entries.get(i) instanceof Subheading) {
+                    entries.add(i, entry);
+                    return;
+                }
+            }
+            entries.add(entry);
+        }
     }
 
     private static final Map<String, Glyphs> SUBHEADING_ICONS = new ConcurrentHashMap<>();
@@ -209,43 +224,43 @@ public final class PageModel implements PageContent {
 
     @Override
     public PageContent note(Component text) {
-        current.entries.add(new Note(text));
+        current.addContributed(new Note(text));
         return this;
     }
 
     @Override
     public PageContent recommendation(String modId, Component text) {
-        current.entries.add(new Recommendation(modId, text));
+        current.addContributed(new Recommendation(modId, text));
         return this;
     }
 
     @Override
     public PageContent action(Component label, Component description, Component button, Runnable action) {
-        current.entries.add(new Action(label, description, button, action, false, null));
+        current.addContributed(new Action(label, description, button, action, false, null));
         return this;
     }
 
     @Override
     public PageContent confirmedAction(Component label, Component description, Component button, Runnable action) {
-        current.entries.add(new Action(label, description, button, action, true, null));
+        current.addContributed(new Action(label, description, button, action, true, null));
         return this;
     }
 
     @Override
     public PageContent subScreen(Component label, Component description, Component button, Function<Screen, Screen> opener) {
-        current.entries.add(new Action(label, description, button, () -> { }, false, opener));
+        current.addContributed(new Action(label, description, button, () -> { }, false, opener));
         return this;
     }
 
     @Override
     public PageContent row(CustomRow row) {
-        current.entries.add(new Setting(RowValue.of(row)));
+        current.addContributed(new Setting(RowValue.of(row)));
         return this;
     }
 
     @Override
     public PageContent card(Component heading, Component text, Component button, String url, Runnable action) {
-        current.entries.add(new Card(heading, text, button, url, action));
+        current.addContributed(new Card(heading, text, button, url, action));
         return this;
     }
 }

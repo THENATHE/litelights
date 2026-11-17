@@ -7,6 +7,9 @@
 // Shared pieces of the water effects: hashing and noise, the column map, and positions that stay
 // exact far from the world origin.
 
+// The hue Realistic water takes when Biome and depth colour is off: a clear blue-green.
+const vec3 LITE_REALISTIC_WATER = vec3(0.24, 0.52, 0.66);
+
 // --- Positions ---
 
 // Horizontal position for procedural patterns. The camera block is taken modulo 2048 on the CPU,

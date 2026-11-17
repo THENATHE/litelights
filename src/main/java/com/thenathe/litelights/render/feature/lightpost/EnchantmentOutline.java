@@ -67,8 +67,11 @@ public final class EnchantmentOutline {
         .withShaderDefine("LITE_OUTLINE_CUT_INTERIOR").build();
 
     private static final Optional<Vector4fc> CLEAR_COLOUR = Optional.of(new Vector4f(0.0f));
-    /** The level blur's widest reach, in mask pixels each way (outline_level_spread.fsh's loop bound). */
-    private static final int MAX_TAPS = 64;
+    /**
+     * The level blur's widest reach, in mask pixels each way (outline_level_spread.fsh's loop bound).
+     * Must stay under that shader's safety cap, LITE_OUTLINE_MAX_REACH.
+     */
+    public static final int MAX_TAPS = 64;
     /** The blur reaches this many sigmas out, as the first-person blur does. */
     private static final float TAPS_PER_SIGMA = 2.5f;
 

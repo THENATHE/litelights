@@ -31,11 +31,19 @@ void lite_glass_surface(inout vec4 color, vec3 position, vec3 normal, vec2 uv, v
     if (weather.a < threshold) {
         return;
     }
+    // Over the glass's own texels the weather covers a little more than its alpha says, so the
+    // glass shows through faintly. The glass counts only as much as it is opaque: a texel the
+    // texture's mipmaps or a resource pack leave half clear carries the clear part's colour, never
+    // meant to be seen, which would darken the weather along the frame and leave a dark fringe.
     bool glassTexel = color.a >= ALPHA_CUTOUT;
-    color = vec4(glassTexel ? mix(color.rgb, weather.rgb, min(1.0, weather.a + 0.2)) : weather.rgb, 1.0);
+    float cover = glassTexel ? min(1.0, weather.a + 0.2) : 1.0;
+    color = vec4(lite_glass_over(vec4(weather.rgb, cover), color).rgb, 1.0);
 #else
-    color.rgb = mix(color.rgb, weather.rgb, weather.a);
-    color.a += weather.a * (1.0 - color.a);
+    // Weather laid over the texel as one layer over another, both straight alpha: where the texture
+    // is clear its colour (a grey that is never meant to be seen) must not tint the weather, and
+    // where it is stained the glass shows through only as much as the weather leaves uncovered.
+    // The alpha is the same as before, so Improved Transparency's alpha-only stages still match.
+    color = lite_glass_over(weather, color);
 #endif
 }
 

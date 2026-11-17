@@ -49,7 +49,10 @@ class LiteLightsOptionsTest {
         assertFalse(LiteLightsOptions.GLINT_SAND_STONE.on());
         assertEquals(LiteLightsOptions.JumpSplash.ADVANCED, LiteLightsOptions.JUMP_SPLASH.get());
         assertEquals(LiteLightsOptions.WaterPalette.VANILLA_COLOURS, LiteLightsOptions.WATER_PALETTE.get());
-        assertEquals(0.15F, LiteLightsOptions.GLINT_SOFTNESS.value());
+        assertEquals(0.5F, LiteLightsOptions.GLINT_WATER_SOFTNESS.value());
+        assertEquals(0.5F, LiteLightsOptions.GLINT_WATER_INTENSITY.value());
+        assertEquals(0.5F, LiteLightsOptions.GLINT_GROUND_SOFTNESS.value());
+        assertEquals(0.5F, LiteLightsOptions.GLINT_GROUND_INTENSITY.value());
         assertEquals(LiteLightsOptions.GradeSchedule.BY_TIME_OF_DAY, LiteLightsOptions.GRADE_SCHEDULE.get());
         assertEquals(256, LiteLightsOptions.SHADOW_REACH.value());
         assertEquals(LiteLightsOptions.ShadowDetail.SHARPEST, LiteLightsOptions.SHADOW_DETAIL.get());
@@ -90,6 +93,35 @@ class LiteLightsOptionsTest {
         assertFalse(LiteLightsOptions.FOAM_MOTION.active());
         LiteLightsOptions.EDGE_FOAM.reset();
         LiteLightsOptions.ENHANCED_WATER.reset();
+    }
+
+    @Test
+    void shoreRunUpAndWaveFoamGoWithOceanWavesAndDefaultToTodaysLook() {
+        assertEquals("water.shore_run_up", LiteLightsOptions.SHORE_RUN_UP.id());
+        assertEquals("water.wave_foam", LiteLightsOptions.WAVE_FOAM.id());
+        assertEquals(Pages.WATER, LiteLightsOptions.SHORE_RUN_UP.page());
+        assertEquals(Pages.WATER, LiteLightsOptions.WAVE_FOAM.page());
+        // 1 is the run-up and the foam as Ocean waves drew them before these rows; the shaders
+        // treat 1 as no change.
+        assertEquals(1.0F, LiteLightsOptions.SHORE_RUN_UP.defaultValue());
+        assertEquals(1.0F, LiteLightsOptions.WAVE_FOAM.defaultValue());
+        assertEquals(1.0F, LiteLightsOptions.SHORE_RUN_UP.min());
+        assertEquals(2.0F, LiteLightsOptions.SHORE_RUN_UP.max());
+        assertEquals(0.25F, LiteLightsOptions.WAVE_FOAM.min());
+        assertEquals(2.0F, LiteLightsOptions.WAVE_FOAM.max());
+        assertEquals(LiteLightsOptions.OCEAN_WAVES, LiteLightsOptions.SHORE_RUN_UP.needs());
+        assertEquals(LiteLightsOptions.OCEAN_WAVES, LiteLightsOptions.WAVE_FOAM.needs());
+        // Ocean waves is off by default, so both rows start greyed out.
+        assertFalse(LiteLightsOptions.SHORE_RUN_UP.active());
+        assertFalse(LiteLightsOptions.WAVE_FOAM.active());
+        LiteLightsOptions.OCEAN_WAVES.set(true);
+        assertTrue(LiteLightsOptions.SHORE_RUN_UP.active());
+        assertTrue(LiteLightsOptions.WAVE_FOAM.active());
+        // The run-up moves in quarter blocks.
+        LiteLightsOptions.SHORE_RUN_UP.set(1.6F);
+        assertEquals(1.5F, LiteLightsOptions.SHORE_RUN_UP.value(), 1.0E-6);
+        LiteLightsOptions.SHORE_RUN_UP.reset();
+        LiteLightsOptions.OCEAN_WAVES.reset();
     }
 
     @Test

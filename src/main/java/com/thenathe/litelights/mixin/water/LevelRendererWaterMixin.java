@@ -6,6 +6,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.commands.RenderPass;
 import com.thenathe.litelights.render.feature.farterrain.FarTerrain;
+import com.thenathe.litelights.render.feature.particles.HazeDepth;
 import com.thenathe.litelights.render.feature.lightpost.LightPost;
 import com.thenathe.litelights.render.feature.water.WaterRenderer;
 import java.util.Optional;
@@ -22,8 +23,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Copies the opaque scene for the water shaders after the solid world is drawn and before
  * translucent terrain, and shades far terrain just before that copy (FarTerrain); TAA copies the
- * opaque depth at the same point (LightPost). With Improved Transparency the solid pass has already closed when the OIT
- * passes start, so the copy happens there. Without it, vanilla draws solid and translucent terrain
+ * opaque depth at the same point (LightPost), and the haze its scene distance (HazeDepth). With
+ * Improved Transparency the solid pass has already closed when the OIT passes start, so the copy
+ * happens there. Without it, vanilla draws solid and translucent terrain
  * in one pass; the wrapper closes that pass at the boundary (the caller's close then does nothing,
  * as closing a pass twice is allowed), copies, and runs the translucent half in a new pass on the
  * same target. When no copy is wanted the method runs untouched.
@@ -40,7 +42,8 @@ abstract class LevelRendererWaterMixin {
         FarTerrain farTerrain = FarTerrain.get();
         boolean copyScene = water.wantsSceneCopy();
         LightPost lightPost = LightPost.get();
-        if (!copyScene && !farTerrain.wantsPassBeforeTranslucents() && !lightPost.wantsPassBeforeTranslucents()) {
+        HazeDepth hazeDepth = HazeDepth.get();
+        if (!copyScene && !farTerrain.wantsPassBeforeTranslucents() && !lightPost.wantsPassBeforeTranslucents() && !hazeDepth.wanted()) {
             original.call(chunkSectionsToRender, featureFrame, renderPass);
             return;
         }
@@ -49,6 +52,7 @@ abstract class LevelRendererWaterMixin {
         // Far terrain first, so water's copy (its reflections and what shows through it) sees it shaded.
         farTerrain.beforeTranslucents(mainTarget);
         lightPost.beforeTranslucents(mainTarget);
+        hazeDepth.take(mainTarget);
         if (copyScene) {
             water.copyScene(mainTarget);
         }
@@ -66,6 +70,7 @@ abstract class LevelRendererWaterMixin {
         RenderTarget mainTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
         FarTerrain.get().beforeTranslucents(mainTarget);
         LightPost.get().beforeTranslucents(mainTarget);
+        HazeDepth.get().take(mainTarget);
         WaterRenderer water = WaterRenderer.get();
         if (water.wantsSceneCopy()) {
             water.copyScene(mainTarget);

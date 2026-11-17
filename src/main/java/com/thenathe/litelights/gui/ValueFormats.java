@@ -16,7 +16,7 @@ public final class ValueFormats {
             case SIGNED_PERCENT -> Component.literal(signed(Math.round(value * 100)) + "%");
             case DEGREES -> Component.literal(signed(Math.round(value)) + "°");
             case STOPS -> Component.translatable("litelights.format.stops", signedDecimal(value));
-            case BLOCKS -> Component.translatable("litelights.format.blocks", trimmed(value));
+            case BLOCKS -> Component.translatable(value == 1.0 ? "litelights.format.block" : "litelights.format.blocks", trimmed(value));
             case BLOCK_SQUARE -> Component.translatable("litelights.format.block_square", trimmed(value));
         };
     }
