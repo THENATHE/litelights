@@ -100,6 +100,9 @@ void main() {
             // A storm hides the clouds as much as the sky behind them.
             color = mix(color, LiteStormFog.rgb, LiteSkyInfo.w);
         }
+        // Lightning lights the cloud from within: the undersides and sides most, the tops less.
+        float within = lightDirection == 1 ? 0.55 : (lightDirection == 0 ? 1.0 : 0.85);
+        color += lite_flash_cloud(pos) * within * 2.2;
         vertexColor = vec4(color, CloudColor.a);
     } else {
         vertexColor = (useTopColor ? faceColors[1] : faceColors[direction]) * CloudColor;

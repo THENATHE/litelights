@@ -1,5 +1,6 @@
 package com.thenathe.litelights.render.frame;
 
+import com.thenathe.litelights.render.feature.vegetation.HangingSwing;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
@@ -27,6 +28,8 @@ public final class FrameState {
     public final Vector3f cameraFraction = new Vector3f();
     public final Vector4f time = new Vector4f();
     public final Vector4f weather = new Vector4f();
+    /** Lightning (render.feature.lightning.CloudLightning fills it); all zero draws no flash. */
+    public final Vector4f[] lightning = {new Vector4f(), new Vector4f(), new Vector4f(), new Vector4f()};
     public final Vector4f shadowParams = new Vector4f();
     public final Vector4f shadowMapInfo = new Vector4f(1, 1, 1, 1);
     public final Vector4f shadowFade = new Vector4f(1, 0, 0, 0);
@@ -51,4 +54,15 @@ public final class FrameState {
     // Weather on glass (render.feature.weather.GlassWeather); all zero draws nothing.
     public final Vector4f glassCold = new Vector4f();
     public final Vector4f glassInfo = new Vector4f();
+    // Puddles (render.feature.weather.Puddles); x 0 draws none.
+    public final Vector4f puddles = new Vector4f();
+    // Snowy leaves and ground (render.feature.weather.SnowyLeaves); x 0 draws none.
+    public final Vector4f snowCover = new Vector4f();
+    // Swinging lanterns, chains and hanging signs (render.feature.vegetation.SwingingLanterns): x wind
+    // strength, y amplitude scale, z columns listed; the cells and columns as HangingSwing packs them.
+    public final Vector4f swing = new Vector4f();
+    public final int[] swingCells = new int[HangingSwing.CELL_ROWS];
+    public final int[] swingColumns = new int[HangingSwing.MAX_COLUMNS * 4];
+    // The rocks ores are drawn on (render.material.OreRocks#uniforms): six vec4, two per rock.
+    public final float[] oreRocks = new float[24];
 }

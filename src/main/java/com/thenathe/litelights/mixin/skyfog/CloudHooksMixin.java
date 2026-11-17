@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.renderpearl.api.commands.RenderPass;
 import com.mojang.renderpearl.api.textures.GpuTextureView;
+import com.thenathe.litelights.render.feature.lightning.CloudLightning;
 import com.thenathe.litelights.render.feature.skyfog.LiteClouds;
 import net.minecraft.client.CloudStatus;
 import net.minecraft.client.renderer.CloudRenderer;
@@ -25,6 +26,7 @@ abstract class CloudHooksMixin {
         at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/CloudRenderer;prepare(ILnet/minecraft/client/CloudStatus;FILnet/minecraft/world/phys/Vec3;JF)V"))
     private void litelights$prepareClouds(CloudRenderer clouds, int color, CloudStatus status, float bottomY, int range, Vec3 camera,
                                           long gameTime, float partialTicks, Operation<Void> original) {
+        CloudLightning.get().cloudsAt(bottomY);
         if (LiteClouds.get().activeThisFrame()) {
             LiteClouds.get().prepare(color, status, bottomY, range, camera, gameTime, partialTicks);
         } else {

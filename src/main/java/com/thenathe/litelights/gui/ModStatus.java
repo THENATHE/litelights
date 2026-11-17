@@ -42,6 +42,8 @@ public final class ModStatus {
             new Mod("lambdynamiclights", "LambDynamicLights", "lambdynlights", Group.RECOMMENDED, "lambdynamiclights"),
             new Mod("lambdabettergrass", "LambdaBetterGrass", "lambdabettergrass", Group.RECOMMENDED, "lambdabettergrass"),
             new Mod("continuity", "Continuity", "continuity", Group.RECOMMENDED, "continuity"),
+            new Mod("visuality", "Visuality", "visuality", Group.RECOMMENDED, "visuality"),
+            new Mod("subtle_effects", "Subtle Effects", "subtle_effects", Group.RECOMMENDED, "subtle-effects"),
             new Mod("modmenu", "Mod Menu", "modmenu", Group.RECOMMENDED, "modmenu"),
             new Mod("voxy", "Voxy", "voxy", Group.WORKS_WITH, "voxy"),
             new Mod("distanthorizons", "Distant Horizons", "distanthorizons", Group.WORKS_WITH, "distanthorizons"),

@@ -1,9 +1,13 @@
 package com.thenathe.litelights.render.material;
 
 import com.thenathe.litelights.render.feature.vegetation.VegetationMaterials;
+import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBlockTags;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.block.AmethystBlock;
 import net.minecraft.world.level.block.BaseFireBlock;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FarmlandBlock;
 import net.minecraft.world.level.block.HalfTransparentBlock;
 import net.minecraft.world.level.block.IceBlock;
 import net.minecraft.world.level.block.StainedGlassBlock;
@@ -43,13 +47,30 @@ public final class MaterialClassifier {
         if (state.getLightEmission() >= 10) {
             return MaterialIds.GLOWING;
         }
+        // Amethyst in every form (budding, clusters and buds are amethyst blocks too), and the two
+        // gem blocks that read as cut crystal. Quartz looks like smooth stone, and glowstone glows.
+        if (block instanceof AmethystBlock || state.is(Blocks.DIAMOND_BLOCK) || state.is(Blocks.EMERALD_BLOCK)) {
+            return MaterialIds.CRYSTAL;
+        }
+        if (isOre(state)) {
+            // Which rock the texture is drawn on is decided later, from the textures (OreRocks).
+            return MaterialIds.ORE_STONE;
+        }
         if (state.is(BlockTags.SNOW)) {
             return MaterialIds.SNOW;
         }
         if (state.is(BlockTags.SAND)) {
             return MaterialIds.SAND;
         }
+        if (block instanceof FarmlandBlock) {
+            return MaterialIds.FARMLAND;
+        }
         return MaterialIds.DEFAULT;
+    }
+
+    /** Vanilla's ores by their tag, and modded ones by the Conventional {@code c:ores} tag. */
+    static boolean isOre(BlockState state) {
+        return state.is(BlockTags.ORES) || state.is(ConventionalBlockTags.ORES) || state.is(Blocks.NETHER_QUARTZ_ORE);
     }
 
     /** By sprite path alone, for sprites no block claimed and for metals, which have no tag. */

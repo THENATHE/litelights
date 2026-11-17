@@ -65,6 +65,8 @@ class SavedDefaultsTest {
             assertFalse(LiteLightsOptions.SWAY_GRASS.on());
             assertFalse(LiteLightsOptions.SWAY_PLANTS.on());
             assertFalse(LiteLightsOptions.SWAY_LEAVES.on());
+            // Not in a file from before 0.9.9: it takes its default.
+            assertTrue(LiteLightsOptions.SWAY_LANTERNS.on());
             assertEquals(LiteLightsOptions.WaterPalette.VANILLA_COLOURS, LiteLightsOptions.WATER_PALETTE.get());
             assertEquals(LiteLightsOptions.FoamMotion.STATIONARY, LiteLightsOptions.FOAM_MOTION.get());
             assertFalse(LiteLightsOptions.OCEAN_WAVES.on());
@@ -80,6 +82,41 @@ class SavedDefaultsTest {
             assertFalse(options.get("water.ocean_waves").getAsBoolean());
             assertEquals("normal", options.get("weather.storms.snow.fog").getAsString());
             assertFalse(Files.exists(folder.resolve("litelights.json.schema3.bak")), "a current file needs no migration");
+        } finally {
+            registry.resetAll();
+        }
+    }
+
+    @Test
+    void aFileFrom098KeepsItsWavesAndTakesWaterForShoreWater() throws IOException {
+        Path path = folder.resolve("litelights.json");
+        Files.writeString(path, """
+                {
+                  "schema": 3,
+                  "options": {
+                    "water.ocean_waves": true,
+                    "water.shore_run_up": 1.75,
+                    "water.wave_foam": 1.5,
+                    "water.edge_foam": false
+                  }
+                }""");
+        OptionRegistry registry = LiteLightsConfig.registry();
+        try {
+            ConfigFile file = new ConfigFile(path, registry, ConfigMigrations.standard());
+            file.load();
+            assertEquals(LiteLightsOptions.ShoreFilm.WATER, LiteLightsOptions.SHORE_FILM.get());
+            assertEquals(1.75F, LiteLightsOptions.SHORE_RUN_UP.value(), 1.0E-6);
+            assertEquals(1.5F, LiteLightsOptions.WAVE_FOAM.value(), 1.0E-6);
+            assertFalse(LiteLightsOptions.EDGE_FOAM.on());
+
+            LiteLightsOptions.SHORE_FILM.set(LiteLightsOptions.ShoreFilm.FOAM_IN_WATER_OUT);
+            file.save();
+            JsonObject options = JsonParser.parseString(Files.readString(path)).getAsJsonObject().getAsJsonObject("options");
+            assertEquals("foam_in_water_out", options.get("water.shore_film").getAsString());
+            assertEquals(1.75F, options.get("water.shore_run_up").getAsFloat(), 1.0E-6);
+            registry.resetAll();
+            file.load();
+            assertEquals(LiteLightsOptions.ShoreFilm.FOAM_IN_WATER_OUT, LiteLightsOptions.SHORE_FILM.get());
         } finally {
             registry.resetAll();
         }

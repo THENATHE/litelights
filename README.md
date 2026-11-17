@@ -11,8 +11,8 @@ LiteLights is a client-side Fabric mod for Minecraft 26.3. It adds shadows, bett
 - **Shadows:** cached sun and moon shadows, creature shadows instead of vanilla's round blob, and five detail levels.
 - **Lighting:** bloom, sunbeams (above and under water), glint on water, ice, metal and glass, colour grading by time of day, and enchantment outlines on held items and armour.
 - **Water:** natural colours with depth, reflections, caustics, edge foam, large water textures, splashes, ocean waves and wakes behind boats and swimmers.
-- **Sky and fog:** LiteLights' own sun, moon and stars, clouds in one or two layers, haze with mist banks and biome colours, the aurora borealis, meteor showers and distant fireworks.
-- **Weather:** its own rain and snow, rolling mist along the ground (or soft 3D puffs if you prefer), storm fog for each kind of storm, sandstorms and haboobs, rain drips and wall streaks, and frost, snow and sand on windows.
+- **Sky and fog:** LiteLights' own sun, moon and stars, clouds in one or two layers, haze with mist banks and biome colours, the aurora borealis, meteor showers, distant fireworks and rainbows after the rain.
+- **Weather:** its own rain and snow, rolling mist along the ground (or soft 3D puffs if you prefer), storm fog for each kind of storm, sandstorms and haboobs, puddles in the rain, snow on leaves and under trees, rain drips and wall streaks, and frost, snow and sand on windows.
 - **Particles and plants:** fireflies, dust, pollen, better fire and smoke, ember veins, and swaying grass, plants and leaves.
 - **Far terrain:** Voxy and Distant Horizons land gets the same haze, light, water and shadows; Calculate distance on the Shadows page lines the near shadows up with it.
 - **Overlays:** softer blocks like grass and sand spill onto harder ones, with textures made from whatever resource packs you have loaded. This one needs Continuity.
@@ -23,7 +23,7 @@ The first time you start the game with LiteLights, it asks how powerful your com
 
 1. Install Fabric Loader 0.19.3 or newer and Fabric API 0.160.5 or newer for Minecraft 26.3, on Java 25.
 2. Drop the jar from the [latest release](../../releases/latest) into your `mods` folder.
-3. Optional: Sodium, Continuity (for overlays), Mod Menu.
+3. Optional: Sodium, Continuity (for overlays), Mod Menu. Recommended alongside: LambDynamicLights, LambdaBetterGrass, Visuality and Subtle Effects.
 
 ## Compatibility
 
@@ -53,11 +53,18 @@ LiteLights is written from scratch. A lot of the ideas came from other mods thou
 - **Big Water** by Tec: large water textures. LiteLights ships Big Water's CC0 water and lava textures.
 - **Particular** by Chai: the jump splash.
 - **Immersive Storms** by TheDeathlyCow: storm atmosphere.
+- **Squall** by comedy: lightning flickering inside the clouds.
+- **Tempestra** by Moth_SKW: branching lightning bolts.
 - **Weather Glass** by duffopuffo: weather on glass.
 - **Particle Rain** by pigcart: rain drips and wall streaks.
 - **Wakes** by Goby56: wakes behind boats and swimmers.
+- **Falling Leaves** by Fourmisain: leaves falling from trees on the wind.
+- **You Must Have The Rain** by AppleNButter: rainbows after the rain.
+- **Snow** by IMB11: leaves turning white while it snows, and snow under trees.
+- **Swinging Lanterns** by Rilith: lanterns and their chains swinging in the wind.
+- **Lava Particles | More** by stepqq: the heat shimmer.
 - **Continuity** by Pepper_Bell, which the overlays draw through.
-- **LambDynamicLights** and **LambdaBetterGrass** by LambdAurora, which I recommend running alongside it.
+- **LambDynamicLights** and **LambdaBetterGrass** by LambdAurora, **Visuality** by PinkGoosik and **Subtle Effects** by MincraftEinstein, which I recommend running alongside it.
 
 None of those mods' code, shaders or textures were used, apart from Big Water's CC0 textures. The full list with links is in [CREDITS.md](CREDITS.md).
 

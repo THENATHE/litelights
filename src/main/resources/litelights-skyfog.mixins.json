@@ -6,6 +6,10 @@
     "client": [
         "CloudHooksMixin",
         "CloudOptionsMixin",
+        "LightningBoltAccessor",
+        "LightningBoltDistanceMixin",
+        "LightningBoltRenderStateMixin",
+        "LightningBoltRendererMixin",
         "SkyRendererSkyFogMixin"
     ],
     "injectors": {

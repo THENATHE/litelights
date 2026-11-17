@@ -50,16 +50,17 @@ class WeatherPageTest {
         assertEquals(List.of("weather.precipitation", "weather.density", "weather.distance", "weather.distance_fill", "weather.rain_mist",
             "weather.mist_style"),
             sections.get("rain_snow"));
-        List<String> storms = new ArrayList<>(List.of("weather.storm_atmosphere"));
+        List<String> storms = new ArrayList<>(List.of("weather.storm_atmosphere", "weather.cloud_lightning", "weather.branching_lightning"));
         for (String type : new String[] {"rain", "thunderstorm", "snow", "blizzard", "sandstorm", "haboob"}) {
             storms.add("weather.storms." + type + ".fog");
             storms.add("weather.storms." + type + ".clouds");
         }
         assertEquals(storms, sections.get("storms"));
-        assertEquals(List.of("weather.rain_drips", "weather.wall_streaks", "weather.drifting_sand", "weather.sandstorms"),
+        assertEquals(List.of("weather.rain_drips", "weather.wall_streaks", "weather.puddles", "weather.snowy_leaves", "weather.drifting_sand",
+            "weather.sandstorms"),
             sections.get("details"));
         assertTrue(sections.get("glass").contains("weather.glass"));
-        assertEquals(List.of("weather.polar_lights", "weather.meteor_nights", "weather.far_fireworks"), sections.get("events"));
+        assertEquals(List.of("weather.polar_lights", "weather.meteor_nights", "weather.rainbows", "weather.far_fireworks"), sections.get("events"));
     }
 
     @Test
@@ -145,6 +146,7 @@ class WeatherPageTest {
             assertEquals(LiteLightsOptions.SpawnDistance.VERY_FAR, LiteLightsOptions.WEATHER_DISTANCE.get());
             assertEquals(LiteLightsOptions.DistanceFill.FILL, LiteLightsOptions.WEATHER_DISTANCE_FILL.get());
             assertEquals(LiteLightsOptions.MistStyle.FIELD, LiteLightsOptions.MIST_STYLE.get(), "Mist style (0.9.7) starts at Mist field");
+            assertTrue(LiteLightsOptions.CLOUD_LIGHTNING.on() && LiteLightsOptions.BRANCHING_LIGHTNING.on(), "the lightning rows (0.9.9) start on");
             for (StormType type : StormType.values()) {
                 assertEquals(stormFogDefault(type), LiteLightsOptions.storm(type).fog().get(), "new rows start at their defaults");
                 assertEquals(StormClouds.FOLLOW_DENSITY, LiteLightsOptions.storm(type).clouds().get());

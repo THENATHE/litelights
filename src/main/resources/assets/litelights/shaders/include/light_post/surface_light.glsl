@@ -87,6 +87,7 @@ const int LITE_GLINT_ICE_SNOW = 2;
 const int LITE_GLINT_METAL_GLASS = 4;
 const int LITE_GLINT_SAND_STONE = 8;
 const int LITE_GLINT_MOTION_SHIFT = 4;   // 0 still (viewpoint only), 1 gentle, 2 lively
+const int LITE_GLINT_ORES = 64;          // ores and crystals (light_post/ore_glint.glsl)
 
 int lite_lp_glint_switches() {
     return int(LiteFeatureValuesC.y + 0.5);
@@ -100,7 +101,8 @@ vec2 lite_lp_glint_tuning(int packed) {
 }
 
 // The switch a material's glint belongs to, or 0 for materials that never glint (plants and
-// leaves, glowing blocks). Stone, ores and the other plain blocks go with sand.
+// leaves, glowing blocks). Stone and the other plain blocks go with sand, and so does the rock
+// around the ore in an ore block. Crystals have only their own sparkle (ore_glint.glsl).
 int lite_lp_glint_group(int material) {
     if (material == LITE_MATERIAL_WATER) {
         return LITE_GLINT_WATER;
@@ -111,7 +113,8 @@ int lite_lp_glint_group(int material) {
     if (material == LITE_MATERIAL_METAL || material == LITE_MATERIAL_GLASS) {
         return LITE_GLINT_METAL_GLASS;
     }
-    if (material == LITE_MATERIAL_SAND || material == LITE_MATERIAL_DEFAULT) {
+    if (material == LITE_MATERIAL_SAND || material == LITE_MATERIAL_DEFAULT || material == LITE_MATERIAL_FARMLAND
+            || lite_material_is_ore(material)) {
         return LITE_GLINT_SAND_STONE;
     }
     return 0;

@@ -8,6 +8,7 @@
 
 #include <litelights:frame.glsl>
 #include <litelights:noise.glsl>
+#include <litelights:skyfog/lightning.glsl>
 
 // Ground mist at full amount: optical depth per block at ground level, and how fast it thins with
 // height (it halves about every four blocks).
@@ -32,9 +33,10 @@ vec3 lite_haze_color(vec3 direction) {
 }
 
 // What the sky looks like right at the horizon in a direction. Land at the edge of the render
-// distance fades to exactly this, so it disappears into the sky without a seam.
+// distance fades to exactly this, so it disappears into the sky without a seam. A lightning flash
+// lights it for a moment.
 vec3 lite_horizon_color(vec3 direction) {
-    return mix(lite_haze_color(direction), LiteStormFog.rgb, LiteSkyInfo.w);
+    return mix(lite_haze_color(direction), LiteStormFog.rgb, LiteSkyInfo.w) + lite_flash_air(direction);
 }
 
 // Ground mist is the haze, a little paler.
@@ -115,6 +117,7 @@ vec4 lite_air(vec3 position, float skyLight) {
         return vec4(0.0);
     }
     vec3 scattered = (haze * lite_haze_color(position / distance) + mist * lite_mist_color() + storm * LiteStormFog.rgb) / total;
+    scattered += lite_flash_air(position / distance);
     return vec4(scattered * lite_air_light(skyLight), 1.0 - exp(-total));
 }
 

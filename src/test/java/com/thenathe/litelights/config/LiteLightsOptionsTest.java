@@ -64,6 +64,7 @@ class LiteLightsOptionsTest {
         assertTrue(LiteLightsOptions.SWAY_GRASS.on());
         assertTrue(LiteLightsOptions.SWAY_PLANTS.on());
         assertTrue(LiteLightsOptions.SWAY_LEAVES.on());
+        assertTrue(LiteLightsOptions.SWAY_LANTERNS.on());
         assertEquals(LiteLightsOptions.PrecipitationLook.LITELIGHTS, LiteLightsOptions.PRECIPITATION.get());
         assertTrue(LiteLightsOptions.STORM_ATMOSPHERE.on());
         assertTrue(LiteLightsOptions.GLASS_WEATHER.on());
@@ -131,6 +132,24 @@ class LiteLightsOptionsTest {
         assertEquals(1.5F, LiteLightsOptions.SHORE_RUN_UP.value(), 1.0E-6);
         LiteLightsOptions.SHORE_RUN_UP.reset();
         LiteLightsOptions.OCEAN_WAVES.reset();
+    }
+
+    @Test
+    void shoreWaterIsAChoiceThatGoesWithOceanWavesAndStartsAsWater() {
+        assertEquals("water.shore_film", LiteLightsOptions.SHORE_FILM.id());
+        assertEquals(List.of(LiteLightsOptions.ShoreFilm.WATER, LiteLightsOptions.ShoreFilm.FOAM,
+            LiteLightsOptions.ShoreFilm.FOAM_IN_WATER_OUT), LiteLightsOptions.SHORE_FILM.choices());
+        // Water is the clear sheet the swash always drew, so nobody's look changes.
+        assertEquals(LiteLightsOptions.ShoreFilm.WATER, LiteLightsOptions.SHORE_FILM.defaultValue());
+        assertEquals(Pages.WATER, LiteLightsOptions.SHORE_FILM.page());
+        assertEquals(LiteLightsOptions.OCEAN_WAVES, LiteLightsOptions.SHORE_FILM.needs());
+        assertTrue(LiteLightsOptions.SHORE_FILM.active());
+        LiteLightsOptions.OCEAN_WAVES.set(false);
+        assertFalse(LiteLightsOptions.SHORE_FILM.active());
+        LiteLightsOptions.OCEAN_WAVES.reset();
+        // Its row sits with the other Ocean waves rows, right after Shore run-up.
+        List<Option<?>> water = LiteLightsConfig.registry().all().stream().filter(option -> Pages.WATER.equals(option.page())).toList();
+        assertEquals(water.indexOf(LiteLightsOptions.SHORE_RUN_UP) + 1, water.indexOf(LiteLightsOptions.SHORE_FILM));
     }
 
     @Test

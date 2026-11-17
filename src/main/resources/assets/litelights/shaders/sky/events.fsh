@@ -84,6 +84,46 @@ void main() {
     color *= lite_steps(level, 16.0) / max(level, 1.0e-4);
     fragColor = vec4(color * vertexColor.a * 0.95, 1.0);
 }
+#elif defined(RAINBOW)
+// A rainbow after the rain (idea by AppleNButter, You Must Have The Rain). Its light is added to
+// the sky. texCoord0 holds the point opposite the sun (its azimuth from north turning east, and its
+// elevation, radians) and vertexColor.a the rainbow's strength; each pixel's angle from that point
+// says what it shows.
+//
+// The main bow lies 40.5 to 42.5 degrees out, red outside, violet inside; the second bow, fainter
+// and wider, 50 to 53.5 degrees out with its colours the other way round. The sky inside the main
+// bow is a little brighter and the band between the bows gets nothing, so it reads darker
+// (Alexander's dark band). The colours come in six solid bands, so it reads as pixel art like the
+// other sky events, and the bow fades out toward the horizon.
+layout(location = 2) in vec3 skyDirection;
+
+const vec3 LITE_RAINBOW_BANDS[6] = vec3[6](vec3(1.0, 0.22, 0.2), vec3(1.0, 0.58, 0.16), vec3(1.0, 0.92, 0.3),
+    vec3(0.35, 0.92, 0.32), vec3(0.3, 0.55, 1.0), vec3(0.58, 0.32, 0.95));
+// How bright each band shows: the outer red and the violet fade into the sky.
+const float LITE_RAINBOW_WEIGHTS[6] = float[6](0.65, 0.95, 1.0, 0.95, 0.8, 0.5);
+
+// The colour of a bow at a place across it, 0 at its red edge to 1 at its violet edge.
+vec3 lite_rainbow_band(float across) {
+    if (across < 0.0 || across >= 1.0) {
+        return vec3(0.0);
+    }
+    int band = int(across * 6.0);
+    return LITE_RAINBOW_BANDS[band] * LITE_RAINBOW_WEIGHTS[band];
+}
+
+void main() {
+    vec3 direction = normalize(skyDirection);
+    float horizontal = cos(texCoord0.y);
+    vec3 centre = vec3(sin(texCoord0.x) * horizontal, sin(texCoord0.y), -cos(texCoord0.x) * horizontal);
+    float radius = degrees(acos(clamp(dot(direction, centre), -1.0, 1.0)));
+
+    vec3 color = lite_rainbow_band((42.6 - radius) / 2.1);
+    color += lite_rainbow_band((radius - 50.1) / 3.4) * 0.42;
+    // Inside the main bow, the light the drops send back at smaller angles.
+    color += vec3(0.12) * smoothstep(20.0, 40.5, radius) * (1.0 - step(40.5, radius));
+    float horizon = smoothstep(-0.01, 0.08, direction.y);
+    fragColor = vec4(color, vertexColor.a * horizon * 0.42);
+}
 #else
 // Firework sparks: texCoord0 runs -1..1 across the quad. A bright core with a dimmer
 // rim, in two steps. Firework glows run 9..11 instead: a soft round falloff in four steps.

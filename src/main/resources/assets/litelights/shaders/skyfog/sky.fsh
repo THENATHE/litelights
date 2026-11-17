@@ -109,6 +109,11 @@ void main() {
         sky = lite_over(sky, FogColor.rgb, lite_horizon_band(direction));
     }
 
+    if (!end) {
+        // Lightning lights the cloud deck from within; through the gaps the sky glows with it.
+        sky.rgb += lite_flash_sky(direction);
+    }
+
     if (lite_feature(LITE_FEATURE_DARK_DISC) && direction.y < 0.0) {
         sky = lite_over(sky, vec3(0.0), smoothstep(0.0, -0.01, direction.y));
     }

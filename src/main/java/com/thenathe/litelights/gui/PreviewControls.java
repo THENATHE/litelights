@@ -17,9 +17,10 @@ import net.minecraft.network.chat.Component;
  * LiteLights draws; the world's time and weather never move, and everything ends when the screen
  * closes ({@link #clearAll}).
  *
- * <p>Sky events are night events: choosing one previews the night too, and moving the time away
- * from night turns the event off again, so the two never disagree. A previewed event shows where
- * the player is looking.
+ * <p>Sky events but the rainbow are night events: choosing one previews the night too (the
+ * rainbow, noon unless another daytime is previewed), and moving the time to one the event can't
+ * show at turns the event off again, so the two never disagree. A previewed event shows where the
+ * player is looking.
  */
 enum PreviewControls {
     TIME("time") {
@@ -42,7 +43,8 @@ enum PreviewControls {
             } else {
                 PreviewTime.set(time);
             }
-            if (time != PreviewTime.Time.NIGHT) {
+            PreviewEvent.Event event = PreviewEvent.current();
+            if (event != null && !event.suits(time)) {
                 PreviewEvent.clear();
             }
         }
@@ -134,8 +136,11 @@ enum PreviewControls {
                 PreviewEvent.clear();
                 return;
             }
-            PreviewTime.set(PreviewTime.Time.NIGHT);
-            aimEvent(PreviewEvent.Event.values()[index - 1]);
+            PreviewEvent.Event event = PreviewEvent.Event.values()[index - 1];
+            if (!event.suits(PreviewTime.current())) {
+                PreviewTime.set(event.atNight() ? PreviewTime.Time.NIGHT : PreviewTime.Time.NOON);
+            }
+            aimEvent(event);
         }
 
         @Override
@@ -145,6 +150,7 @@ enum PreviewControls {
                 case 2 -> Glyphs.METEOR;
                 case 3 -> Glyphs.FIREWORKS;
                 case 4 -> Glyphs.FALLING_STAR;
+                case 5 -> Glyphs.RAINBOW;
                 default -> Glyphs.STAR;
             };
         }
@@ -161,6 +167,7 @@ enum PreviewControls {
                 case 2 -> LiteLightsOptions.METEOR_NIGHTS;
                 case 3 -> LiteLightsOptions.FAR_FIREWORKS;
                 case 4 -> LiteLightsOptions.FALLING_STARS;
+                case 5 -> LiteLightsOptions.RAINBOWS;
                 default -> null;
             };
         }

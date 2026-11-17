@@ -255,6 +255,22 @@ const float LITE_SWASH_LEAD = 0.15;
 // The share of a wave the sheet takes to run up. Short enough that its front leaves the waterline at
 // about the foam's own speed, carrying the foam on up the beach, then slows and slides back.
 const float LITE_SWASH_RUN_UP = 0.22;
+// Shore water's Foam in, water out: the share of a wave the foam takes to clear from the sheet once
+// it turns, about a third of a second.
+const float LITE_SWASH_FOAM_TURN = 0.07;
+
+// Shore water (water.shore_film, swash099): the foam laid over the whole sheet. Foam keeps it up
+// and back, thinning as the sheet drains; Foam in, water out keeps it while the sheet runs up and,
+// from the turn (u = LITE_SWASH_RUN_UP, where the front stops advancing), clears it into the clear
+// sheet, the foam's texels dropping out over the turn's short span. lacing is the lace's own noise:
+// the foam is thinnest, and opens first, where the lace would be.
+float lite_swash_film_foam(float u, float draining, float lacing, float thickness) {
+    float body = (0.55 + 0.45 * lacing) * sqrt(thickness);
+    if (lite_water(LITE_WATER_SHORE_FILM_FOAM_BACK)) {
+        return body * (1.0 - 0.7 * draining);
+    }
+    return body * (1.0 - smoothstep(LITE_SWASH_RUN_UP, LITE_SWASH_RUN_UP + LITE_SWASH_FOAM_TURN, u));
+}
 
 // The swash: a thin sheet of water and foam that runs up the beach with each wave's leading foam and
 // slides back after it, on the top faces of the beach blocks at the water's level (sand, gravel,
@@ -323,12 +339,18 @@ void lite_ocean_swash(inout vec4 color, LiteSurface surface) {
     vec3 thinWater = mix(ground * filtered, seaWater + LiteWaterSkyColor.rgb * 0.2 * light, 0.4);
     ground = mix(ground, thinWater, sheet);
     // Foam on the running front, and lace on the sheet while it runs up. The front keeps at least a
-    // texel's width however thin the foam is set, so it never breaks up into dots.
+    // texel's width however thin the foam is set, so it never breaks up into dots. Shore water's foam
+    // looks lay the foam over all the sheet covers, never past its front.
     float thickness = lite_wave_foam_thickness();
     float frontWidth = max((0.18 + 0.1 * state) * thickness, 0.07);
     float frontFoam = covered * (1.0 - smoothstep(0.0, frontWidth, edge)) * (u < 0.55 ? 1.0 : 0.4);
-    float laceFoam = covered * smoothstep(0.55, 0.8, lite_water_value_noise(anchored * 2.0 + vec2(0.0, wave * 5.0))) * (1.0 - draining) * 0.8 * thickness;
-    float foam = max(frontFoam, laceFoam) * min(1.0, sea * 1.5);
+    float lacing = lite_water_value_noise(anchored * 2.0 + vec2(0.0, wave * 5.0));
+    float laceFoam = covered * smoothstep(0.55, 0.8, lacing) * (1.0 - draining) * 0.8 * thickness;
+    float sheetFoam = max(frontFoam, laceFoam);
+    if (lite_water(LITE_WATER_SHORE_FILM_FOAM)) {
+        sheetFoam = max(sheetFoam, covered * lite_swash_film_foam(u, draining, lacing, thickness));
+    }
+    float foam = sheetFoam * min(1.0, sea * 1.5);
     float fine = lite_wave_fine(lite_wave_footprint(position));
     float foamTexel = lite_wave_foam_cover(foam, lite_wave_dither(ivec2(floor(anchored * 16.0))), fine);
     color.rgb = mix(ground, vec3(0.90, 0.95, 1.0) * light * lite_wave_grain(anchored, fine), foamTexel * 0.9);

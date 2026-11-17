@@ -73,7 +73,9 @@ public final class RenderSettingsFeed {
                 LiteLightsOptions.GLINT_WATER_INTENSITY.value(),
                 LiteLightsOptions.GLINT_GROUND_SOFTNESS.value(),
                 LiteLightsOptions.GLINT_GROUND_INTENSITY.value(),
-                LiteLightsOptions.NIGHT_TONE.on()),
+                LiteLightsOptions.NIGHT_TONE.on(),
+                LiteLightsOptions.GLINT_ORES.on(),
+                LiteLightsOptions.HEAT_SHIMMER.on()),
             new RenderSettings.ColorGrading(
                 gradeSchedule(),
                 grade(GradeTime.ALL_DAY),
@@ -119,6 +121,7 @@ public final class RenderSettingsFeed {
                 LiteLightsOptions.FAR_EDGE_FOAM.on(),
                 LiteLightsOptions.OCEAN_WAVES.on(),
                 LiteLightsOptions.SHORE_RUN_UP.value(),
+                RenderSettings.ShoreFilm.valueOf(LiteLightsOptions.SHORE_FILM.get().name()),
                 LiteLightsOptions.WAVE_FOAM.value(),
                 LiteLightsOptions.WAKES.on(),
                 LiteLightsOptions.WAKE_STRENGTH.value(),
@@ -126,7 +129,9 @@ public final class RenderSettingsFeed {
             new RenderSettings.Vegetation(
                 LiteLightsOptions.SWAY_GRASS.on(),
                 LiteLightsOptions.SWAY_PLANTS.on(),
-                LiteLightsOptions.SWAY_LEAVES.on()),
+                LiteLightsOptions.SWAY_LEAVES.on(),
+                LiteLightsOptions.SWAY_LANTERNS.on(),
+                LiteLightsOptions.GROUND_LEAVES.on()),
             new RenderSettings.Particles(
                 RenderSettings.ParticleDensity.valueOf(LiteLightsOptions.PARTICLE_DENSITY.get().name()),
                 RenderSettings.SnowSandSprites.valueOf(LiteLightsOptions.SNOW_SAND_SPRITES.get().name()),
@@ -139,7 +144,8 @@ public final class RenderSettingsFeed {
                 LiteLightsOptions.ENHANCED_FIRE.on() && LiteLightsOptions.BURN_MARKS.on(),
                 LiteLightsOptions.ENHANCED_WATER.on(),
                 RenderSettings.SpawnDistance.valueOf(LiteLightsOptions.PARTICLE_DISTANCE.get().name()),
-                RenderSettings.DistanceFill.valueOf(LiteLightsOptions.PARTICLE_DISTANCE_FILL.get().name())),
+                RenderSettings.DistanceFill.valueOf(LiteLightsOptions.PARTICLE_DISTANCE_FILL.get().name()),
+                LiteLightsOptions.FALLING_LEAVES.on()),
             new RenderSettings.Weather(
                 RenderSettings.PrecipitationLook.valueOf(LiteLightsOptions.PRECIPITATION.get().name()),
                 RenderSettings.WeatherDensity.valueOf(LiteLightsOptions.WEATHER_DENSITY.get().name()),
@@ -160,13 +166,17 @@ public final class RenderSettingsFeed {
                     LiteLightsOptions.GLASS_FROST.on(),
                     LiteLightsOptions.GLASS_DUST.on()),
                 new RenderSettings.Storms(
+                    new RenderSettings.Lightning(LiteLightsOptions.CLOUD_LIGHTNING.on(), LiteLightsOptions.BRANCHING_LIGHTNING.on()),
                     storm(LiteLightsOptions.StormType.RAIN),
                     storm(LiteLightsOptions.StormType.THUNDERSTORM),
                     storm(LiteLightsOptions.StormType.SNOW),
                     storm(LiteLightsOptions.StormType.BLIZZARD),
                     storm(LiteLightsOptions.StormType.SANDSTORM),
                     storm(LiteLightsOptions.StormType.HABOOB)),
-                RenderSettings.MistStyle.valueOf(LiteLightsOptions.MIST_STYLE.get().name())),
+                RenderSettings.MistStyle.valueOf(LiteLightsOptions.MIST_STYLE.get().name()),
+                LiteLightsOptions.PUDDLES.on(),
+                LiteLightsOptions.RAINBOWS.on(),
+                LiteLightsOptions.SNOWY_LEAVES.on()),
             new RenderSettings.Outlines(
                 LiteLightsOptions.OUTLINES.on(),
                 RenderSettings.GlowColour.valueOf(LiteLightsOptions.OUTLINE_COLOUR.get().name()),

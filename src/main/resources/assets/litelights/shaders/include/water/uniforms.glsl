@@ -61,6 +61,10 @@ const int LITE_WATER_VANILLA_SPRITES = 8192;
 const int LITE_WATER_DRIFTING_FOAM = 16384;
 const int LITE_WATER_OCEAN_WAVES = 32768;
 const int LITE_WATER_WAKES = 65536;
+const int LITE_WATER_GROUND_LEAVES = 131072; // Leaves under trees (vegetation/ground_leaves.glsl)
+const int LITE_WATER_SNOW_COVER = 262144;    // Snowy leaves and ground (weather/snow_cover.glsl)
+const int LITE_WATER_SHORE_FILM_FOAM = 524288;       // Shore water: foam on the swash's run-up (waves.glsl)
+const int LITE_WATER_SHORE_FILM_FOAM_BACK = 1048576; // and on its way back too
 
 // Two samplers of its own: the OpenGL backend has twelve texture units per draw, and Sodium's
 // translucent terrain under Improved Transparency already uses ten before these (see
@@ -73,7 +77,8 @@ uniform sampler2D LiteScene;
 // The column map in the corner (one texel per block column around the camera, see FluidColumnGrid:
 // surface height, shore and leaf data), under it the rain tops (RainTopGrid) with the surface flow in
 // their blue and alpha (FluidFlowGrid), under those the shore field for the ocean waves (ShoreField)
-// and the wakes (WakeField), and once loaded the large water and lava textures beside them.
+// and the wakes (WakeField), where leaves lie under trees (GroundLeavesGrid) and where snow gathers
+// on leaves and under trees (SnowCoverGrid), and once loaded the large water and lava textures beside them.
 uniform sampler2D LiteFluidData;
 // The block atlas, to split a shaded fluid colour back into its texture and the rest. Shaders that
 // sample the atlas themselves (terrain, block models, Sodium) name their own sampler in

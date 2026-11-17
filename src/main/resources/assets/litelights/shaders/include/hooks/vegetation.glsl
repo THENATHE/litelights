@@ -165,4 +165,18 @@ vec3 lite_vegetation_offset(vec3 position, vec2 atlasUv, vec2 corner) {
     return lite_wind_plant(world, seconds) * (height * LITE_SWAY_PLANT_AMPLITUDE * strength);
 }
 
+// Hanging lanterns, chains and hanging signs swinging in the same wind (lanterns099).
+#include <litelights:vegetation/hanging.glsl>
+
+// Leaves under trees: called by the terrain fragment shaders (vanilla's and Sodium's) on the block
+// texture's colour, after the cut-out test and before lighting, outside Improved Transparency's
+// alpha-only stages. Only the terrain shaders (they name their atlas sampler in LITE_HOST_BLOCK_ATLAS)
+// have the real version; it reads the water stream's LiteFluidData, so it adds no texture unit.
+#if defined(LITELIGHTS_SHADOW_GLSL) && defined(LITELIGHTS_MATERIAL_GLSL) && defined(LITE_HOST_BLOCK_ATLAS)
+#include <litelights:vegetation/ground_leaves.glsl>
+#else
+void lite_ground_leaves(inout vec4 color, vec4 vertexColor, vec3 position, vec3 normal, vec2 lightCoord) {
+}
+#endif
+
 #endif

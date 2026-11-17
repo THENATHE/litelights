@@ -21,7 +21,8 @@
 // Improved Transparency alpha for water.
 #define LITE_TERRAIN_WATER
 
-// Caustics on blocks under water and the swash on beaches.
+// Ground and shore details: caustics on blocks under water, the swash on beaches, the leaves lying
+// under trees, puddles in the rain and snow on leaves and under trees.
 #define LITE_TERRAIN_CAUSTICS
 
 // Weather on glass: frost, snow and sand on windows.
@@ -36,7 +37,7 @@
 // LiteLights' fog and End tint on blocks. Out, blocks take vanilla's (or Sodium's) fog.
 #define LITE_TERRAIN_FOG
 
-// Sway of plants and leaves, in the vertex stage.
+// Sway of plants and leaves, and swinging lanterns, chains and hanging signs, in the vertex stage.
 #define LITE_TERRAIN_SWAY
 
 #ifndef LITE_TERRAIN_LITELIGHTS

@@ -48,9 +48,14 @@ layout(location = 6) out vec2 lightCoord;
 
 void main() {
     vec3 pos = Position + (ChunkPosition - CameraBlockPos) + CameraOffset;
-#if defined(LITELIGHTS_VERTEX_IN_MESH) && defined(LITE_TERRAIN_SWAY)
+#ifdef LITE_TERRAIN_SWAY
     if (lite_world_pass()) {
-        pos += lite_vegetation_offset(pos, UV0, lite_vegetation_corner(LITELIGHTS_VERTEX_IN_MESH, Color.a));
+        vec3 unmoved = pos;
+#ifdef LITELIGHTS_VERTEX_IN_MESH
+        pos += lite_vegetation_offset(unmoved, UV0, lite_vegetation_corner(LITELIGHTS_VERTEX_IN_MESH, Color.a));
+#endif
+        // Hanging lanterns and signs need no corner, so they swing without draw parameters too.
+        pos += lite_hanging_offset(unmoved);
     }
 #endif
     gl_Position = ProjMat * ModelViewMat * vec4(pos, 1.0);

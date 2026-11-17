@@ -1,5 +1,6 @@
 package com.thenathe.litelights.render.material;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.GpuFormat;
 import com.mojang.renderpearl.api.textures.GpuTexture;
@@ -8,12 +9,15 @@ import com.thenathe.litelights.LiteLightsClient;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.feature.vegetation.VegetationMaterials;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
@@ -24,6 +28,7 @@ import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.util.Util;
 import net.minecraft.world.level.block.Block;
@@ -40,6 +45,9 @@ import org.lwjgl.system.MemoryUtil;
  * power of two (up to 16) that every sprite's position and size are multiples of. The stitcher
  * aligns sprites for mipmapping, so the grid is normally 16 and the texture 1/256 of the atlas.
  *
+ * <p>Ore textures are sorted by the rock they are drawn on, read from the textures in use
+ * ({@link OreRocks}); the rocks' profiles go to the shaders through the frame block.
+ *
  * <p>Built when the block atlas changes and a level is present (block tags come from the server),
  * on a background thread; uploaded on the render thread.
  */
@@ -47,8 +55,15 @@ public final class MaterialAtlas implements AutoCloseable {
     private record SpriteArea(int x, int y, int width, int height) {
     }
 
-    private record Built(int width, int height, int gridShift, byte[] ids) {
+    private record Built(int width, int height, int gridShift, byte[] ids, float[] oreRocks) {
     }
+
+    /** The textures each rock's profile is taken from, in {@link OreRocks}' order. */
+    private static final Identifier[] ROCK_SPRITES = {
+        Identifier.withDefaultNamespace("block/stone"),
+        Identifier.withDefaultNamespace("block/deepslate"),
+        Identifier.withDefaultNamespace("block/netherrack")
+    };
 
     private Map<Identifier, SpriteArea> sprites = Map.of();
     private int atlasWidth;
@@ -58,6 +73,7 @@ public final class MaterialAtlas implements AutoCloseable {
     private @Nullable GpuTexture texture;
     private @Nullable GpuTextureView view;
     private int gridShift;
+    private float[] oreRocks = OreRocks.uniforms(new OreRocks.Profile[0]);
 
     /** Called when the block atlas is (re)stitched. */
     public synchronized void onAtlasUploaded(int width, int height, Map<Identifier, TextureAtlasSprite> regions) {
@@ -109,8 +125,14 @@ public final class MaterialAtlas implements AutoCloseable {
         return gridShift;
     }
 
+    /** The rocks' profiles for the frame block ({@link OreRocks#uniforms}). Render thread. */
+    public float[] oreRocks() {
+        return oreRocks;
+    }
+
     private static Built build(Map<Identifier, SpriteArea> sprites, int atlasWidth, int atlasHeight, BlockStateModelSet models) {
         Map<Identifier, Integer> materialBySprite = classifySprites(sprites, models);
+        float[] rockUniforms = sortOres(materialBySprite);
         int grid = 16;
         for (SpriteArea area : sprites.values()) {
             grid = Math.min(grid, Integer.lowestOneBit(area.x | area.y | area.width | area.height | 16));
@@ -132,7 +154,54 @@ public final class MaterialAtlas implements AutoCloseable {
             }
         }
         LiteLightsClient.LOG.info("Material texture built: {} sprites, {}x{} (grid {})", sprites.size(), width, height, grid);
-        return new Built(width, height, shift, ids);
+        return new Built(width, height, shift, ids, rockUniforms);
+    }
+
+    /**
+     * Gives each ore sprite the material of the rock it is drawn on, or the default material if it
+     * fits none, and returns the rocks' profiles. Reads the rocks' and ores' textures from the
+     * resource packs, as the atlas was stitched from them (a few dozen small images).
+     */
+    private static float[] sortOres(Map<Identifier, Integer> materialBySprite) {
+        long started = System.nanoTime();
+        OreRocks.Profile[] rocks = new OreRocks.Profile[OreRocks.COUNT];
+        for (int rock = 0; rock < OreRocks.COUNT; rock++) {
+            TexturePixels pixels = readTexture(ROCK_SPRITES[rock]);
+            rocks[rock] = pixels == null ? OreRocks.profile(new int[0], 0) : OreRocks.profile(pixels.abgr(), pixels.width());
+        }
+        int ores = 0;
+        int paired = 0;
+        for (Map.Entry<Identifier, Integer> entry : materialBySprite.entrySet()) {
+            if (!MaterialIds.isOre(entry.getValue())) {
+                continue;
+            }
+            ores++;
+            TexturePixels pixels = readTexture(entry.getKey());
+            int rock = pixels == null ? OreRocks.NONE : OreRocks.pair(pixels.abgr(), pixels.width(), rocks);
+            entry.setValue(OreRocks.material(rock));
+            if (rock != OreRocks.NONE) {
+                paired++;
+            }
+        }
+        LiteLightsClient.LOG.info("Ore textures sorted by rock: {} of {} paired, in {} ms", paired, ores,
+            String.format(java.util.Locale.ROOT, "%.1f", (System.nanoTime() - started) / 1.0e6));
+        return OreRocks.uniforms(rocks);
+    }
+
+    private record TexturePixels(int[] abgr, int width) {
+    }
+
+    private static @Nullable TexturePixels readTexture(Identifier sprite) {
+        Optional<Resource> resource = Minecraft.getInstance().getResourceManager()
+            .getResource(sprite.withPath(path -> "textures/" + path + ".png"));
+        if (resource.isEmpty()) {
+            return null;
+        }
+        try (InputStream stream = resource.get().open(); NativeImage image = NativeImage.read(stream)) {
+            return new TexturePixels(image.getPixelsABGR(), image.getWidth());
+        } catch (IOException | RuntimeException unreadable) {
+            return null;
+        }
     }
 
     private static Map<Identifier, Integer> classifySprites(Map<Identifier, SpriteArea> sprites, BlockStateModelSet models) {
@@ -202,6 +271,7 @@ public final class MaterialAtlas implements AutoCloseable {
             MemoryUtil.memFree(data);
         }
         gridShift = built.gridShift;
+        oreRocks = built.oreRocks;
     }
 
     private void closeTexture() {

@@ -11,6 +11,7 @@
 #include <litelights:water/large_textures.glsl>
 #include <litelights:water/waves.glsl>
 #include <litelights:terrain_parts.glsl>
+#include <litelights:leaf_scatter.glsl>
 
 // Water, lava and ice surfaces, and caustics on blocks under water. Called from the terrain and
 // block-model fragment shaders after lighting, before fog (see hooks/water.glsl). Mac
@@ -43,36 +44,17 @@ vec3 lite_water_wave_normal(vec2 p, float time, float distance) {
     return normalize(vec3(-slope.x, 1.0, -slope.y));
 }
 
-// Small pixel-art leaves floating on the water under trees. Each half-block cell may hold one leaf
-// a few texels across, drifting a texel or so around its spot. Returns 1 on a leaf texel.
-const int LITE_LEAF_SHAPES[4] = int[4](1293208, 8601062, 490944, 407744);
+// Small pixel-art leaves floating on the water under trees (the scatter is shared with the leaves
+// lying under trees, leaf_scatter.glsl), drifting a texel or so around their spots, in four colours
+// from dark green to brown. Returns 1 on a leaf texel.
 const vec3 LITE_LEAF_COLOURS[4] = vec3[4](vec3(0.22, 0.36, 0.11), vec3(0.32, 0.47, 0.13), vec3(0.52, 0.55, 0.16), vec3(0.46, 0.31, 0.13));
 
 float lite_water_leaf(vec2 anchored, float density, float time, out vec3 colour) {
-    colour = vec3(0.0);
-    ivec2 texel = ivec2(floor(anchored * 16.0));
-    ivec2 cell = texel >> 3;
-    if (lite_water_hash(cell + ivec2(517, 129)) > density * 0.45) {
-        return 0.0;
-    }
-    vec2 seed = lite_water_hash2(cell + ivec2(31, 977));
-    vec2 sway = vec2(sin(time * 0.23 + seed.x * 6.2831), cos(time * 0.19 + seed.y * 6.2831));
-    ivec2 centre = (cell << 3) + ivec2(2) + ivec2(seed * 3.99) + ivec2(round(sway));
-    ivec2 offset = texel - centre;
-    if (any(greaterThan(abs(offset), ivec2(2)))) {
-        return 0.0;
-    }
-    uint bits = lite_water_hash_bits(cell + ivec2(203, 61));
-    if ((bits & 1u) != 0u) offset.x = -offset.x;
-    if ((bits & 2u) != 0u) offset.y = -offset.y;
-    if ((bits & 4u) != 0u) offset = offset.yx;
-    int shape = LITE_LEAF_SHAPES[int((bits >> 3) & 3u)];
-    int bit = (offset.y + 2) * 5 + (offset.x + 2);
-    if (((shape >> bit) & 1) == 0) {
-        return 0.0;
-    }
-    colour = LITE_LEAF_COLOURS[int((bits >> 5) & 3u)] * (0.88 + 0.12 * lite_water_hash(texel));
-    return 1.0;
+    uint look;
+    ivec2 texel;
+    float leaf = lite_leaf_scatter(anchored, density, time, 1.0, look, texel);
+    colour = leaf > 0.0 ? LITE_LEAF_COLOURS[int((look >> 5) & 3u)] * (0.88 + 0.12 * lite_water_hash(texel)) : vec3(0.0);
+    return leaf;
 }
 
 // The axis a face lies across, for pixel lock and for stepping into the fluid column beside it.

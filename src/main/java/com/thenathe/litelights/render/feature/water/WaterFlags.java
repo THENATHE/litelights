@@ -25,6 +25,14 @@ public final class WaterFlags {
     public static final int OCEAN_WAVES = 32768;
     /** Wakes: the wake field (the fluid data's fifth region) holds ripples or foam to draw. */
     public static final int WAKES = 65536;
+    /** Leaves under trees (Vegetation page): fallen leaves on the ground, from the fluid data's sixth region. */
+    public static final int GROUND_LEAVES = 1 << 17;
+    /** Snowy leaves and ground (Weather page): snow on canopies and under them, from the fluid data's seventh region. */
+    public static final int SNOW_COVER = 1 << 18;
+    /** Shore water is Foam or Foam in, water out: the swash's sheet carries the wave's foam as it runs up. */
+    public static final int SHORE_FILM_FOAM = 1 << 19;
+    /** Shore water is Foam: the foam stays on the sheet as it slides back. */
+    public static final int SHORE_FILM_FOAM_BACK = 1 << 20;
 
     /** The foam that Drifting moves: without either, the flow isn't recorded at all. */
     public static final int DRIFTING_FOAM_MOVES = SHORE_FOAM | FALLING_WATER;

@@ -10,7 +10,7 @@ package com.thenathe.litelights.render.feature.vegetation;
  * the world origin. Every wave has a whole number of cycles per 256 blocks and per hour, so the
  * wrap and the shader clock's wrap at 3600 s are invisible.
  */
-final class WindField {
+public final class WindField {
     public static final int PERIOD_BLOCKS = 256;
     public static final float PERIOD_SECONDS = 3600.0f;
     public static final float PLANT_AMPLITUDE = 0.09f;

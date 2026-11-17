@@ -28,15 +28,27 @@ public final class Credits {
             new Project("particular", "Particular", "Chai", "https://modrinth.com/mod/particular", "Modrinth"),
             new Project("immersive_storms", "Immersive Storms", "TheDeathlyCow",
                     "https://modrinth.com/mod/immersive-storms", "Modrinth"),
+            new Project("squall", "Squall", "comedy", "https://www.curseforge.com/minecraft/mc-mods/squall", "CurseForge"),
+            new Project("tempestra", "Tempestra", "Moth_SKW", "https://modrinth.com/mod/tempestra", "Modrinth"),
             new Project("weather_glass", "Weather Glass", "duffopuffo",
                     "https://www.curseforge.com/minecraft/mc-mods/weather-glass", "CurseForge"),
             new Project("particle_rain", "Particle Rain", "pigcart", "https://modrinth.com/mod/particle-rain", "Modrinth"),
             new Project("wakes", "Wakes", "Goby56", "https://modrinth.com/mod/wakes", "Modrinth"),
+            new Project("falling_leaves", "Falling Leaves", "Fourmisain", "https://modrinth.com/mod/fallingleaves", "Modrinth"),
+            new Project("you_must_have_the_rain", "You Must Have The Rain", "AppleNButter",
+                    "https://modrinth.com/mod/you-must-have-the-rain", "Modrinth"),
+            new Project("snow", "Snow", "IMB11", "https://modrinth.com/mod/snow", "Modrinth"),
+            new Project("swinging_lanterns", "Swinging Lanterns", "Rilith", "https://modrinth.com/mod/swinging-lanterns", "Modrinth"),
+            new Project("lava_particles_more", "Lava Particles | More", "stepqq",
+                    "https://www.curseforge.com/minecraft/mc-mods/lava-particles-more", "CurseForge"),
             new Project("continuity", "Continuity", "Pepper_Bell", "https://modrinth.com/mod/continuity", "Modrinth"),
             new Project("lambdynamiclights", "LambDynamicLights", "LambdAurora",
                     "https://modrinth.com/mod/lambdynamiclights", "Modrinth"),
             new Project("lambdabettergrass", "LambdaBetterGrass", "LambdAurora",
-                    "https://modrinth.com/mod/lambdabettergrass", "Modrinth"));
+                    "https://modrinth.com/mod/lambdabettergrass", "Modrinth"),
+            new Project("visuality", "Visuality", "PinkGoosik", "https://modrinth.com/mod/visuality", "Modrinth"),
+            new Project("subtle_effects", "Subtle Effects", "MincraftEinstein",
+                    "https://modrinth.com/mod/subtle-effects", "Modrinth"));
 
     private Credits() {
     }

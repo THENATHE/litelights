@@ -54,6 +54,9 @@ public final class LiteLightsOptions {
     /** Whether foam on flowing water stays where it forms (Stationary) or travels downstream with the current (Drifting). */
     public enum FoamMotion { STATIONARY, DRIFTING }
 
+    /** The water the ocean waves run up the beach: clear water, foam up and back, or foam up and clear water back. */
+    public enum ShoreFilm { WATER, FOAM, FOAM_IN_WATER_OUT }
+
     /** How water's sparkles move: Still only with the viewpoint, Gentle and Lively also with the waves. */
     public enum WaterSparkle { STILL, GENTLE, LIVELY }
 
@@ -164,6 +167,8 @@ public final class LiteLightsOptions {
             .at(Pages.LIGHTING, "light").cost(Cost.LOW).register();
     public static final BoolOption NIGHT_TONE = BoolOption.builder("lighting.night_tone", true)
             .at(Pages.LIGHTING, "light").register();
+    public static final BoolOption HEAT_SHIMMER = BoolOption.builder("lighting.heat_shimmer", true)
+            .at(Pages.LIGHTING, "light").cost(Cost.LOW).feature("heat_shimmer").register();
     public static final BoolOption SUNBEAMS = BoolOption.builder("lighting.sunbeams", true)
             .at(Pages.LIGHTING, "light_rays").cost(Cost.MEDIUM).feature("light_rays").register();
     public static final FloatOption SUNBEAM_STRENGTH = FloatOption.builder("lighting.sunbeam_strength", 2.0F, 0.0F, 4.0F, 0.1F)
@@ -191,6 +196,9 @@ public final class LiteLightsOptions {
     public static final BoolOption GLINT_METAL_GLASS = BoolOption.builder("lighting.glint_metal_glass", true)
             .at(Pages.LIGHTING, "glint").cost(Cost.LOW).feature("glint").register();
     public static final BoolOption GLINT_SAND_STONE = BoolOption.builder("lighting.glint_sand_stone", false)
+            .at(Pages.LIGHTING, "glint").cost(Cost.LOW).feature("glint").register();
+    // Ores and crystals had their glimmer under sand and stone until 0.9.9 (shimmer099).
+    public static final BoolOption GLINT_ORES = BoolOption.builder("lighting.glint_ores", true)
             .at(Pages.LIGHTING, "glint").cost(Cost.LOW).feature("glint").register();
     public static final FloatOption GLINT_GROUND_SOFTNESS = glintSlider("lighting.glint_ground_softness", LiteLightsOptions::groundGlint);
     public static final FloatOption GLINT_GROUND_INTENSITY = glintSlider("lighting.glint_ground_intensity", LiteLightsOptions::groundGlint);
@@ -271,6 +279,9 @@ public final class LiteLightsOptions {
     // At 1 each draws the waves exactly as before the rows existed (0.9.7, waves097).
     public static final FloatOption SHORE_RUN_UP = FloatOption.builder("water.shore_run_up", 1.0F, 1.0F, 2.0F, 0.25F)
             .at(Pages.WATER, "surface").needs(OCEAN_WAVES).format(ValueFormat.BLOCKS).register();
+    // What the run-up looks like (swash099); Water is the clear sheet it always was.
+    public static final EnumOption<ShoreFilm> SHORE_FILM = EnumOption.builder("water.shore_film", ShoreFilm.class, ShoreFilm.WATER)
+            .at(Pages.WATER, "surface").needs(OCEAN_WAVES).register();
     public static final FloatOption WAVE_FOAM = FloatOption.builder("water.wave_foam", 1.0F, 0.25F, 2.0F, 0.05F)
             .at(Pages.WATER, "surface").needs(OCEAN_WAVES).format(ValueFormat.PERCENT).register();
     public static final BoolOption CAUSTICS = BoolOption.builder("water.caustics", true)
@@ -314,6 +325,11 @@ public final class LiteLightsOptions {
             .at(Pages.VEGETATION, "sway").cost(Cost.LOW).feature("sway").register();
     public static final BoolOption SWAY_LEAVES = BoolOption.builder("vegetation.sway_leaves", true)
             .at(Pages.VEGETATION, "sway").cost(Cost.MEDIUM).feature("sway").register();
+    // Its own feature: lanterns need no draw parameters, so they swing where the plants can't.
+    public static final BoolOption SWAY_LANTERNS = BoolOption.builder("vegetation.sway_lanterns", true)
+            .at(Pages.VEGETATION, "sway").cost(Cost.LOW).feature("vegetation.sway_lanterns").credit().register();
+    public static final BoolOption GROUND_LEAVES = BoolOption.builder("vegetation.ground_leaves", true)
+            .at(Pages.VEGETATION, "forest_floor").cost(Cost.LOW).register();
 
     // Particles
 
@@ -328,6 +344,10 @@ public final class LiteLightsOptions {
     public static final BoolOption DUST_SPECKS = ambient("dust");
     public static final BoolOption POLLEN = ambient("pollen");
     public static final BoolOption SPORES = ambient("spores");
+    // Its own feature rather than the ambient rows': with Falling Leaves (the mod) installed only this row steps aside.
+    public static final BoolOption FALLING_LEAVES = BoolOption.builder("particles.falling_leaves", true)
+            .at(Pages.PARTICLES, "ambient").cost(Cost.LOW).feature("particles.falling_leaves").credit()
+            .enabledWhen(LiteLightsOptions::particlesOn).register();
     public static final BoolOption ENHANCED_FIRE = BoolOption.builder("particles.enhanced_fire", true)
             .at(Pages.PARTICLES, "enhanced").cost(Cost.LOW).enabledWhen(LiteLightsOptions::particlesOn).register();
     public static final BoolOption EMBER_VEINS = BoolOption.builder("particles.ember_veins", true)
@@ -362,6 +382,11 @@ public final class LiteLightsOptions {
             .enabledWhen(LiteLightsOptions::particlesOn).register();
     public static final BoolOption STORM_ATMOSPHERE = BoolOption.builder("weather.storm_atmosphere", true)
             .at(Pages.WEATHER, "storms").cost(Cost.MEDIUM).credit().register();
+    // New in 0.9.9 (storm099). Both are drawn by LiteLights alone, so they need neither particles nor Storm atmosphere.
+    public static final BoolOption CLOUD_LIGHTNING = BoolOption.builder("weather.cloud_lightning", true)
+            .at(Pages.WEATHER, "storms").feature("lightning").cost(Cost.LOW).credit().register();
+    public static final BoolOption BRANCHING_LIGHTNING = BoolOption.builder("weather.branching_lightning", true)
+            .at(Pages.WEATHER, "storms").feature("lightning").cost(Cost.LOW).credit().register();
     private static final Map<StormType, StormRows> STORMS = registerStorms();
     public static final BoolOption RAIN_DRIPS = BoolOption.builder("weather.rain_drips", true)
             .at(Pages.WEATHER, "details").cost(Cost.LOW).credit()
@@ -369,6 +394,12 @@ public final class LiteLightsOptions {
     public static final BoolOption WALL_STREAKS = BoolOption.builder("weather.wall_streaks", true)
             .at(Pages.WEATHER, "details").cost(Cost.LOW).credit()
             .enabledWhen(LiteLightsOptions::particlesOn).register();
+    // New in 0.9.9 (rain099): a shader effect on the land, so it needs neither particles nor Rain and snow.
+    public static final BoolOption PUDDLES = BoolOption.builder("weather.puddles", true)
+            .at(Pages.WEATHER, "details").cost(Cost.LOW).register();
+    // New in 0.9.9 (snowleaves099): beside the puddles, the other weather that settles on the land.
+    public static final BoolOption SNOWY_LEAVES = BoolOption.builder("weather.snowy_leaves", true)
+            .at(Pages.WEATHER, "details").cost(Cost.LOW).credit().register();
     public static final BoolOption DRIFTING_SAND = BoolOption.builder("weather.drifting_sand", true)
             .at(Pages.WEATHER, "details").cost(Cost.LOW).register();
     public static final BoolOption SANDSTORMS = BoolOption.builder("weather.sandstorms", true)
@@ -390,6 +421,8 @@ public final class LiteLightsOptions {
             .at(Pages.WEATHER, "events").cost(Cost.LOW).register();
     public static final BoolOption METEOR_NIGHTS = BoolOption.builder("weather.meteor_nights", true)
             .at(Pages.WEATHER, "events").register();
+    public static final BoolOption RAINBOWS = BoolOption.builder("weather.rainbows", true)
+            .at(Pages.WEATHER, "events").credit().register();
     public static final BoolOption FAR_FIREWORKS = BoolOption.builder("weather.far_fireworks", true)
             .at(Pages.WEATHER, "events").register();
 
@@ -628,12 +661,13 @@ public final class LiteLightsOptions {
 
     /** Whether the ground's glint sliders do anything: glint on any of the other materials. */
     public static boolean groundGlint() {
-        return GLINT_ICE_SNOW.on() || GLINT_METAL_GLASS.on() || GLINT_SAND_STONE.on();
+        return GLINT_ICE_SNOW.on() || GLINT_METAL_GLASS.on() || GLINT_SAND_STONE.on() || GLINT_ORES.on();
     }
 
     /** Whether any glint is on: above water by material, or under water. */
     public static boolean anyGlint() {
-        return GLINT_WATER.on() || GLINT_ICE_SNOW.on() || GLINT_METAL_GLASS.on() || GLINT_SAND_STONE.on() || SUBMERGED_GLINT.on();
+        return GLINT_WATER.on() || GLINT_ICE_SNOW.on() || GLINT_METAL_GLASS.on() || GLINT_SAND_STONE.on() || GLINT_ORES.on()
+            || SUBMERGED_GLINT.on();
     }
 
     /**

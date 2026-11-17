@@ -4,6 +4,7 @@ import com.mojang.blaze3d.buffers.Std140Builder;
 import com.mojang.blaze3d.buffers.Std140SizeCalculator;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.buffers.GpuBuffer;
+import com.thenathe.litelights.render.feature.vegetation.HangingSwing;
 import java.nio.ByteBuffer;
 import org.lwjgl.system.MemoryStack;
 
@@ -15,14 +16,23 @@ import org.lwjgl.system.MemoryStack;
  * neutral copy too: no caster shader reads the block.
  */
 public final class FrameUniforms implements AutoCloseable {
-    public static final int SIZE = new Std140SizeCalculator()
+    public static final int SIZE = withIVec4s(new Std140SizeCalculator()
         .putMat4f().putMat4f().putMat4f().putMat4f().putMat4f().putMat4f()
         .putVec4().putVec4().putVec4().putVec4().putVec4()
-        .putIVec4().putVec4().putVec4().putVec4().putVec4().putVec4().putVec4().putVec4()
+        .putIVec4().putVec4().putVec4().putVec4()
+        .putVec4().putVec4().putVec4().putVec4()
+        .putVec4().putVec4().putVec4().putVec4()
         .putIVec4()
         .putVec4().putVec4().putVec4().putVec4()
         .putVec4().putVec4().putVec4().putVec4().putVec4().putVec4().putVec4().putVec4()
         .putVec4().putVec4()
+        .putVec4()
+        .putVec4()
+        .putVec4(),
+        // The swinging columns' cells and the columns themselves.
+        HangingSwing.CELL_ROWS / 4 + HangingSwing.MAX_COLUMNS)
+        // The rocks ores are drawn on.
+        .putVec4().putVec4().putVec4().putVec4().putVec4().putVec4()
         .get();
     private static final int USAGE = GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST;
 
@@ -55,12 +65,19 @@ public final class FrameUniforms implements AutoCloseable {
         return hand;
     }
 
+    private static Std140SizeCalculator withIVec4s(Std140SizeCalculator size, int count) {
+        for (int i = 0; i < count; i++) {
+            size.putIVec4();
+        }
+        return size;
+    }
+
     private static void write(GpuBuffer target, FrameState state, int passKind) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             // Only a world pass has features on; elsewhere the shaders fall back to vanilla's output.
             int features = passKind == FrameFlags.PASS_WORLD ? state.featureFlags : 0;
             int locks = passKind == FrameFlags.PASS_WORLD ? state.pixelLockFlags : 0;
-            ByteBuffer data = Std140Builder.onStack(stack, SIZE)
+            Std140Builder builder = Std140Builder.onStack(stack, SIZE)
                 .putMat4f(state.sunShadowMatrix)
                 .putMat4f(state.sunShadowMatrixPrevious)
                 .putMat4f(state.mobShadowMatrix)
@@ -76,6 +93,10 @@ public final class FrameUniforms implements AutoCloseable {
                 .putVec4(state.cameraFraction.x, state.cameraFraction.y, state.cameraFraction.z, 0.0f)
                 .putVec4(state.time)
                 .putVec4(state.weather)
+                .putVec4(state.lightning[0])
+                .putVec4(state.lightning[1])
+                .putVec4(state.lightning[2])
+                .putVec4(state.lightning[3])
                 .putVec4(state.shadowParams)
                 .putVec4(state.shadowMapInfo)
                 .putVec4(state.shadowFade)
@@ -95,7 +116,22 @@ public final class FrameUniforms implements AutoCloseable {
                 .putVec4(state.endTint)
                 .putVec4(state.glassCold)
                 .putVec4(state.glassInfo)
-                .get();
+                .putVec4(state.puddles)
+                .putVec4(state.snowCover)
+                .putVec4(state.swing);
+            int[] cells = state.swingCells;
+            for (int at = 0; at < cells.length; at += 4) {
+                builder.putIVec4(cells[at], cells[at + 1], cells[at + 2], cells[at + 3]);
+            }
+            int[] columns = state.swingColumns;
+            for (int at = 0; at < columns.length; at += 4) {
+                builder.putIVec4(columns[at], columns[at + 1], columns[at + 2], columns[at + 3]);
+            }
+            float[] rocks = state.oreRocks;
+            for (int at = 0; at < rocks.length; at += 4) {
+                builder.putVec4(rocks[at], rocks[at + 1], rocks[at + 2], rocks[at + 3]);
+            }
+            ByteBuffer data = builder.get();
             RenderSystem.getDevice().createCommandEncoder().writeToBuffer(target.slice(), data);
         }
     }

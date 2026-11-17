@@ -233,8 +233,59 @@ vec4 lite_shore_values(ivec2 worldColumn) {
     return vec4(float(texel.r) / 4.0 - 8.0, vec2(toward) / 127.0, float(texel.a) / 255.0);
 }
 
+// Distances blended between column centres are exact along a straight shore, but not round a corner
+// of the land: there the four centres around the corner hold land on one side and water on three (or
+// the other way round), and the blend puts the corner itself about a third of a block out on the
+// water (an outer corner) or up the land (an inner one). The swash then stopped short of an island's
+// outer corners and the surf took inner corners for beach. So within a block of the waterline the
+// distance is measured from the point to the nearest column of the other kind among the nine around
+// it (a block's square, so corners come out round), and handed back to the blend from 0.75 to 1 block,
+// where every column within reach is among those nine, so it joins without a seam. Along a straight
+// shore both give the same distance (corners).
+float lite_shore_near_distance(vec2 local, float blended) {
+    if (abs(blended) > 2.0) {
+        return blended;
+    }
+    ivec2 own = LiteCameraBlock.xz + ivec2(floor(local));
+    vec2 f = fract(local);
+    bool onLand = lite_shore_values(own).x < 0.0;
+    float nearest = 2.0;
+    for (int z = -1; z <= 1; z++) {
+        for (int x = -1; x <= 1; x++) {
+            bool land = lite_shore_values(own + ivec2(x, z)).x < 0.0;
+            if (land != onLand) {
+                vec2 outside = max(abs(f - vec2(x, z) - 0.5) - 0.5, 0.0);
+                nearest = min(nearest, length(outside));
+            }
+        }
+    }
+    float exact = onLand ? -nearest : nearest;
+    return mix(exact, blended, smoothstep(0.75, 1.0, nearest));
+}
+
+// The swell's strength, blended the same way, fades from the water's to the land's across the
+// waterline: to nothing against a wall, to the water's own on a beach the swash runs up. Round a
+// corner the blend weighs three columns of one kind against one of the other, so beside a wall the
+// swell was half as strong in an inner corner as along the wall, and stronger round an outer one.
+// Where the four centres around a point hold a corner (one or three of them land, or two across a
+// diagonal), it fades over the waterline as it does along a straight shore: from the land's strength
+// half a block up the land to the water's half a block out (corners).
+float lite_shore_corner_strength(vec4 a, vec4 b, vec4 c, vec4 d, float distance, float blended) {
+    vec4 land = vec4(lessThan(vec4(a.x, b.x, c.x, d.x), vec4(0.0)));
+    float landColumns = dot(land, vec4(1.0));
+    bool corner = landColumns == 1.0 || landColumns == 3.0 || (landColumns == 2.0 && land.x == land.w);
+    if (!corner) {
+        return blended;
+    }
+    vec4 strengths = vec4(a.w, b.w, c.w, d.w);
+    float onLand = dot(land, strengths) / landColumns;
+    float onWater = dot(1.0 - land, strengths) / (4.0 - landColumns);
+    return mix(onLand, onWater, clamp(distance + 0.5, 0.0, 1.0));
+}
+
 // Blended between column centres, so the waterline is where the distance crosses 0 and the waves'
-// direction turns smoothly from block to block.
+// direction turns smoothly from block to block; near the waterline the distance and the swell's
+// strength follow the blocks round corners too (lite_shore_near_distance, lite_shore_corner_strength).
 LiteShoreField lite_shore_field(vec3 cameraRelative) {
     vec2 local = lite_block_local(cameraRelative).xz - 0.5;
     ivec2 base = LiteCameraBlock.xz + ivec2(floor(local));
@@ -245,10 +296,10 @@ LiteShoreField lite_shore_field(vec3 cameraRelative) {
     vec4 d = lite_shore_values(base + ivec2(1, 1));
     vec4 blended = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
     LiteShoreField field;
-    field.distance = blended.x;
+    field.distance = lite_shore_near_distance(local + 0.5, blended.x);
     float length = dot(blended.yz, blended.yz);
     field.toShore = length > 1.0e-4 ? blended.yz * inversesqrt(length) : vec2(0.0);
-    field.strength = blended.w;
+    field.strength = lite_shore_corner_strength(a, b, c, d, field.distance, blended.w);
     return field;
 }
 

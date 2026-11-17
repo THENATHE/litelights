@@ -132,15 +132,17 @@ public record RenderSettings(
         float glintWaterIntensity,
         float glintGroundSoftness,
         float glintGroundIntensity,
-        boolean nightColorTone
+        boolean nightColorTone,
+        boolean glintOres,
+        boolean heatShimmer
     ) {
         public static final Lighting DEFAULTS = new Lighting(
             true, 1.0f, true, true, 2.0f, true, 1.5f, SunbeamQuality.MEDIUM, true, WaterSparkle.GENTLE, true, true, false, true,
-            0.5f, 0.5f, 0.5f, 0.5f, true);
+            0.5f, 0.5f, 0.5f, 0.5f, true, true, true);
 
         /** Whether anything glints above water. */
         public boolean landGlint() {
-            return glintWater || glintIceSnow || glintMetalGlass || glintSandStone;
+            return glintWater || glintIceSnow || glintMetalGlass || glintSandStone || glintOres;
         }
     }
 
@@ -316,6 +318,9 @@ public record RenderSettings(
     /** Foam on flowing water stays put, or travels downstream with the current. */
     public enum FoamMotion { STATIONARY, DRIFTING }
 
+    /** The swash's sheet: clear water, foam up and back, or foam up and clear water back. */
+    public enum ShoreFilm { WATER, FOAM, FOAM_IN_WATER_OUT }
+
     /** Reflection detail, and the screen-space steps each reflected ray takes (lite_water_trace). */
     public enum MirrorDetail {
         COARSE(12),
@@ -357,6 +362,7 @@ public record RenderSettings(
         boolean farEdgeFoam,
         boolean oceanWaves,
         float shoreRunUp,
+        ShoreFilm shoreFilm,
         float waveFoam,
         boolean wakes,
         float wakeStrength,
@@ -364,11 +370,12 @@ public record RenderSettings(
     ) {
         public static final Water DEFAULTS = new Water(
             WaterPalette.VANILLA_COLOURS, true, true, MirrorDetail.BALANCED, 1.0f, true, true, true, FoamMotion.STATIONARY, true, true, true, false,
-            true, 4, 4, JumpSplash.ADVANCED, true, false, false, false, false, 1.0f, 1.0f, true, 1.0f, true);
+            true, 4, 4, JumpSplash.ADVANCED, true, false, false, false, false, 1.0f, ShoreFilm.WATER, 1.0f, true, 1.0f, true);
     }
 
-    public record Vegetation(boolean swayingGrass, boolean swayingPlants, boolean swayingLeaves) {
-        public static final Vegetation DEFAULTS = new Vegetation(false, false, false);
+    public record Vegetation(boolean swayingGrass, boolean swayingPlants, boolean swayingLeaves, boolean swayingLanterns,
+                             boolean groundLeaves) {
+        public static final Vegetation DEFAULTS = new Vegetation(false, false, false, true, true);
     }
 
     public enum ParticleDensity { FULL, SPARSE, OFF }
@@ -387,11 +394,12 @@ public record RenderSettings(
         boolean burnMarks,
         boolean enhancedWater,
         SpawnDistance distance,
-        DistanceFill distanceFill
+        DistanceFill distanceFill,
+        boolean fallingLeaves
     ) {
         public static final Particles DEFAULTS = new Particles(
             ParticleDensity.FULL, SnowSandSprites.VANILLA, true, true, true, true, true, true, true, true,
-            SpawnDistance.NEAR, DistanceFill.SPREAD);
+            SpawnDistance.NEAR, DistanceFill.SPREAD, true);
     }
 
     /**
@@ -462,10 +470,13 @@ public record RenderSettings(
         boolean wallStreaks,
         Glass glass,
         Storms storms,
-        MistStyle mistStyle
+        MistStyle mistStyle,
+        boolean puddles,
+        boolean rainbows,
+        boolean snowyLeaves
     ) {
         public static final Weather DEFAULTS = new Weather(PrecipitationLook.LITELIGHTS, WeatherDensity.MEDIUM, true, true, true, true, true, true,
-            true, SpawnDistance.NEAR, DistanceFill.SPREAD, true, true, Glass.DEFAULTS, Storms.DEFAULTS, MistStyle.PUFFS);
+            true, SpawnDistance.NEAR, DistanceFill.SPREAD, true, true, Glass.DEFAULTS, Storms.DEFAULTS, MistStyle.PUFFS, true, true, true);
     }
 
     /**
@@ -485,6 +496,14 @@ public record RenderSettings(
         }
     }
 
+    /**
+     * Lightning in every storm with thunder: flashes inside LiteLights' clouds (and the light they
+     * throw on the air and the land), and vanilla's bolts drawn as branching strikes.
+     */
+    public record Lightning(boolean inClouds, boolean branching) {
+        public static final Lightning DEFAULTS = new Lightning(true, true);
+    }
+
     /** One storm type's look: its fog, and whether it brings its large cloud particles. */
     public record Storm(StormFog fog, boolean clouds) {
         public static final Storm DEFAULT = new Storm(StormFog.NORMAL, true);
@@ -499,9 +518,14 @@ public record RenderSettings(
      * them; a storm partway between (thunder rolling in) blends the two types' values by the
      * thunder level. When both types agree the value is exact, so the defaults change nothing.
      */
-    public record Storms(Storm rain, Storm thunderstorm, Storm snow, Storm blizzard, Storm sandstorm, Storm haboob) {
+    public record Storms(Lightning lightning, Storm rain, Storm thunderstorm, Storm snow, Storm blizzard, Storm sandstorm, Storm haboob) {
         public static final Storms DEFAULTS = new Storms(Storm.DEFAULT, Storm.DEFAULT, Storm.DEFAULT, Storm.DEFAULT, Storm.DEFAULT,
             Storm.DEFAULT);
+
+        /** The storm types' looks with the default lightning. */
+        public Storms(Storm rain, Storm thunderstorm, Storm snow, Storm blizzard, Storm sandstorm, Storm haboob) {
+            this(Lightning.DEFAULTS, rain, thunderstorm, snow, blizzard, sandstorm, haboob);
+        }
 
         public float rainFog(float thunder) {
             return LiteMath.lerp(rain.fog.thickness, thunderstorm.fog.thickness, thunder);

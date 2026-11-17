@@ -3,7 +3,7 @@
     "id": "litelights",
     "version": "${version}",
     "name": "LiteLights",
-    "description": "Shadows, water, sky, fog and ambient effects that keep the vanilla look and stay fast. Credits: rendering ideas (cached shadow map, forward-shaded effects, biome atmosphere): idea by Shinyflvres (ImmersiveVFX), whose atmosphere effects were in turn inspired by Oreville Studios' Realistic Biomes. Large water textures: idea by Tec (Big Water). Vanilla-style water and lava textures by Tec, from Big Water, CC0-1.0. Jump splash: idea by Chai (Particular). Storm atmosphere (sandstorm fog, blizzards, swamp and pale garden fog, ambient wind, dark pale-garden rain): ideas by TheDeathlyCow (Immersive Storms). Weather on glass: glass weather idea by duffopuffo (Weather Glass). Rain drips and wall streaks: drip and streak ideas by pigcart (Particle Rain). Overlays module: draws through Continuity (Pepper_Bell). Recommended: LambDynamicLights and LambdaBetterGrass by LambdAurora.",
+    "description": "Shadows, water, sky, fog and ambient effects that keep the vanilla look and stay fast. Credits: rendering ideas (cached shadow map, forward-shaded effects, biome atmosphere): idea by Shinyflvres (ImmersiveVFX), whose atmosphere effects were in turn inspired by Oreville Studios' Realistic Biomes. Large water textures: idea by Tec (Big Water). Vanilla-style water and lava textures by Tec, from Big Water, CC0-1.0. Jump splash: idea by Chai (Particular). Storm atmosphere (sandstorm fog, blizzards, swamp and pale garden fog, ambient wind, dark pale-garden rain): ideas by TheDeathlyCow (Immersive Storms). Weather on glass: glass weather idea by duffopuffo (Weather Glass). Rain drips and wall streaks: drip and streak ideas by pigcart (Particle Rain). Overlays module: draws through Continuity (Pepper_Bell). Recommended: LambDynamicLights and LambdaBetterGrass by LambdAurora, Visuality by PinkGoosik, Subtle Effects by MincraftEinstein.",
     "authors": [
         "THENATHE"
     ],
@@ -49,6 +49,8 @@
         "modmenu": "*",
         "lambdynlights": "*",
         "lambdabettergrass": "*",
+        "visuality": "*",
+        "subtle_effects": "*",
         "sodium": "*",
         "continuity": ">=3.0.1"
     }

@@ -97,13 +97,14 @@ final class LightPostFrame implements LiteRenderEvents.FrameUpdate {
 
     /**
      * The glint switches as the shader reads them (LITE_GLINT_* in light_post/surface_light.glsl):
-     * bit 0 water, 1 ice and snow, 2 metal and glass, 3 sand and stone, and from bit 4 the water
-     * sparkle's motion (0 still, 1 gentle, 2 lively). From bit 8 the ground's softness and
-     * intensity ({@link GlintScale#pack}). A whole number below 2^24, so exact as a float.
+     * bit 0 water, 1 ice and snow, 2 metal and glass, 3 sand and stone, from bit 4 the water
+     * sparkle's motion (0 still, 1 gentle, 2 lively) and bit 6 ores and crystals. From bit 8 the
+     * ground's softness and intensity ({@link GlintScale#pack}). A whole number below 2^24, so
+     * exact as a float.
      */
     static float glintSwitches(RenderSettings.Lighting lighting) {
         int switches = (lighting.glintWater() ? 1 : 0) | (lighting.glintIceSnow() ? 2 : 0)
-            | (lighting.glintMetalGlass() ? 4 : 0) | (lighting.glintSandStone() ? 8 : 0);
+            | (lighting.glintMetalGlass() ? 4 : 0) | (lighting.glintSandStone() ? 8 : 0) | (lighting.glintOres() ? 64 : 0);
         int ground = GlintScale.pack(GlintScale.groundSoftness(lighting.glintGroundSoftness()),
             GlintScale.groundIntensity(lighting.glintGroundIntensity()));
         return switches | lighting.waterSparkle().ordinal() << 4 | ground << 8;

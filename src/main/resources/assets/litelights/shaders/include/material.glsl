@@ -28,6 +28,14 @@ const int LITE_MATERIAL_GRASS = 12;
 const int LITE_MATERIAL_GRASS_UPPER = 13;
 const int LITE_MATERIAL_PLANT_UPPER = 14;
 const int LITE_MATERIAL_PLANT_STILL = 15;
+// Farmland: plain ground everywhere but for puddles, which leave its own wet look alone.
+const int LITE_MATERIAL_FARMLAND = 16;
+// Ores, by the rock their texture is drawn on (render.material.OreRocks; LiteOreRocks in frame.glsl
+// describes each rock), and gem-like blocks (Glint on ores and crystals, light_post/ore_glint.glsl).
+const int LITE_MATERIAL_ORE_STONE = 17;
+const int LITE_MATERIAL_ORE_DEEPSLATE = 18;
+const int LITE_MATERIAL_ORE_NETHERRACK = 19;
+const int LITE_MATERIAL_CRYSTAL = 20;
 
 int lite_material(vec2 atlasUv) {
     if (!lite_feature(LITE_FEATURE_MATERIALS)) {
@@ -41,6 +49,10 @@ int lite_material(vec2 atlasUv) {
 bool lite_material_is_foliage(int material) {
     return material == LITE_MATERIAL_LEAVES || material == LITE_MATERIAL_PLANT
         || (material >= LITE_MATERIAL_GRASS && material <= LITE_MATERIAL_PLANT_STILL);
+}
+
+bool lite_material_is_ore(int material) {
+    return material >= LITE_MATERIAL_ORE_STONE && material <= LITE_MATERIAL_ORE_NETHERRACK;
 }
 
 bool lite_material_is_emissive(int material) {

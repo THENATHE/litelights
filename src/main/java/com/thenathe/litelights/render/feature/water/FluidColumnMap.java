@@ -1,6 +1,8 @@
 package com.thenathe.litelights.render.feature.water;
 
+import com.thenathe.litelights.render.feature.vegetation.LeafColours;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.objects.Reference2BooleanOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -8,12 +10,18 @@ import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.QuartPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Util;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -37,7 +45,10 @@ import org.lwjgl.system.MemoryUtil;
  * where rain stops in each column ({@link RainTopGrid}), for weather on glass, while foam drifts,
  * which way the water at each surface flows ({@link FluidFlowGrid}), and while the ocean waves are
  * on, which water is in an ocean biome and still ({@link OceanColumns}), from which a background
- * job works out the {@link ShoreField} whenever the columns have changed.
+ * job works out the {@link ShoreField} whenever the columns have changed. While Leaves under trees is
+ * on it also notes the canopy's colour and the ground fallen leaves may lie on ({@link GroundLeavesGrid}),
+ * and while Snowy leaves and ground is on, the canopies open to the sky, whether their biome snows and
+ * the bare ground under them ({@link SnowCoverGrid}).
  */
 final class FluidColumnMap implements AutoCloseable {
     private static final int CHUNKS = FluidColumnGrid.SIZE / 16;
@@ -57,6 +68,11 @@ final class FluidColumnMap implements AutoCloseable {
     private final RainTopGrid rainTops = new RainTopGrid();
     private final FluidFlowGrid flows = new FluidFlowGrid();
     private final OceanColumns oceanColumns = new OceanColumns();
+    private final GroundLeavesGrid groundLeaves = new GroundLeavesGrid();
+    private final GroundLeavesGrid.Tints groundTints = this::groundTint;
+    private final SnowCoverGrid snowCover = new SnowCoverGrid();
+    /** Whether each kind of leaves is a needle-leaved tree's, worked out once per block. */
+    private final Reference2BooleanOpenHashMap<Block> conifers = new Reference2BooleanOpenHashMap<>();
     private final long[] slotChunk = new long[SLOT_COUNT];
     private final boolean[] needsScan = new boolean[SLOT_COUNT];
     private final boolean[] needsUpload = new boolean[SLOT_COUNT];
@@ -66,6 +82,7 @@ final class FluidColumnMap implements AutoCloseable {
     private final IntArrayList[] landingDrops = new IntArrayList[SLOT_COUNT];
     private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
     private final BlockPos.MutableBlockPos probeCursor = new BlockPos.MutableBlockPos();
+    private final BlockPos.MutableBlockPos tintCursor = new BlockPos.MutableBlockPos();
     private final CoveredWater coveredWater = new CoveredWater();
     private @Nullable LevelChunk scanning;
     private final ByteBuffer uploadBuffer = MemoryUtil.memAlloc(16 * 16 * 4).order(ByteOrder.LITTLE_ENDIAN);
@@ -80,6 +97,13 @@ final class FluidColumnMap implements AutoCloseable {
     private boolean recordFlow;
     /** Whether scans record the ocean columns and the shore field is kept (only while Ocean waves is on). */
     private boolean recordWaves;
+    /** Whether scans note the canopy's colour and the ground leaves may lie on, and their texels are written (Leaves under trees). */
+    private boolean recordGroundLeaves;
+    /** Whether scans note where snow can gather on leaves and under trees, and their texels are written (Snowy leaves and ground). */
+    private boolean recordSnowCover;
+    /** QA: chunks scanned and the nanoseconds the scans took, since the last reading. */
+    private int scansDone;
+    private long scanNanos;
     private boolean shoreFieldStale;
     private boolean shoreFieldUploadWanted;
     private long shoreFieldStarted;
@@ -201,6 +225,44 @@ final class FluidColumnMap implements AutoCloseable {
         }
     }
 
+    /**
+     * Starts or stops noting where fallen leaves lie under trees. Every chunk is scanned again, so
+     * they appear everywhere at once; while off the scan reads nothing more for them.
+     */
+    void setRecordGroundLeaves(boolean record) {
+        if (record != recordGroundLeaves) {
+            recordGroundLeaves = record;
+            rescanEverything();
+        }
+    }
+
+    /**
+     * Starts or stops noting where snow can gather on leaves and under trees. Every chunk is
+     * scanned again, so the snow shows everywhere at once; while off the scan reads nothing more for it.
+     */
+    void setRecordSnowCover(boolean record) {
+        if (record != recordSnowCover) {
+            recordSnowCover = record;
+            rescanEverything();
+        }
+    }
+
+    /** The block textures changed (a resource reload): the canopy colours are read again. */
+    void leafColoursChanged() {
+        if (recordGroundLeaves) {
+            rescanEverything();
+        }
+    }
+
+    void rescanEverything() {
+        for (int slot = 0; slot < SLOT_COUNT; slot++) {
+            if (slotChunk[slot] != NO_CHUNK) {
+                needsScan[slot] = true;
+                complete = false;
+            }
+        }
+    }
+
     /** How long the last shore field took to work out on its background thread, in milliseconds (for QA). */
     double shoreFieldMillis() {
         return shoreFieldReady == null ? Double.NaN : shoreFieldReady.nanos / 1.0e6;
@@ -280,6 +342,30 @@ final class FluidColumnMap implements AutoCloseable {
         return new int[] {grid.get(x, z), grid.texel(x, z)};
     }
 
+    /** QA only: a column's ground leaves texel, or 0 outside the map or while Leaves under trees is off. */
+    int groundLeavesForQa(int x, int z) {
+        if (!contains(x, z) || !recordGroundLeaves) {
+            return 0;
+        }
+        return groundLeaves.texel(x, z, minY, grid, groundTints);
+    }
+
+    /** QA only: a column's snow cover texel, or 0 outside the map or while Snowy leaves and ground is off. */
+    int snowCoverForQa(int x, int z) {
+        if (!contains(x, z) || !recordSnowCover) {
+            return 0;
+        }
+        return snowCover.texel(x, z, grid);
+    }
+
+    /** QA only: chunks scanned and their milliseconds since the last call. */
+    double[] takeScanReadings() {
+        double[] readings = {scansDone, scanNanos / 1.0e6};
+        scansDone = 0;
+        scanNanos = 0L;
+        return readings;
+    }
+
     /** The surface height of the fluid in a column, or NaN, for the jump splash. */
     double surfaceY(int x, int z) {
         if (!contains(x, z)) {
@@ -347,6 +433,8 @@ final class FluidColumnMap implements AutoCloseable {
                     rainTops.clearChunk(chunkX, chunkZ);
                     flows.clearChunk(chunkX, chunkZ);
                     oceanColumns.clearChunk(chunkX, chunkZ);
+                    groundLeaves.clearChunk(chunkX, chunkZ);
+                    snowCover.clearChunk(chunkX, chunkZ);
                     landingPositions[slot].clear();
                     landingDrops[slot].clear();
                     reflectiveColumns[slot] = 0;
@@ -385,6 +473,8 @@ final class FluidColumnMap implements AutoCloseable {
                     rainTops.clearChunk(chunkX, chunkZ);
                     flows.clearChunk(chunkX, chunkZ);
                     oceanColumns.clearChunk(chunkX, chunkZ);
+                    groundLeaves.clearChunk(chunkX, chunkZ);
+                    snowCover.clearChunk(chunkX, chunkZ);
                     landingPositions[slot].clear();
                     landingDrops[slot].clear();
                     reflectiveColumns[slot] = 0;
@@ -431,6 +521,7 @@ final class FluidColumnMap implements AutoCloseable {
     }
 
     private void scan(LevelChunk chunk, int slot) {
+        long started = System.nanoTime();
         int baseX = chunk.getPos().getMinBlockX();
         int baseZ = chunk.getPos().getMinBlockZ();
         LongArrayList positions = landingPositions[slot];
@@ -443,9 +534,13 @@ final class FluidColumnMap implements AutoCloseable {
                 int worldX = baseX + x;
                 int worldZ = baseZ + z;
                 int top = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-                rainTops.set(worldX, worldZ, RainTopGrid.pack(chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z), minY));
+                int rainTop = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
+                rainTops.set(worldX, worldZ, RainTopGrid.pack(rainTop, minY));
                 cursor.set(worldX, top, worldZ);
                 BlockState state = chunk.getBlockState(cursor);
+                if (recordSnowCover) {
+                    noteSnowCover(chunk, worldX, worldZ, rainTop, top, state);
+                }
                 FluidState fluid = state.getFluidState();
                 // Something thin floating on the fluid (a lily pad) hides it from the heightmap.
                 if (fluid.isEmpty() && top > minY && !state.isCollisionShapeFullBlock(chunk, cursor)) {
@@ -482,9 +577,20 @@ final class FluidColumnMap implements AutoCloseable {
                 flows.set(worldX, worldZ, flow);
                 oceanColumns.set(worldX, worldZ, ocean);
                 int surface = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
-                boolean canopy = surface > top && surface - top <= CANOPY_REACH
-                    && chunk.getBlockState(cursor.set(worldX, surface, worldZ)).is(BlockTags.LEAVES);
+                boolean canopy = false;
+                int canopyColour = -1;
+                if (surface > top && surface - top <= CANOPY_REACH) {
+                    BlockState leaves = chunk.getBlockState(cursor.set(worldX, surface, worldZ));
+                    canopy = leaves.is(BlockTags.LEAVES);
+                    if (canopy && recordGroundLeaves && level != null) {
+                        canopyColour = LeafColours.leaves(leaves, level, cursor);
+                    }
+                }
                 grid.set(worldX, worldZ, FluidColumnGrid.column(surfaceY, minY, top + 1, lava, ice, canopy, falls));
+                if (recordGroundLeaves) {
+                    boolean holdsLeaves = fluid.isEmpty() && leavesCanLieOn(chunk, state, worldX, top, worldZ);
+                    groundLeaves.set(worldX, worldZ, canopyColour, holdsLeaves ? top : Integer.MIN_VALUE, minY);
+                }
                 if ((!Double.isNaN(surfaceY) && !lava) || ice) {
                     reflective++;
                 }
@@ -494,6 +600,85 @@ final class FluidColumnMap implements AutoCloseable {
         reflective += coveredWater.flood(grid, minY, baseX, baseZ, this::waterSurface, this::coveredWaterCarriesOn);
         scanning = null;
         reflectiveColumns[slot] = reflective;
+        scansDone++;
+        scanNanos += System.nanoTime() - started;
+    }
+
+    /**
+     * Whether fallen leaves may lie on a column's top block: grass, dirt, podzol, mycelium, moss or a
+     * path, not snowed on, with no leaf litter, snow or water on it. Being the column's top block
+     * (leaves aside) already means nothing but leaves hangs over it, so a floor under a roof never
+     * qualifies.
+     */
+    private boolean leavesCanLieOn(LevelChunk chunk, BlockState ground, int x, int y, int z) {
+        boolean soil = ground.is(BlockTags.GRASS_BLOCKS) || ground.is(BlockTags.DIRT) || ground.is(BlockTags.MOSS_BLOCKS)
+            || ground.is(Blocks.DIRT_PATH) || ground.is(Blocks.MOSS_CARPET) || ground.is(Blocks.PALE_MOSS_CARPET);
+        if (!soil || ground.getValueOrElse(BlockStateProperties.SNOWY, false)) {
+            return false;
+        }
+        BlockState above = chunk.getBlockState(probeCursor.set(x, y + 1, z));
+        return !above.is(Blocks.LEAF_LITTER) && !above.is(BlockTags.SNOW) && above.getFluidState().isEmpty();
+    }
+
+    /**
+     * Notes where snow can gather in a column: on its canopy if the highest block rain and snow stop
+     * on is leaves (vanilla's snow layers don't stop them, so a canopy already carrying one still
+     * counts), and on the ground under that canopy if it is bare ground with a full top, the kind
+     * vanilla's own snow skips under trees. A log as the top block but for leaves is a trunk.
+     */
+    private void noteSnowCover(LevelChunk chunk, int x, int z, int rainTop, int groundY, BlockState ground) {
+        int flags = ground.is(BlockTags.LOGS) ? SnowCoverGrid.TRUNK : 0;
+        BlockState canopy = rainTop > groundY ? chunk.getBlockState(probeCursor.set(x, rainTop, z)) : ground;
+        if (rainTop <= groundY || !canopy.is(BlockTags.LEAVES) || level == null) {
+            snowCover.set(x, z, flags, 0, 0);
+            return;
+        }
+        flags |= SnowCoverGrid.CANOPY;
+        // The biome where the snow lands on the canopy, as vanilla's snow asks it (above the top block).
+        probeCursor.setY(rainTop + 1);
+        Biome biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(rainTop + 1), QuartPos.fromBlock(z)).value();
+        if (biome.getPrecipitationAt(probeCursor, level.getSeaLevel()) == Biome.Precipitation.SNOW) {
+            flags |= SnowCoverGrid.SNOWS;
+        }
+        if (isConifer(canopy.getBlock())) {
+            flags |= SnowCoverGrid.CONIFER;
+        }
+        if (dustCanLieOn(chunk, ground, x, groundY, z)) {
+            flags |= SnowCoverGrid.GROUND;
+        }
+        snowCover.set(x, z, flags, rainTop, groundY);
+    }
+
+    /** Bare ground under a canopy: a full top face, no fluid, not a trunk, snow or ice, and no snow layer on it already. */
+    private boolean dustCanLieOn(LevelChunk chunk, BlockState ground, int x, int y, int z) {
+        if (!ground.getFluidState().isEmpty() || ground.is(BlockTags.LOGS) || ground.is(BlockTags.SNOW) || ground.is(BlockTags.ICE)) {
+            return false;
+        }
+        if (!ground.isFaceSturdy(chunk, probeCursor.set(x, y, z), Direction.UP)) {
+            return false;
+        }
+        return !chunk.getBlockState(probeCursor.set(x, y + 1, z)).is(BlockTags.SNOW);
+    }
+
+    /** Spruce and, for other mods' trees, leaves named for a needle-leaved tree hold more snow. */
+    private boolean isConifer(Block leaves) {
+        if (conifers.containsKey(leaves)) {
+            return conifers.getBoolean(leaves);
+        }
+        String name = BuiltInRegistries.BLOCK.getKey(leaves).getPath();
+        boolean conifer = leaves == Blocks.SPRUCE_LEAVES || name.contains("spruce") || name.contains("pine") || name.contains("fir")
+            || name.contains("larch") || name.contains("hemlock") || name.contains("cedar") || name.contains("redwood");
+        conifers.put(leaves, conifer);
+        return conifer;
+    }
+
+    /** For {@link GroundLeavesGrid}: the tint of the ground block at a column, read when its first texel with leaves is written. */
+    private int groundTint(int x, int y, int z) {
+        if (level == null) {
+            return 0xFFFFFF;
+        }
+        tintCursor.set(x, y, z);
+        return LeafColours.tint(level.getBlockState(tintCursor), level, tintCursor);
     }
 
     /**
@@ -660,6 +845,26 @@ final class FluidColumnMap implements AutoCloseable {
             }
             uploadBuffer.flip();
             target.writeRainTops((slot % CHUNKS) * 16, (slot / CHUNKS) * 16, uploadBuffer);
+            if (recordGroundLeaves) {
+                uploadBuffer.clear();
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        uploadBuffer.putInt(groundLeaves.texel(baseX + x, baseZ + z, minY, grid, groundTints));
+                    }
+                }
+                uploadBuffer.flip();
+                target.writeGroundLeaves((slot % CHUNKS) * 16, (slot / CHUNKS) * 16, uploadBuffer);
+            }
+            if (recordSnowCover) {
+                uploadBuffer.clear();
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        uploadBuffer.putInt(snowCover.texel(baseX + x, baseZ + z, grid));
+                    }
+                }
+                uploadBuffer.flip();
+                target.writeSnowCover((slot % CHUNKS) * 16, (slot / CHUNKS) * 16, uploadBuffer);
+            }
         }
     }
 

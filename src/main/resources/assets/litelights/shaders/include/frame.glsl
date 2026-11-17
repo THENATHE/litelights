@@ -22,6 +22,11 @@ layout(std140) uniform LiteFrame {
     vec4 LiteCameraFraction;         // camera position minus LiteCameraBlock; w unused
     vec4 LiteTime;                   // x day fraction 0..1, y seconds wrapped at 3600, z the falling-star or meteor-shower preview's elevation in radians (0 = no preview), w its bearing (radians from north, turning east)
     vec4 LiteWeather;                // x rain 0..1, y thunder 0..1; z, w unused
+    // Lightning (storm099, render.feature.lightning.CloudLightning; see include/skyfog/lightning.glsl).
+    // [0] xyz unit vector toward the flashes lighting the air, w how much they light it (0 with Hide Lightning Flashes);
+    // [1], [2] the two flashes shown in the clouds: xyz camera-relative centre at the cloud base, w strength;
+    // [3] x, y their radii in blocks, z how much the flashes light the land, w how much they light the sky
+    vec4 LiteLightning[4];
     vec4 LiteShadowParams;           // x darkness, y sky light a full shadow takes (ShadowDepth), z sunlight colour, w reach in blocks
     vec4 LiteShadowMapInfo;          // x sun map size, y blocks per sun texel, z mob map size, w blocks per mob texel
     vec4 LiteShadowFade;             // x weight of the current sun map (1 = no fade), y light strength 0..1, z unused, w shadow offset in texels
@@ -43,6 +48,19 @@ layout(std140) uniform LiteFrame {
     // Weather on glass (particles-weather, render.feature.weather.GlassWeather; see include/glass/weather.glsl).
     vec4 LiteGlassCold;              // x frost 0..1, y snow 0..1, z dust 0..1, w 1 for red sand
     vec4 LiteGlassInfo;              // x texels per block (0 = nothing to draw); y, z, w unused
+    // Puddles (rain099, render.feature.weather.Puddles; see include/weather/puddles.glsl).
+    vec4 LitePuddles;                // x how far the puddles have grown, 0 (none) to 1.3 (a long thunderstorm); y rain falling on them 0..1; z the biome's water tint packed 0xRRGGBB; w unused
+    // Snowy leaves and ground (snowleaves099, render.feature.weather.SnowyLeaves; see include/weather/snow_cover.glsl).
+    vec4 LiteSnowCover;              // x how much snow has gathered, 0 (none) to 1; y 1 while the settings screen previews snow, which shows on canopies in any biome; z, w unused
+    // Swinging lanterns, chains and hanging signs (lanterns099, render.feature.vegetation.SwingingLanterns;
+    // see include/vegetation/hanging.glsl).
+    vec4 LiteSwing;                  // x wind strength 0 (calm) to 1 (strongest storm), y amplitude scale (1; QA raises it), z columns listed, w unused
+    ivec4 LiteSwingCells[8];         // a bit per block column where one may swing: row z & 31 (four rows an ivec4), bit x & 31
+    ivec4 LiteSwingColumns[64];      // x, y the column's block x and z; z its bottom in 16ths << 12 | swings per hour; w its pivot in 16ths << 5 | mode (0 free, 1 + sign rotation)
+    // The rocks ores are drawn on, as the textures in use show them (render.material.OreRocks): for
+    // rock i, [2i] its mean colour with the luma taken out (rgb) and how far its texels stray from
+    // that (a), [2i + 1] its texels' lowest and highest luma (xy); z, w unused. Glint on ores.
+    vec4 LiteOreRocks[6];
 };
 
 // LiteFlags.x

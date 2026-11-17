@@ -12,12 +12,15 @@ import com.thenathe.litelights.render.pipeline.PipelineOwners;
 import com.thenathe.litelights.render.post.LitePostChain;
 import com.thenathe.litelights.render.post.PostSlot;
 import com.thenathe.litelights.render.startup.StartupTrace;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * The light-post stream: lighting on surfaces (enhanced light, night tone, glint, where light rays
  * land; all in the surface hook), and the post chain's own passes (bloom, light rays, FXAA, the
- * tonemap and grade) plus the enchantment outline around items in hand.
+ * heat shimmer, the tonemap and grade) plus the enchantment outline around items in hand.
  */
 public final class LightPost {
     private static final LightPost INSTANCE = new LightPost();
@@ -30,6 +33,7 @@ public final class LightPost {
     private final ToneGradePass tonemap = new ToneGradePass(frame, bloom);
     private final OutlineMarkers markers = new OutlineMarkers(frame);
     private final EnchantmentOutline outline = new EnchantmentOutline(frame, markers);
+    private final HeatShimmer shimmer = new HeatShimmer(frame);
     private boolean rowsChecked;
 
     private LightPost() {
@@ -49,6 +53,7 @@ public final class LightPost {
         PipelineOwners.claim(RenderFeature.FXAA, FxaaPass.pipeline());
         PipelineOwners.claim(RenderFeature.TAA, TaaPass.pipelines());
         PipelineOwners.claim(RenderFeature.ENCHANTMENT_OUTLINES, EnchantmentOutline.pipelines());
+        PipelineOwners.claim(RenderFeature.HEAT_SHIMMER, HeatShimmer.pipeline());
         LiteRenderEvents.FRAME_UPDATE.register(frame);
         LiteRenderEvents.FRAME_UPDATE.register((frameState, settings) -> checkRowsOnce());
         LitePostChain.register(PostSlot.BLOOM, bloom);
@@ -57,7 +62,32 @@ public final class LightPost {
         LitePostChain.register(PostSlot.ANTI_ALIASING, taa);
         // After anti-aliasing, like the held items' glow (drawn before the hand), so it stays soft.
         LitePostChain.register(PostSlot.ANTI_ALIASING, outline::drawLevelGlow);
+        LitePostChain.register(PostSlot.HEAT_SHIMMER, shimmer);
         LitePostChain.register(PostSlot.TONEMAP, tonemap);
+        ClientTickEvents.END_CLIENT_TICK.register(shimmer::tick);
+    }
+
+    /** A block changed in the client's level: the heat shimmer's sources may have too. */
+    public void onBlockChanged(BlockPos position, BlockState oldState, BlockState newState) {
+        shimmer.blockChanged(position, oldState, newState);
+    }
+
+    /** For QA: whether the heat shimmer has heat near the camera, and open desert ground. */
+    public boolean heatNear() {
+        return shimmer.heatNear();
+    }
+
+    public boolean hotGroundNear() {
+        return shimmer.hotGroundNear();
+    }
+
+    /** For QA: the heat map's average client-thread time per tick since the last reset, in milliseconds. */
+    public double averageHeatTickMillis() {
+        return shimmer.averageTickMillis();
+    }
+
+    public void resetHeatTickTimings() {
+        shimmer.resetTickTimings();
     }
 
     /** Whether TAA wants the opaque world's depth copied before translucent surfaces this frame. */
@@ -118,6 +148,7 @@ public final class LightPost {
         readyIf(RenderFeature.FXAA, "fxaa", FxaaPass.pipeline());
         readyIf(RenderFeature.TAA, "taa", TaaPass.pipelines());
         readyIf(RenderFeature.ENCHANTMENT_OUTLINES, "outlines", EnchantmentOutline.pipelines());
+        readyIf(RenderFeature.HEAT_SHIMMER, "heat_shimmer", HeatShimmer.pipeline());
         StartupTrace.postPipelinesReady(StartupTrace.firstUseCompiles() - compiledBefore, System.nanoTime() - started);
         StartupTrace.endStep(outerStep);
     }

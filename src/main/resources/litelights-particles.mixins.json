@@ -5,7 +5,10 @@
     "compatibilityLevel": "JAVA_25",
     "client": [
         "BiomeManagerAccessor",
+        "FallingParticleMixin",
+        "FallingParticlesLeavesBlockAccessor",
         "FireBlockInvoker",
+        "LeavesBlockMixin",
         "RainSplashProviderMixin",
         "WeatherExtractionMixin"
     ],

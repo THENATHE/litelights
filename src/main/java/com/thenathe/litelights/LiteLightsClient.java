@@ -10,6 +10,8 @@ import com.thenathe.litelights.render.feature.skyfog.SkyFogFeature;
 import com.thenathe.litelights.render.feature.vegetation.VegetationModule;
 import com.thenathe.litelights.render.feature.water.WaterRenderer;
 import com.thenathe.litelights.render.feature.weather.GlassWeather;
+import com.thenathe.litelights.render.feature.weather.Puddles;
+import com.thenathe.litelights.render.feature.weather.SnowyLeaves;
 import com.thenathe.litelights.render.frame.DimensionGate;
 import com.thenathe.litelights.render.post.LitePostChain;
 import com.thenathe.litelights.render.pipeline.ReloadDefines;
@@ -50,6 +52,8 @@ public final class LiteLightsClient implements ClientModInitializer {
         LightPost.get().register();
         WaterRenderer.get().register();
         GlassWeather.get().register();
+        Puddles.get().register();
+        SnowyLeaves.get().register();
         SkyFogFeature.register();
         FarTerrain.register();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> StartupTrace.stopWatching());

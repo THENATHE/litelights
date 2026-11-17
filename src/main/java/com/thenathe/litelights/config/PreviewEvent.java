@@ -2,16 +2,29 @@ package com.thenathe.litelights.config;
 
 /**
  * The settings screen's sky event preview: an aurora, a meteor shower, distant fireworks or
- * falling stars shown tonight, wherever the player is (the aurora too, not only in cold biomes).
- * They are night events, so the screen previews the night along with them. Only LiteLights' own
- * sky draws change; the world and its schedule of events are left alone.
+ * falling stars shown tonight, or a rainbow by day, wherever the player is (the aurora too, not
+ * only in cold biomes). The screen previews the night along with the night events and the day
+ * with the rainbow. Only LiteLights' own sky draws change; the world and its schedule of events
+ * are left alone.
  *
  * <p>A previewed event is placed where the player was looking when it was chosen (the live world
  * beside the docked settings panel), so it shows straight away whichever way they face.
  */
 public final class PreviewEvent {
     /** The events the screen offers, in the order its button steps through them. */
-    public enum Event { AURORA, METEOR_SHOWER, FIREWORKS, FALLING_STARS }
+    public enum Event {
+        AURORA, METEOR_SHOWER, FIREWORKS, FALLING_STARS, RAINBOW;
+
+        /** Whether the event belongs to the night (all but the rainbow, which shows by day). */
+        public boolean atNight() {
+            return this != RAINBOW;
+        }
+
+        /** Whether the event can show at a previewed time of day (null: no time preview). */
+        public boolean suits(PreviewTime.Time time) {
+            return time != null && (time == PreviewTime.Time.NIGHT) == atNight();
+        }
+    }
 
     private static volatile Event current;
     private static volatile float bearing;

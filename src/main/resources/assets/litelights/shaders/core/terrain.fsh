@@ -77,6 +77,10 @@ void main() {
         discard;
     }
     #endif
+    #if defined(LITE_TERRAIN_CAUSTICS) && !defined(OIT_ALPHA_ONLY)
+    lite_ground_leaves(color, vertexColor, cameraRelativePosition, normal, lightCoord);
+    lite_snow_cover(color, vertexColor, cameraRelativePosition, normal, lightCoord, material);
+    #endif
 
     LiteSurface surface;
     surface.position = cameraRelativePosition;
@@ -101,6 +105,9 @@ void main() {
     #endif
     if (lite_world_pass()) {
         lite_water_surface(color, surface);
+        #ifdef LITE_TERRAIN_CAUSTICS
+        lite_puddles(color, surface);
+        #endif
         #ifdef LITE_TERRAIN_LIGHT
         lite_light_surface(color, surface);
         #endif

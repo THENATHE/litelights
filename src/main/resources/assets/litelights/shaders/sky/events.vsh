@@ -1,7 +1,7 @@
 #version 330
 #extension GL_ARB_separate_shader_objects : require
 
-// Night sky events (the aurora and distant fireworks), drawn just after the sky. Positions are
+// Sky events (the aurora, distant fireworks and rainbows), drawn just after the sky. Positions are
 // directions from the camera scaled out to the sky's distance, so only the view rotation applies.
 //
 // They are drawn from the eye rather than the camera position. View bobbing moves the eye about a
@@ -20,9 +20,16 @@ layout(location = 2) in vec4 Color;
 
 layout(location = 0) out vec2 texCoord0;
 layout(location = 1) out vec4 vertexColor;
+#ifdef RAINBOW
+// The direction from the eye, for the bows' angle from the point opposite the sun.
+layout(location = 2) out vec3 skyDirection;
+#endif
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position + lite_view_origin(), 1.0);
     texCoord0 = UV0;
     vertexColor = Color;
+#ifdef RAINBOW
+    skyDirection = Position;
+#endif
 }

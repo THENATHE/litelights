@@ -12,6 +12,7 @@ import com.thenathe.litelights.render.RenderSettingsAccess;
 import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
+import com.thenathe.litelights.render.feature.weather.AuroraColdness;
 import com.thenathe.litelights.render.feature.weather.SkyEvents;
 import com.thenathe.litelights.render.feature.weather.WeatherCompat;
 import com.thenathe.litelights.render.feature.weather.WeatherParticles;
@@ -34,6 +35,7 @@ import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -87,7 +89,7 @@ public final class ParticleSystem {
     private static final int BURN_MARK_ORDER = 1;
     private static final int EMBER_VEIN_ORDER = 2;
     /** The sky-event rows drawn here; meteor showers are the sky pass's (SkyFogFeature marks that row). */
-    private static final String[] SKY_ROWS = {"weather.polar_lights", "weather.far_fireworks"};
+    private static final String[] SKY_ROWS = {"weather.polar_lights", "weather.far_fireworks", "weather.rainbows"};
 
     private ParticleState published = new ParticleState(ParticleBudget.totalCap(RenderSettings.ParticleDensity.FULL));
     private ParticleState next = new ParticleState(ParticleBudget.totalCap(RenderSettings.ParticleDensity.FULL));
@@ -102,6 +104,7 @@ public final class ParticleSystem {
     private final ParticleSprites sprites = new ParticleSprites();
     private final ParticleRenderer renderer = new ParticleRenderer(sprites);
     private final SkyEvents sky = new SkyEvents();
+    private final AuroraColdness auroraColdness = new AuroraColdness();
     private final HazeDrift hazeDrift = new HazeDrift();
     private final SimulationWorker worker = new SimulationWorker(this::stepOnWorker);
     /** Worker-thread time spent stepping, summed (written by the worker only; read for the QA probe). */
@@ -146,6 +149,7 @@ public final class ParticleSystem {
         LiteRenderEvents.AFTER_SKY.register(SkyEvents.DRAW_PHASE, this::afterSky);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> worker.stop());
         markHandledRows();
+        FallingLeaves.register();
     }
 
     /** Rows whose effect another loaded mod draws instead: they say so, and stay that way. */
@@ -205,10 +209,13 @@ public final class ParticleSystem {
                 onWorldLeft();
             }
             WeatherParticles.setReplacingVanilla(false);
+            FallingLeaves.stop();
             return;
         }
         if (level != lastLevel) {
             clear();
+            auroraColdness.reset();
+            sky.resetRainbows();
             lastLevel = level;
         }
         if (minecraft.isPaused()) {
@@ -220,6 +227,7 @@ public final class ParticleSystem {
                 clear();
             }
             WeatherParticles.setReplacingVanilla(false);
+            FallingLeaves.stop();
             HazeField.get().clear();
             sky.update(settings.weather(), false, 0L, 0L, 0L, 0.0f, 0.0f);
             return;
@@ -233,6 +241,7 @@ public final class ParticleSystem {
         part = mark(PART_SURROUNDINGS, part);
 
         RenderSettings.ParticleDensity amount = running ? settings.particles().density() : RenderSettings.ParticleDensity.OFF;
+        FallingLeaves.update(surroundings, amount);
         fitToReach(settings);
         queue.begin(amount, capScales, published.categoryCounts, published.count);
         hazeDrift.tick(surroundings.wind[0], surroundings.wind[1]);
@@ -331,7 +340,7 @@ public final class ParticleSystem {
     private static boolean anythingOn(RenderSettings settings) {
         RenderSettings.Weather weather = settings.weather();
         return settings.particles().density() != RenderSettings.ParticleDensity.OFF
-            || weather.polarLights() || weather.farFireworks();
+            || weather.polarLights() || weather.farFireworks() || weather.rainbows();
     }
 
     private void updateSky(ClientLevel level, RenderSettings settings) {
@@ -340,12 +349,17 @@ public final class ParticleSystem {
         // A previewed event shows even while it really rains, unless a weather is previewed with it.
         float rain = PreviewEvent.active() && !PreviewWeather.active() ? 0.0f : surroundings.rain;
         float visibility = darkness * (1.0f - rain);
-        float temperature = level.getBiome(surroundings.cursor.set(surroundings.cameraX, surroundings.cameraY, surroundings.cameraZ))
-            .value().getBaseTemperature();
-        float coldness = Math.clamp((0.35f - temperature) / 0.2f, 0.0f, 1.0f);
+        int cameraY = (int) Math.floor(surroundings.cameraY);
+        float coldness = auroraColdness.ease(AuroraColdness.around((int) Math.floor(surroundings.cameraX), (int) Math.floor(surroundings.cameraZ),
+            (x, z) -> auroraColdness.of(level.getBiome(surroundings.cursor.set(x, cameraY, z)))));
         boolean skyAllowed = surroundings.overworldSky && surroundings.weatherAllowed && !surroundings.underground
             && RenderFeatureStatus.mayRun(RenderFeature.SKY_EVENTS);
         sky.update(settings.weather(), skyAllowed, surroundings.seed, surroundings.clockTime, surroundings.gameTime, coldness, visibility);
+        // The rainbows follow the world's rain, not a previewed one, where the camera is.
+        BlockPos camera = surroundings.cursor.set(surroundings.cameraX, surroundings.cameraY, surroundings.cameraZ);
+        boolean rainsHere = level.getBiome(camera).value().getPrecipitationAt(camera, level.getSeaLevel()) == Biome.Precipitation.RAIN;
+        sky.updateRainbow(settings.weather(), skyAllowed, surroundings.gameTime, surroundings.clockTime, level.getRainLevel(1.0f),
+            level.getThunderLevel(1.0f), rainsHere);
         if (sky.burstStartedAt(surroundings.gameTime - FIREWORK_SOUND_DELAY, burst)) {
             // Vanilla's far blast, which already sounds distant, from the burst's direction. It is
             // placed near the camera on purpose: placed 60 blocks out at volume 2.5 (as before

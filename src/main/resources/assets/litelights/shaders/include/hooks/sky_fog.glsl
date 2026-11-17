@@ -41,6 +41,8 @@ bool lite_fog(inout vec4 color, LiteSurface surface, vec4 vanillaFogColor) {
     if (lite_feature(LITE_FEATURE_END_TINT)) {
         color.rgb *= LiteEndTint.rgb;
     }
+    // A lightning flash lights the land open to the sky for a moment, whatever the fog style.
+    color.rgb *= 1.0 + lite_flash_land(surface.normal, clamp(surface.lightCoord.y / 240.0, 0.0, 1.0));
     if (!lite_feature(LITE_FEATURE_LITE_FOG)) {
         return false;
     }

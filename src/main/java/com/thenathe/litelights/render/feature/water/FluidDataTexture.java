@@ -16,9 +16,11 @@ import org.lwjgl.system.MemoryUtil;
  * mip 0 only) with the rain tops for weather on glass under it (256 x 256 from y 256,
  * {@link RainTopGrid}), the glass windows under those (256 x 128 from y 512,
  * {@link GlassWindowGrid}), the shore field for the ocean waves under them (256 x 256 from y 640,
- * {@link ShoreField}) and the wakes under that (256 x 256 from y 896, {@link WakeField}); the large
+ * {@link ShoreField}), the wakes under that (256 x 256 from y 896, {@link WakeField}) and where leaves
+ * lie under trees under those (256 x 256 from y 1152, {@link GroundLeavesGrid}) and where snow gathers
+ * on leaves and under trees at the bottom (256 x 256 from y 1408, {@link SnowCoverGrid}); the large
  * textures' frame strip sits to their right, mipmapped. Until the large textures are wanted the
- * texture is just the five maps.
+ * texture is just the seven maps.
  */
 final class FluidDataTexture implements AutoCloseable {
     static final int COLUMN_REGION = FluidColumnGrid.SIZE;
@@ -30,7 +32,11 @@ final class FluidDataTexture implements AutoCloseable {
     static final int SHORE_FIELD_Y = GLASS_WINDOW_Y + GlassWindowGrid.ROWS;
     /** The wakes start this many texels down, below the shore field. */
     static final int WAKE_FIELD_Y = SHORE_FIELD_Y + ShoreField.SIZE;
-    private static final int MAPS_HEIGHT = WAKE_FIELD_Y + WakeField.SIZE;
+    /** Where leaves lie under trees starts this many texels down, below the wakes. */
+    static final int GROUND_LEAVES_Y = WAKE_FIELD_Y + WakeField.SIZE;
+    /** Where snow gathers on leaves and under trees starts this many texels down, below the ground leaves. */
+    static final int SNOW_COVER_Y = GROUND_LEAVES_Y + GroundLeavesGrid.SIZE;
+    private static final int MAPS_HEIGHT = SNOW_COVER_Y + SnowCoverGrid.SIZE;
 
     private @Nullable GpuTexture texture;
     private @Nullable GpuTextureView view;
@@ -75,6 +81,16 @@ final class FluidDataTexture implements AutoCloseable {
     /** Writes one chunk's 16 x 16 texels of the rain tops. */
     void writeRainTops(int x, int z, ByteBuffer texels) {
         RenderSystem.getDevice().createCommandEncoder().writeToTexture(texture, texels, 0, 0, x, RAIN_TOP_Y + z, 16, 16);
+    }
+
+    /** Writes one chunk's 16 x 16 texels of where leaves lie under trees. */
+    void writeGroundLeaves(int x, int z, ByteBuffer texels) {
+        RenderSystem.getDevice().createCommandEncoder().writeToTexture(texture, texels, 0, 0, x, GROUND_LEAVES_Y + z, 16, 16);
+    }
+
+    /** Writes one chunk's 16 x 16 texels of where snow gathers on leaves and under trees. */
+    void writeSnowCover(int x, int z, ByteBuffer texels) {
+        RenderSystem.getDevice().createCommandEncoder().writeToTexture(texture, texels, 0, 0, x, SNOW_COVER_Y + z, 16, 16);
     }
 
     /** Writes the whole shore field, its texels in the texture's own (wrapped) order. */

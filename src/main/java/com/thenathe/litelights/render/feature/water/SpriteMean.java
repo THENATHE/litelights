@@ -8,15 +8,15 @@ package com.thenathe.litelights.render.feature.water;
  *
  * <p>No Minecraft types here, so it is unit-tested.
  */
-final class SpriteMean {
+public final class SpriteMean {
     /** Vanilla's water texture is a mid grey; a texture that can't be read counts as that. */
-    static final float[] FALLBACK = {0.7f, 0.7f, 0.7f};
+    public static final float[] FALLBACK = {0.7f, 0.7f, 0.7f};
 
     private SpriteMean() {
     }
 
     /** Linear-in-texture red, green and blue (0..1) of pixels packed as 0xAABBGGRR. */
-    static float[] of(int[] abgrPixels) {
+    public static float[] of(int[] abgrPixels) {
         double red = 0.0;
         double green = 0.0;
         double blue = 0.0;

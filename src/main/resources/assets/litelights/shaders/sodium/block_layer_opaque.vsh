@@ -55,7 +55,9 @@ void main() {
     lite_atlasUv = _vert_tex_diffuse_coord + _vert_tex_diffuse_coord_bias * u_TexCoordShrink;
 #ifdef LITE_TERRAIN_SWAY
     if (lite_world_pass()) {
-        position += lite_vegetation_offset(position, _vert_tex_diffuse_coord, _vert_tex_diffuse_coord_bias);
+        vec3 unmoved = position;
+        position += lite_vegetation_offset(unmoved, _vert_tex_diffuse_coord, _vert_tex_diffuse_coord_bias);
+        position += lite_hanging_offset(unmoved);
     }
 #endif
 

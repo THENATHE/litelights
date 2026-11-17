@@ -19,7 +19,24 @@ public final class MaterialIds {
     public static final int GRASS_UPPER = 13;
     public static final int PLANT_UPPER = 14;
     public static final int PLANT_STILL = 15;
+    // Farmland has a wet look of its own, so puddles leave it alone (include/weather/puddles.glsl).
+    public static final int FARMLAND = 16;
+    // Ores, by the rock their texture is drawn on (OreRocks decides from the textures in use), and
+    // gem-like blocks: Glint on ores and crystals (shimmer099).
+    public static final int ORE_STONE = 17;
+    public static final int ORE_DEEPSLATE = 18;
+    public static final int ORE_NETHERRACK = 19;
+    public static final int CRYSTAL = 20;
 
     private MaterialIds() {
+    }
+
+    public static boolean isOre(int material) {
+        return material >= ORE_STONE && material <= ORE_NETHERRACK;
+    }
+
+    /** Ores and crystals: hard, plain blocks apart from their glint. */
+    public static boolean isOreOrCrystal(int material) {
+        return isOre(material) || material == CRYSTAL;
     }
 }

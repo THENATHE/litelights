@@ -15,12 +15,15 @@ import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.feature.particles.ParticleBudget;
 import com.thenathe.litelights.render.feature.skyfog.StormAtmosphere;
+import com.thenathe.litelights.render.feature.vegetation.LeafColours;
 import com.thenathe.litelights.render.feature.water.splash.SplashEffects;
 import com.thenathe.litelights.render.feature.water.splash.SplashTracker;
 import com.thenathe.litelights.render.feature.water.splash.StreamsReflowingSpray;
 import com.thenathe.litelights.render.feature.water.splash.WaterParticleSprites;
 import com.thenathe.litelights.render.feature.water.wake.WakeSources;
 import com.thenathe.litelights.render.feature.weather.GlassWeather;
+import com.thenathe.litelights.render.feature.weather.Puddles;
+import com.thenathe.litelights.render.feature.weather.SnowyLeaves;
 import com.thenathe.litelights.render.feature.weather.Wind;
 import com.thenathe.litelights.render.frame.DimensionGate;
 import com.thenathe.litelights.render.frame.FrameFlags;
@@ -230,15 +233,17 @@ public final class WaterRenderer {
             flags |= WaterFlags.VANILLA_WATER_SPRITES;
         }
         // Weather on glass reads the rain tops kept under the column map and the glass windows under
-        // those, so it keeps the map running too.
+        // those, and puddles the rain tops, so they keep the map running too.
         boolean glassWeather = GlassWeather.get().wantsRainTops();
-        if (flags != 0 || glassWeather) {
+        if (flags != 0 || glassWeather || Puddles.get().wantsRainTops()) {
             if (fluidData.ensure()) {
                 columns.requestFullUpload();
                 glassWindows.requestUpload();
             }
             columns.setRecordFlow((flags & WaterFlags.DRIFTING_FOAM) != 0);
             columns.setRecordWaves((flags & WaterFlags.OCEAN_WAVES) != 0);
+            columns.setRecordGroundLeaves((flags & WaterFlags.GROUND_LEAVES) != 0);
+            columns.setRecordSnowCover((flags & WaterFlags.SNOW_COVER) != 0);
             columns.setShoreOnlyAgainstBlocks(water.edgeFoamBlocksOnly());
             columns.update(level, cameraX, cameraZ, fluidData);
             if (columns.hasOrigin()) {
@@ -308,9 +313,24 @@ public final class WaterRenderer {
         }
         if (water.oceanWaves()) {
             flags |= WaterFlags.OCEAN_WAVES;
+            if (water.shoreFilm() != RenderSettings.ShoreFilm.WATER) {
+                flags |= WaterFlags.SHORE_FILM_FOAM;
+            }
+            if (water.shoreFilm() == RenderSettings.ShoreFilm.FOAM) {
+                flags |= WaterFlags.SHORE_FILM_FOAM_BACK;
+            }
         }
         if (wakesWanted(settings)) {
             flags |= WaterFlags.WAKES;
+        }
+        // Not water, but drawn from the same column map: fallen leaves count as one of a modded
+        // dimension's effects, like sway.
+        if (settings.vegetation().groundLeaves() && DimensionGate.allows(Aspect.EFFECTS)) {
+            flags |= WaterFlags.GROUND_LEAVES;
+        }
+        // Snowy leaves and ground: also drawn from the column map, while the row is on where there is weather.
+        if (SnowyLeaves.get().wantsSnowMap()) {
+            flags |= WaterFlags.SNOW_COVER;
         }
         return flags;
     }
@@ -525,6 +545,8 @@ public final class WaterRenderer {
     public void onAtlasUploaded(TextureAtlas atlas, Map<Identifier, TextureAtlasSprite> regions) {
         if (atlas.location().equals(TextureAtlas.LOCATION_BLOCKS)) {
             spriteLooks.forget();
+            LeafColours.forget();
+            columns.leafColoursChanged();
             readSprites(atlas);
             readAlternateFluidSprites(regions);
             largeTextures.requestReload();
@@ -828,6 +850,26 @@ public final class WaterRenderer {
         readings.put("swimmerTicks", wakes.sources().swimmerTicks());
         readings.put("entries", wakes.sources().entries());
         return readings;
+    }
+
+    /** QA: the ground leaves' texel at a world column (0 for none or outside the map). */
+    public int groundLeavesForQa(int x, int z) {
+        return columns.groundLeavesForQa(x, z);
+    }
+
+    /** QA: the snow cover texel at a world column (0 for none or outside the map). */
+    public int snowCoverForQa(int x, int z) {
+        return columns.snowCoverForQa(x, z);
+    }
+
+    /** QA: scans every chunk of the column map again, as turning a recorded effect on or off does. */
+    public void rescanColumnsForQa() {
+        columns.rescanEverything();
+    }
+
+    /** QA: chunks scanned into the column map and the milliseconds they took, since the last call. */
+    public double[] columnScansForQa() {
+        return columns.takeScanReadings();
     }
 
     /** The column map's raw column and shader texel at a world column, for the edge foam QA. */

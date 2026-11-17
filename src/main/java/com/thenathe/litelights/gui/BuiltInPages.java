@@ -23,6 +23,8 @@ final class BuiltInPages {
     static final String LAMBDABETTERGRASS = "lambdabettergrass";
     static final String SODIUM = "sodium";
     static final String CONTINUITY = "continuity";
+    static final String VISUALITY = "visuality";
+    static final String SUBTLE_EFFECTS = "subtle_effects";
 
     private static boolean registered;
 
@@ -47,8 +49,12 @@ final class BuiltInPages {
         Pages.contribute(Pages.GENERAL, CompatibilityNotices::contribute);
         Pages.contribute(Pages.SHADOWS, BuiltInPages::calculateDistance);
         Pages.contribute(Pages.COLOUR_GRADING, page -> page.section("grading").row(gradeTemplatePicker()).row(gradeTimePicker()));
-        Pages.contribute(Pages.PARTICLES, page -> page.section("particles")
-                .note(Component.translatable("litelights.note.nether_ambience")));
+        Pages.contribute(Pages.PARTICLES, page -> {
+            page.section("particles").note(Component.translatable("litelights.note.nether_ambience"));
+            page.section("recommended")
+                    .recommendation(VISUALITY, Component.translatable("litelights.recommend.visuality"))
+                    .recommendation(SUBTLE_EFFECTS, Component.translatable("litelights.recommend.subtle_effects"));
+        });
         Pages.contribute(Pages.LIGHTING, page -> page.section("recommended")
                 .recommendation(LAMBDYNAMICLIGHTS, Component.translatable("litelights.recommend.lambdynamiclights")));
         Pages.contribute(Pages.VEGETATION, page -> page.section("recommended")
@@ -96,6 +102,8 @@ final class BuiltInPages {
                 .recommendation(LAMBDYNAMICLIGHTS, Component.translatable("litelights.getting_started.lambdynamiclights"))
                 .recommendation(LAMBDABETTERGRASS, Component.translatable("litelights.getting_started.lambdabettergrass"))
                 .recommendation(CONTINUITY, Component.translatable("litelights.getting_started.continuity"))
+                .recommendation(VISUALITY, Component.translatable("litelights.getting_started.visuality"))
+                .recommendation(SUBTLE_EFFECTS, Component.translatable("litelights.getting_started.subtle_effects"))
                 .note(Component.translatable("litelights.getting_started.tip.gpu"))
                 .note(Component.translatable("litelights.getting_started.tip.far_terrain"))
                 .note(Component.translatable("litelights.getting_started.tip.preview"))

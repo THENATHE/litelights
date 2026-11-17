@@ -5,8 +5,8 @@ package com.thenathe.litelights.render.post;
  * as the level is finished, before the hand is drawn, and see the level's own depth; the final
  * slots run after the hand and the screen overlays, just before the HUD.
  *
- * <p>Light-post owns {@link #BLOOM}, {@link #LIGHT_RAYS}, {@link #ANTI_ALIASING} and
- * {@link #TONEMAP}; water owns {@link #UNDERWATER}; particles-weather owns {@link #MIST_FIELD}. Water's reflections are traced in its own
+ * <p>Light-post owns {@link #BLOOM}, {@link #LIGHT_RAYS}, {@link #ANTI_ALIASING}, {@link #HEAT_SHIMMER}
+ * and {@link #TONEMAP}; water owns {@link #UNDERWATER}; particles-weather owns {@link #MIST_FIELD}. Water's reflections are traced in its own
  * surface shader, not in the chain. A new slot goes where its pass must run; see
  * docs/ARCHITECTURE.md.
  */
@@ -21,6 +21,13 @@ public enum PostSlot {
     LIGHT_RAYS(Stage.WORLD),
     /** Light-post: FXAA or TAA. The last world pass, so it smooths everything above. */
     ANTI_ALIASING(Stage.WORLD),
+    /**
+     * Light-post: the heat shimmer (shimmer099). After anti-aliasing, so TAA's history never holds
+     * the wavering picture (it would smear it, and the shimmer would ghost); after the Mist field and
+     * the sunbeams, so the air above lava wavers whatever is seen through it, mist and beams too;
+     * and in the world stage, before the hand and the HUD are drawn, so neither ever wavers.
+     */
+    HEAT_SHIMMER(Stage.WORLD),
     /** Light-post: bloom composite, tonemap and colour grade, over the level and the hand. */
     TONEMAP(Stage.FINAL);
 

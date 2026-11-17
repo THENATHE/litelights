@@ -222,7 +222,7 @@ final class RainDetails {
                 return null;
             }
             int material = MaterialClassifier.forBlock(state);
-            if (material != MaterialIds.DEFAULT && material != MaterialIds.METAL) {
+            if (material != MaterialIds.DEFAULT && material != MaterialIds.METAL && !MaterialIds.isOreOrCrystal(material)) {
                 return null;
             }
             Direction face = dx > 0 ? Direction.EAST : dx < 0 ? Direction.WEST : dz > 0 ? Direction.SOUTH : Direction.NORTH;

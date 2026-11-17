@@ -14,6 +14,9 @@
 
 #include <litelights:light_post/surface_light.glsl>
 #include <litelights:emissive.glsl>
+#ifdef LITE_HOST_BLOCK_ATLAS
+#include <litelights:light_post/ore_glint.glsl>
+#endif
 
 void lite_light_surface(inout vec4 color, LiteSurface surface) {
     bool emissive = lite_material_is_emissive(surface.material);
@@ -29,6 +32,11 @@ void lite_light_surface(inout vec4 color, LiteSurface surface) {
         if (lite_feature(LITE_FEATURE_TERRAIN_GLINT) || lite_feature(LITE_FEATURE_UNDERWATER_GLINT)) {
             color.rgb += lite_glint(surface);
         }
+#ifdef LITE_HOST_BLOCK_ATLAS
+        if (lite_feature(LITE_FEATURE_TERRAIN_GLINT)) {
+            color.rgb += lite_ore_glint(surface);
+        }
+#endif
         if (lite_feature(LITE_FEATURE_RAY_LANDING)) {
             color.rgb += color.rgb * lite_ray_landing(surface, LiteFeatureValuesC.w);
         }

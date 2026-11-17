@@ -10,6 +10,7 @@ import com.thenathe.litelights.render.RenderSettings;
 import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
+import com.thenathe.litelights.render.feature.lightning.CloudLightning;
 import com.thenathe.litelights.render.feature.weather.SkyEventSchedule;
 import com.thenathe.litelights.render.feature.weather.WeatherCompat;
 import com.thenathe.litelights.render.frame.CelestialLight;
@@ -117,6 +118,7 @@ public final class SkyFogFeature {
         ClientTickEvents.END_CLIENT_TICK.register(INSTANCE::onClientTick);
         LiteRenderEvents.FRAME_UPDATE.register(INSTANCE::onFrameUpdate);
         LiteRenderEvents.AFTER_SKY.register(INSTANCE::afterSky);
+        CloudLightning.register();
     }
 
     /** True while LiteLights draws the sun, moon and stars, so vanilla's are skipped this frame. */

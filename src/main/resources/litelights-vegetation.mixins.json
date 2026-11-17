@@ -4,7 +4,8 @@
     "package": "com.thenathe.litelights.mixin.vegetation",
     "compatibilityLevel": "JAVA_25",
     "client": [
-        "BiomeMixin"
+        "BiomeMixin",
+        "HangingSignTextMixin"
     ],
     "injectors": {
         "defaultRequire": 1

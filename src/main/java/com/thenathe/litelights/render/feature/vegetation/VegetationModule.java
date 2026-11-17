@@ -39,6 +39,7 @@ public final class VegetationModule {
         LiteRenderEvents.FRAME_UPDATE.register(VegetationModule::onFrameUpdate);
         NaturalFoliageColors.initialize();
         MirroredQuads.register();
+        SwingingLanterns.initialize();
     }
 
     /** For QA pictures: exaggerates the sway so feet and seams are easy to judge. 1 is normal. */

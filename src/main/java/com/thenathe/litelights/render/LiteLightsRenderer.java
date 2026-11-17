@@ -453,6 +453,7 @@ public final class LiteLightsRenderer {
         frame.featureFlags = featureFlags(cameraUnderwater);
         frame.pixelLockFlags = pixelLockFlags(settings.pixelLock());
         frame.materialGridShift = materials.gridShift();
+        System.arraycopy(materials.oreRocks(), 0, frame.oreRocks, 0, frame.oreRocks.length);
     }
 
     private void fillMatrices() {

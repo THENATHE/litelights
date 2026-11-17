@@ -28,13 +28,14 @@ import org.joml.Vector4f;
 import org.lwjgl.system.MemoryUtil;
 
 /**
- * The night sky's events drawn as geometry: an aurora over cold biomes and distant fireworks.
- * Drawn into the main target just after vanilla's sky and before terrain, so terrain and clouds
- * cover them and they sit at the sky's distance. (A meteor shower's streaks are the sky shader's,
- * beside the falling stars.)
+ * The sky's events drawn as geometry: an aurora over cold biomes and distant fireworks at night,
+ * and by day a rainbow after the rain. Drawn into the main target just after vanilla's sky and
+ * before terrain, so terrain and clouds cover them and they sit at the sky's distance. (A meteor
+ * shower's streaks are the sky shader's, beside the falling stars.)
  *
  * <p>Which nights bring what, and when each burst happens, comes from
- * {@link SkyEventSchedule}, and the aurora's curtains from {@link AuroraCurtains}; this class only
+ * {@link SkyEventSchedule}, the aurora's curtains from {@link AuroraCurtains} and the rainbows from
+ * {@link RainbowSchedule}; this class only
  * turns that into at most several hundred quads a frame. The vertex data goes into one reused
  * native buffer and one GPU buffer that grows only if needed.
  */
@@ -49,7 +50,14 @@ public final class SkyEvents {
      * volley before can still be fading; a burst is its sparks, a flash and a glow.
      */
     private static final int MAX_BURSTS = SkyEventSchedule.MAX_VOLLEY + 2;
-    private static final int MAX_QUADS = AuroraCurtains.MAX_QUADS + MAX_BURSTS * (SPARKS_PER_BURST * TRAIL + 2);
+    /** The rainbow is one band of quads around the point opposite the sun, from inside the bow to past the second bow. */
+    private static final int RAINBOW_SEGMENTS = 72;
+    private static final float RAINBOW_INNER = (float) Math.toRadians(24.0);
+    private static final float RAINBOW_OUTER = (float) Math.toRadians(57.0);
+    /** Segments wholly this far under the horizon are left out; the shader fades the bow out at the horizon itself. */
+    private static final float RAINBOW_LOWEST = -0.05f;
+    private static final float PREVIEW_RAINBOW = 0.9f;
+    private static final int MAX_QUADS = AuroraCurtains.MAX_QUADS + MAX_BURSTS * (SPARKS_PER_BURST * TRAIL + 2) + RAINBOW_SEGMENTS;
     /** A previewed show's first burst goes off this many ticks after the preview is chosen. */
     private static final int PREVIEW_FIRST_BURST_TICKS = 10;
     /** Firework glows are told apart from sparks in the shader by their texture coordinates, which start here. */
@@ -93,17 +101,23 @@ public final class SkyEvents {
     private static final RenderPipeline SPARKS_PIPELINE = base(PostPipelines.ADD_KEEP_ALPHA)
         .withLocation(LiteLightsClient.id("pipeline/sky_sparks"))
         .build();
+    private static final RenderPipeline RAINBOW_PIPELINE = base(PostPipelines.ADD_KEEP_ALPHA)
+        .withLocation(LiteLightsClient.id("pipeline/sky_rainbow"))
+        .withShaderDefine("RAINBOW")
+        .build();
 
     private final ByteBuffer vertices = MemoryUtil.memAlloc(MAX_QUADS * 4 * VERTEX_SIZE);
     private final float[] event = new float[5];
     private final AuroraCurtains curtains = new AuroraCurtains();
     private final AuroraCurtains.Sink sink = this::vertex;
+    private final RainbowSchedule.Watch rainbowWatch = new RainbowSchedule.Watch();
     private GpuBuffer gpuBuffer;
     /** Tonight's events; while the settings screen previews one, the preview's night instead. */
     private SkyEventSchedule.Night night;
     private SkyEventSchedule.Night scheduled;
     private int auroraQuads;
     private int sparkQuads;
+    private int rainbowQuads;
     private long lastFireworkSound = Long.MIN_VALUE;
     /** The event the settings screen previewed last frame, to notice when fireworks are chosen. */
     private PreviewEvent.Event previewed;
@@ -120,6 +134,10 @@ public final class SkyEvents {
     private long nightSeed;
     private double gameTime;
     private float visibility;
+    private float rainbowStrength;
+    /** How much of the camera's surroundings has rain, eased, so a rainbow fades on leaving them. */
+    private float rainbowHere;
+    private boolean rainbowPreviewed;
 
     /** What was drawn last frame, for the QA probe. */
     public int lastAuroraQuads() {
@@ -130,6 +148,15 @@ public final class SkyEvents {
         return sparkQuads;
     }
 
+    public int lastRainbowQuads() {
+        return rainbowQuads;
+    }
+
+    /** This frame's rainbow, 0 to 1 (for the QA probe). */
+    public float rainbowStrength() {
+        return rainbowStrength;
+    }
+
     public float auroraStrength() {
         return auroraStrength;
     }
@@ -138,11 +165,12 @@ public final class SkyEvents {
     public void compilePipelines() {
         RenderSystem.getCompiledPipeline(AURORA_PIPELINE);
         RenderSystem.getCompiledPipeline(SPARKS_PIPELINE);
+        RenderSystem.getCompiledPipeline(RAINBOW_PIPELINE);
     }
 
     /** A sky-event shader that fails to compile is reported on the aurora row, the sky events' lead. */
     public static void claimPipelines() {
-        PipelineOwners.claim(RenderFeature.SKY_EVENTS, AURORA_PIPELINE, SPARKS_PIPELINE);
+        PipelineOwners.claim(RenderFeature.SKY_EVENTS, AURORA_PIPELINE, SPARKS_PIPELINE, RAINBOW_PIPELINE);
     }
 
     /**
@@ -164,6 +192,7 @@ public final class SkyEvents {
             // No sky pass runs here (the Nether, the End), so nothing will reset these.
             auroraQuads = 0;
             sparkQuads = 0;
+            rainbowQuads = 0;
         }
         PreviewEvent.Event preview = PreviewEvent.current();
         if (preview != null) {
@@ -182,6 +211,49 @@ public final class SkyEvents {
         }
         previewed = preview;
         this.visibility = visibility;
+    }
+
+    /**
+     * Follows the rain for the rainbows, once a tick after {@link #update}. {@code rain} and
+     * {@code thunder} are the world's levels (never a preview's); {@code rainsHere} whether the
+     * camera's biome has rain, rather than snow or none.
+     */
+    public void updateRainbow(RenderSettings.Weather settings, boolean skyAllowed, long gameTick, long clockTime, float rain,
+                              float thunder, boolean rainsHere) {
+        if (!skyAllowed) {
+            // The Nether, the End, underground: a rain clearing out of sight brings no rainbow.
+            rainbowWatch.reset();
+            rainbowStrength = 0.0f;
+            rainbowPreviewed = false;
+            return;
+        }
+        rainbowWatch.tick(seed, gameTick, clockTime, rain, thunder, rainsHere);
+        rainbowHere += ((rainsHere ? 1.0f : 0.0f) - rainbowHere) * 0.05f;
+        rainbowPreviewed = PreviewEvent.current() == PreviewEvent.Event.RAINBOW;
+        if (!settings.rainbows()) {
+            rainbowStrength = 0.0f;
+        } else if (rainbowPreviewed) {
+            rainbowStrength = PREVIEW_RAINBOW;
+        } else if (PreviewEvent.active()) {
+            // Like the other events, a real one is left out while another is previewed.
+            rainbowStrength = 0.0f;
+        } else {
+            float clearing = (1.0f - rain) * (1.0f - rain);
+            float sun = RainbowSchedule.sunLight(RainbowSchedule.sunElevation(clockTime));
+            rainbowStrength = rainbowWatch.strength(gameTime) * clearing * rainbowHere * sun;
+        }
+    }
+
+    /** QA only: a rainbow as if rain had cleared at this game tick, whatever the schedule says. */
+    public void startRainbowForQa(long gameTick) {
+        rainbowWatch.startForQa(gameTick);
+    }
+
+    /** Forgets the rain the rainbows follow, as on entering another world. */
+    public void resetRainbows() {
+        rainbowWatch.reset();
+        rainbowHere = 0.0f;
+        rainbowStrength = 0.0f;
     }
 
     /**
@@ -210,7 +282,8 @@ public final class SkyEvents {
     public void draw(RenderTarget target, FrameState frame) {
         auroraQuads = 0;
         sparkQuads = 0;
-        if (auroraStrength <= 0.0f && !fireworksOn) {
+        rainbowQuads = 0;
+        if (auroraStrength <= 0.0f && !fireworksOn && rainbowStrength <= 0.0f) {
             return;
         }
         vertices.clear();
@@ -221,9 +294,14 @@ public final class SkyEvents {
         if (fireworksOn) {
             buildFireworks();
         }
+        int sparkVertices = vertices.position() / VERTEX_SIZE;
+        if (rainbowStrength > 0.0f) {
+            buildRainbow(frame);
+        }
         int totalVertices = vertices.position() / VERTEX_SIZE;
         auroraQuads = auroraVertices / 4;
-        sparkQuads = (totalVertices - auroraVertices) / 4;
+        sparkQuads = (sparkVertices - auroraVertices) / 4;
+        rainbowQuads = (totalVertices - sparkVertices) / 4;
         if (totalVertices == 0) {
             return;
         }
@@ -253,9 +331,13 @@ public final class SkyEvents {
                 pass.setPipeline(RenderSystem.getCompiledPipeline(AURORA_PIPELINE));
                 pass.drawIndexed(auroraVertices / 4 * 6, 1, 0, 0, 0);
             }
-            if (totalVertices > auroraVertices) {
+            if (sparkVertices > auroraVertices) {
                 pass.setPipeline(RenderSystem.getCompiledPipeline(SPARKS_PIPELINE));
-                pass.drawIndexed((totalVertices - auroraVertices) / 4 * 6, 1, auroraVertices / 4 * 6, 0, 0);
+                pass.drawIndexed((sparkVertices - auroraVertices) / 4 * 6, 1, auroraVertices / 4 * 6, 0, 0);
+            }
+            if (totalVertices > sparkVertices) {
+                pass.setPipeline(RenderSystem.getCompiledPipeline(RAINBOW_PIPELINE));
+                pass.drawIndexed((totalVertices - sparkVertices) / 4 * 6, 1, sparkVertices / 4 * 6, 0, 0);
             }
         }
     }
@@ -314,6 +396,76 @@ public final class SkyEvents {
                 spark(azimuth, elevation, trail == 0 ? 0.8f : 0.6f, color, fade * (trail == 0 ? 1.0f : 0.5f / trail));
             }
         }
+    }
+
+    /**
+     * The rainbow: a band of quads around the point opposite the sun (previewed, low in front of
+     * where the player looked), from inside the main bow to past the second, leaving out what lies
+     * well under the horizon. The shader works out each pixel's angle from that point and draws the
+     * bows' colours from it; every vertex carries the point's azimuth and elevation in its texture
+     * coordinate and the rainbow's strength in its alpha.
+     */
+    private void buildRainbow(FrameState frame) {
+        float centreX;
+        float centreY;
+        float centreZ;
+        if (rainbowPreviewed) {
+            // Its top a little above where the player looked, with most of the bow in view.
+            float elevation = Math.clamp(PreviewEvent.elevation() - (float) Math.toRadians(25.0), (float) Math.toRadians(-20.0),
+                (float) Math.toRadians(-5.0));
+            float[] centre = direction(PreviewEvent.bearing(), elevation);
+            centreX = centre[0];
+            centreY = centre[1];
+            centreZ = centre[2];
+        } else {
+            centreX = -frame.sunDirection.x;
+            centreY = -frame.sunDirection.y;
+            centreZ = -frame.sunDirection.z;
+        }
+        float horizontal = (float) Math.hypot(centreX, centreZ);
+        if (horizontal < 0.05f) {
+            // The sun straight overhead or underfoot: no bow shows.
+            return;
+        }
+        // Across the band: along the horizon, and up the sky at the centre.
+        float acrossX = -centreZ / horizontal;
+        float acrossZ = centreX / horizontal;
+        float upX = -centreY * centreX / horizontal;
+        float upY = horizontal;
+        float upZ = -centreY * centreZ / horizontal;
+        float azimuth = (float) Math.atan2(centreX, -centreZ);
+        float elevation = (float) Math.asin(Math.clamp(centreY, -1.0f, 1.0f));
+        float innerCos = (float) Math.cos(RAINBOW_INNER);
+        float innerSin = (float) Math.sin(RAINBOW_INNER);
+        float outerCos = (float) Math.cos(RAINBOW_OUTER);
+        float outerSin = (float) Math.sin(RAINBOW_OUTER);
+        for (int segment = 0; segment < RAINBOW_SEGMENTS; segment++) {
+            double from = segment * Math.PI * 2.0 / RAINBOW_SEGMENTS;
+            double to = (segment + 1) * Math.PI * 2.0 / RAINBOW_SEGMENTS;
+            float fromCos = (float) Math.cos(from);
+            float fromSin = (float) Math.sin(from);
+            float toCos = (float) Math.cos(to);
+            float toSin = (float) Math.sin(to);
+            float highest = Math.max(
+                Math.max(centreY * innerCos + upY * innerSin * fromSin, centreY * innerCos + upY * innerSin * toSin),
+                Math.max(centreY * outerCos + upY * outerSin * fromSin, centreY * outerCos + upY * outerSin * toSin));
+            if (highest < RAINBOW_LOWEST) {
+                continue;
+            }
+            rainbowVertex(centreX, centreY, centreZ, acrossX, acrossZ, upX, upY, upZ, innerCos, innerSin, fromCos, fromSin, azimuth, elevation);
+            rainbowVertex(centreX, centreY, centreZ, acrossX, acrossZ, upX, upY, upZ, innerCos, innerSin, toCos, toSin, azimuth, elevation);
+            rainbowVertex(centreX, centreY, centreZ, acrossX, acrossZ, upX, upY, upZ, outerCos, outerSin, toCos, toSin, azimuth, elevation);
+            rainbowVertex(centreX, centreY, centreZ, acrossX, acrossZ, upX, upY, upZ, outerCos, outerSin, fromCos, fromSin, azimuth, elevation);
+        }
+    }
+
+    /** A rainbow vertex at an angle from the centre (its cosine and sine) and a turn around it. */
+    private void rainbowVertex(float centreX, float centreY, float centreZ, float acrossX, float acrossZ, float upX, float upY, float upZ,
+                               float radiusCos, float radiusSin, float turnCos, float turnSin, float azimuth, float elevation) {
+        float x = centreX * radiusCos + (acrossX * turnCos + upX * turnSin) * radiusSin;
+        float y = centreY * radiusCos + upY * turnSin * radiusSin;
+        float z = centreZ * radiusCos + (acrossZ * turnCos + upZ * turnSin) * radiusSin;
+        vertex(x * SKY_RADIUS, y * SKY_RADIUS, z * SKY_RADIUS, azimuth, elevation, 0xFFFFFF, rainbowStrength);
     }
 
     /** A square point of light facing the camera, {@code size} blocks across at the sky's distance. */
