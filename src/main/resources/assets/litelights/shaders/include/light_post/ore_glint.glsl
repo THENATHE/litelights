@@ -6,9 +6,14 @@
 // Glint on ores and crystals (shimmer099). The ore in an ore block twinkles in its own colour, and
 // amethyst, diamond and emerald blocks sparkle all over. Unlike the ground glint it needs no sun:
 // each sparkle catches a light from the eye's side, so it shows in a pitch-dark cave and from most
-// angles, and twinkles now and then on its own while the view is still. The sun adds its own glint
-// on faces it lights. Only on the faces drawn, so nothing shows through walls; it fades out between
-// 24 and 48 blocks.
+// angles, and flares now and then on its own. The sun adds its own glint on faces it lights. Only
+// on the faces drawn, so nothing shows through walls; it fades out between 24 and 48 blocks.
+//
+// Ore sparkle motion (oreglint) says what the eye is. Gentle: each sparkle cell has an eye of its
+// own that wanders slowly about the face's normal on the clock, so the sparkles come and go by
+// themselves and stay as they are while the view moves. Still: it is the real eye, as in 0.9.9,
+// with its angle from the normal scaled down by the pace, so the sparkles swap as slowly as they
+// twinkle.
 //
 // Which texels are ore is worked out per texel from the texture itself: the rock the ore texture is
 // drawn on comes with the material (LITE_MATERIAL_ORE_*), and LiteOreRocks says what that rock looks
@@ -31,6 +36,15 @@ const float LITE_CRYSTAL_SHARE = 0.035;
 const float LITE_ORE_SPARKLE = 2.5;
 const float LITE_CRYSTAL_SPARKLE = 1.2;
 const float LITE_ORE_GLOW = 0.12;
+// How fast the sparkles twinkle and flare, against 0.9.9's speed. At a pace of 1 a cell flares
+// every 2 to 5 seconds and Gentle's eye wanders over 2 and 3 seconds; every period is that over
+// the pace. 60 x the pace must be a whole number, so the periods divide the hour the clock wraps
+// at and nothing jumps.
+const float LITE_ORE_PACE = 0.1;
+// How far Gentle's eye wanders from the normal, across the face (0.6 is about 31 degrees each
+// way): the cells' tilts reach about 38 degrees, so most of them catch it now and then.
+const float LITE_ORE_WANDER = 0.6;
+const int LITE_GLINT_ORES_STILL = 128;   // Ore sparkle motion Still (LightPostFrame.glintSwitches)
 
 // How far a texel's colour lies outside its rock's colours: 0 or less inside them.
 float lite_ore_outside(vec3 texel, int rock) {
@@ -40,6 +54,24 @@ float lite_ore_outside(vec3 texel, int rock) {
     float lumaOutside = max(lumaRange.x - luma, luma - lumaRange.y);
     float colourOutside = length(texel - vec3(luma) - tint.rgb) - tint.a;
     return max(lumaOutside, colourOutside);
+}
+
+// The eye a sparkle cell catches its light from. Gentle: it wanders over two axes of the face, on
+// periods of 3 and 2 seconds over the pace and a phase of the cell's own. Still: the real eye
+// turned toward the normal, its angle times the pace.
+vec3 lite_ore_eye(vec3 normal, vec3 axis, vec3 toEye, vec2 phase, bool still) {
+    if (still) {
+        float facing = clamp(dot(normal, toEye), -1.0, 1.0);
+        vec3 across = toEye - normal * facing;
+        float acrossLength = length(across);
+        if (acrossLength < 0.0001) {
+            return normal;
+        }
+        float angle = acos(facing) * LITE_ORE_PACE;
+        return normal * cos(angle) + across * (sin(angle) / acrossLength);
+    }
+    vec2 turn = 6.28318530718 * (LiteTime.y * LITE_ORE_PACE / vec2(3.0, 2.0) + phase);
+    return normalize(normal + LITE_ORE_WANDER * (axis.yzx * sin(turn.x) + axis.zxy * sin(turn.y)));
 }
 
 vec3 lite_ore_glint(LiteSurface surface) {
@@ -87,16 +119,18 @@ vec3 lite_ore_glint(LiteSurface surface) {
     float shininess = mix(60.0, 18.0, softness) * (1.0 + 2.0 * crisp);
     vec3 microNormal = normalize(surface.normal + random * 1.6);
     vec3 toEye = normalize(lite_view_origin() - surface.position);
-    float caught = pow(max(dot(microNormal, toEye), 0.0), shininess);
-    // Each cell also flares now and then by itself, on the shared clock (still while paused). The
-    // periods, 2 to 5 seconds, divide the hour the clock wraps at, so nothing jumps.
-    float period = 2.0 + floor(chance.z * 4.0);
+    vec3 eye = lite_ore_eye(surface.normal, axis, toEye, fract(chance.zy * vec2(4.0, 8.0)),
+        (switches & LITE_GLINT_ORES_STILL) != 0);
+    float caught = pow(max(dot(microNormal, eye), 0.0), shininess);
+    // Each cell also flares now and then by itself, on the shared clock (still while paused), every
+    // 2 to 5 seconds over the pace.
+    float period = (2.0 + floor(chance.z * 4.0)) / LITE_ORE_PACE;
     float pulse = 0.5 + 0.5 * sin(6.28318530718 * (LiteTime.y / period + chance.y));
     float flare = pow(pulse, 16.0) * 0.6;
     // Its own faint light in the dark; brighter where torches or lava light the face.
     float blockLight = clamp(surface.lightCoord.x / 240.0, 0.0, 1.0);
     float own = (caught + flare) * mix(0.6, 1.0, blockLight);
-    vec3 halfway = normalize(LiteSunDirection.xyz + toEye);
+    vec3 halfway = normalize(LiteSunDirection.xyz + eye);
     float sun = pow(max(dot(microNormal, halfway), 0.0), shininess) * 1.5
         * lite_lp_sun_power() * surface.shadow * lite_lp_sky_openness(surface.lightCoord);
     return glow + colour * ((own + sun) * (crystal ? LITE_CRYSTAL_SPARKLE : LITE_ORE_SPARKLE));

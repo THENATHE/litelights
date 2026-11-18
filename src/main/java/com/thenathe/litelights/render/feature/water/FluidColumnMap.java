@@ -1,5 +1,6 @@
 package com.thenathe.litelights.render.feature.water;
 
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import com.thenathe.litelights.render.feature.vegetation.LeafColours;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.objects.Reference2BooleanOpenHashMap;
@@ -11,6 +12,7 @@ import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.BiomeTags;
@@ -101,6 +103,7 @@ final class FluidColumnMap implements AutoCloseable {
     private boolean recordGroundLeaves;
     /** Whether scans note where snow can gather on leaves and under trees, and their texels are written (Snowy leaves and ground). */
     private boolean recordSnowCover;
+    private int climateChanges = LocalClimate.changes();
     /** QA: chunks scanned and the nanoseconds the scans took, since the last reading. */
     private int scansDone;
     private long scanNanos;
@@ -139,6 +142,13 @@ final class FluidColumnMap implements AutoCloseable {
             // Columns along the window's edge lost the neighbours beyond it: their shore and canopy
             // data are worked out again, so nothing stale from before the move remains there.
             markWindowEdgeForUpload();
+        }
+        // Where it snows changes with the season: every canopy is noted again.
+        if (climateChanges != LocalClimate.changes()) {
+            climateChanges = LocalClimate.changes();
+            if (recordSnowCover) {
+                rescanEverything();
+            }
         }
         int scanned = scanSome(currentLevel);
         uploadChanged(target);
@@ -636,8 +646,8 @@ final class FluidColumnMap implements AutoCloseable {
         flags |= SnowCoverGrid.CANOPY;
         // The biome where the snow lands on the canopy, as vanilla's snow asks it (above the top block).
         probeCursor.setY(rainTop + 1);
-        Biome biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(rainTop + 1), QuartPos.fromBlock(z)).value();
-        if (biome.getPrecipitationAt(probeCursor, level.getSeaLevel()) == Biome.Precipitation.SNOW) {
+        Holder<Biome> biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(rainTop + 1), QuartPos.fromBlock(z));
+        if (LocalClimate.fallAt(level, biome, probeCursor) == Biome.Precipitation.SNOW) {
             flags |= SnowCoverGrid.SNOWS;
         }
         if (isConifer(canopy.getBlock())) {

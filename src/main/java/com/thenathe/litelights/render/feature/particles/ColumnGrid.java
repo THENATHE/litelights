@@ -1,8 +1,10 @@
 package com.thenathe.litelights.render.feature.particles;
 
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import java.util.Arrays;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.world.level.biome.Biome;
@@ -41,6 +43,7 @@ public final class ColumnGrid implements Simulation.Ground {
     private int originZ;
     private boolean hasOrigin;
     private int refreshRow;
+    private int climateChanges = LocalClimate.changes();
     private int[] heights;
     private boolean[] water;
     private byte[] precipitation;
@@ -108,6 +111,12 @@ public final class ColumnGrid implements Simulation.Ground {
             shift(wantedX - originX, wantedZ - originZ);
             originX = wantedX;
             originZ = wantedZ;
+        }
+        // A new sub-season, or a rain event reaching other climates: every cell is read again now
+        // rather than over the rolling refresh, so the rain turns to snow everywhere at once.
+        if (climateChanges != LocalClimate.changes()) {
+            climateChanges = LocalClimate.changes();
+            Arrays.fill(precipitation, UNREAD);
         }
         // Columns that came in with a shift are read at once; the rest four rows a tick.
         for (int row = 0; row < size; row++) {
@@ -197,14 +206,17 @@ public final class ColumnGrid implements Simulation.Ground {
         }
         cursor.set(blockX, height, blockZ);
         cellLight[cellIndex] = LightCoordsUtil.getLightCoords(level, cursor);
-        var biome = level.getBiome(cursor);
-        Biome.Precipitation fall = biome.value().getPrecipitationAt(cursor, level.getSeaLevel());
-        precipitation[cellIndex] = switch (fall) {
+        Holder<Biome> biome = level.getBiome(cursor);
+        precipitation[cellIndex] = precipitationByte(LocalClimate.fallAt(level, biome, cursor));
+        climate[cellIndex] = (byte) BiomeClimate.of(LocalClimate.seasonalBiome(level, biome, cursor)).ordinal();
+    }
+
+    static byte precipitationByte(Biome.Precipitation fall) {
+        return switch (fall) {
             case RAIN -> PRECIPITATION_RAIN;
             case SNOW -> PRECIPITATION_SNOW;
             case NONE -> PRECIPITATION_NONE;
         };
-        climate[cellIndex] = (byte) BiomeClimate.of(biome).ordinal();
     }
 
     private int columnIndex(double x, double z) {

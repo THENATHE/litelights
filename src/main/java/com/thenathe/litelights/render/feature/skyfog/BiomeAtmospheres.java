@@ -1,6 +1,7 @@
 package com.thenathe.litelights.render.feature.skyfog;
 
 import com.thenathe.litelights.render.LiteMath;
+import com.thenathe.litelights.render.feature.climate.SeasonalCopies;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -168,7 +169,9 @@ public final class BiomeAtmospheres {
     }
 
     private BiomeAtmosphere lookUp(Holder<Biome> biome, DimensionType dimension) {
-        BiomeAtmosphere vanilla = biome.unwrapKey().map(VANILLA::get).orElse(null);
+        // A seasonal copy (Almanac on the server only) looks like its original.
+        ResourceKey<Biome> id = SeasonalCopies.originalKey(biome);
+        BiomeAtmosphere vanilla = id == null ? null : VANILLA.get(id);
         if (vanilla != null) {
             return vanilla;
         }

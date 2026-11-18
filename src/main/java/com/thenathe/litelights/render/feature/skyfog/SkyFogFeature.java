@@ -17,6 +17,7 @@ import com.thenathe.litelights.render.frame.CelestialLight;
 import com.thenathe.litelights.render.frame.DimensionGate;
 import com.thenathe.litelights.render.frame.FrameClock;
 import com.thenathe.litelights.render.frame.FrameFlags;
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import com.thenathe.litelights.render.feature.farterrain.FarTerrain;
 import com.thenathe.litelights.render.frame.FrameState;
 import com.thenathe.litelights.render.frame.WeatherPreview;
@@ -305,8 +306,11 @@ public final class SkyFogFeature {
      */
     private float fillStorm(FrameState frame, RenderSettings settings, boolean weatherAllowed, float seconds) {
         boolean stormsHere = !WeatherCompat.stormAtmosphereHandledElsewhere() && weatherAllowed && !skyless;
-        storm.update(land, rain, thunder, stormsHere && settings.weather().stormAtmosphere(), stormsHere && settings.weather().sandstorms(),
-            exposure, FrameClock.gameSeconds(seconds));
+        // The sand blows with the world's rain, which a seasons mod may share out by climate.
+        float sandRain = level == null ? rain : WeatherPreview.rain(LocalClimate.worldRain(level));
+        float sandThunder = level == null ? thunder : WeatherPreview.thunder(LocalClimate.worldThunder(level));
+        storm.update(land, rain, thunder, sandRain, sandThunder, stormsHere && settings.weather().stormAtmosphere(),
+            stormsHere && settings.weather().sandstorms(), exposure, FrameClock.gameSeconds(seconds));
         float stormPart = storm.density(settings.weather().storms(), thunder);
         float rainPart = weatherAllowed && !skyless ? rainFog(settings.weather().storms()) : 0.0f;
         float density = stormPart;

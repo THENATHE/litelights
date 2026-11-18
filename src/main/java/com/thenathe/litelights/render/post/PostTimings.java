@@ -15,9 +15,11 @@ public final class PostTimings {
     public static final int OUTLINE = PostSlot.values().length;
     /** Section index of TAA's copy of the opaque depth, taken during the level. */
     public static final int TAA_OPAQUE_DEPTH = OUTLINE + 1;
+    /** Section index of the far-terrain pass (with its copy of the target), during the level. */
+    public static final int FAR_TERRAIN = TAA_OPAQUE_DEPTH + 1;
 
-    private static final int SECTIONS = TAA_OPAQUE_DEPTH + 1;
-    private static final String[] EXTRA_NAMES = {"ENCHANTMENT_OUTLINE", "TAA_OPAQUE_DEPTH"};
+    private static final int SECTIONS = FAR_TERRAIN + 1;
+    private static final String[] EXTRA_NAMES = {"ENCHANTMENT_OUTLINE", "TAA_OPAQUE_DEPTH", "FAR_TERRAIN"};
 
     private static final GpuTimer TIMER = new GpuTimer(SECTIONS);
     private static final GpuTimer.Results ADD = PostTimings::add;

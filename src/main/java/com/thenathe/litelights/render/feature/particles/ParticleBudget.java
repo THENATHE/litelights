@@ -13,11 +13,12 @@ import java.util.Arrays;
  * work and the sky events.
  *
  * <p>A category's share can be multiplied by a scale ({@link ParticleReach#capScales}). Weather's
- * always is: {@link #WEATHER_COVERAGE} times the weather density's particle multiplier, because
- * rain, snow and blowing sand fill the whole circle around the camera, so turning never shows thin
- * air; most of them are behind the camera at any moment and cost only the simulation (on the
- * worker) and a cull. Any category's share also grows with the area when its distance is set to
- * Fill. The total grows by exactly the scaled categories' extra room, so the others still fit.
+ * always is: {@link #WEATHER_COVERAGE} times {@link #WEATHER_HEADROOM} times the weather density's
+ * particle multiplier, because rain, snow and blowing sand fill the whole circle around the camera,
+ * so turning never shows thin air; most of them are behind the camera at any moment and cost only
+ * the simulation (on the worker) and a cull. Any category's share also grows with the area when
+ * its distance is set to Fill. The total grows by exactly the scaled categories' extra room, so the
+ * others still fit.
  */
 public final class ParticleBudget {
     public static final int FULL_CAP = 3072;
@@ -28,6 +29,16 @@ public final class ParticleBudget {
      * drops in view need about 2.7 times as many in all.
      */
     public static final float WEATHER_COVERAGE = 2.75f;
+    /**
+     * Room for the heaviest weather on top of that, so a blizzard or a thunderstorm gets every
+     * particle its rate asks for instead of flattening at the ceiling. Measured (snowmore): a
+     * blizzard keeps 1.9 to 2.1 times the coverage's room alive and a thunderstorm 0.9 to 1.2
+     * times, much the same at every density and distance, since rates and room both follow them.
+     * Rain and snow stop at 82 % of the room (the rest is kept for mist and sand), so 4 leaves the
+     * heaviest weather measured half as much again to spare, for flakes that fall further than in
+     * the QA's views (from high ground or in flight).
+     */
+    public static final float WEATHER_HEADROOM = 4.0f;
     /**
      * Fireflies' spawn rate at Sparse. Fireflies follow the amount less steeply than everything
      * else (Sparse 40 %), so Full doesn't swarm and Sparse still shows a few.

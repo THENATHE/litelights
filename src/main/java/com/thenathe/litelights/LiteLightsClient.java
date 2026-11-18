@@ -5,6 +5,7 @@ import com.thenathe.litelights.overlays.OverlaysModule;
 import com.thenathe.litelights.render.LiteLightsRenderer;
 import com.thenathe.litelights.render.feature.lightpost.LightPost;
 import com.thenathe.litelights.render.feature.particles.ParticleSystem;
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import com.thenathe.litelights.render.feature.farterrain.FarTerrain;
 import com.thenathe.litelights.render.feature.skyfog.SkyFogFeature;
 import com.thenathe.litelights.render.feature.vegetation.VegetationModule;
@@ -41,6 +42,7 @@ public final class LiteLightsClient implements ClientModInitializer {
         LOG.info("Starting");
         // The order the streams' own entrypoints used to run in, so listeners keep their order.
         LiteLightsRenderer.get().registerEvents();
+        LocalClimate.register();
         OverlaysModule.initialize();
         ParticleSystem.get().register();
         VegetationModule.initialize();

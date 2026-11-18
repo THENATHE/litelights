@@ -1,9 +1,13 @@
 package com.thenathe.litelights.render.feature.weather;
 
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBiomeTags;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
 
@@ -34,6 +38,7 @@ public final class AuroraColdness {
 
     private final Map<Biome, Float> byBiome = new IdentityHashMap<>();
     private float eased = -1.0f;
+    private int climateChanges;
 
     /** 1 over a snowy biome (base temperature 0.15 or below), 0 from 0.35 up, between in between. */
     public static float coldness(float temperature) {
@@ -58,9 +63,18 @@ public final class AuroraColdness {
         return sum / (side * side);
     }
 
-    /** A biome's coldness, worked out once per biome while in this world. */
-    public float of(Holder<Biome> biome) {
-        return byBiome.computeIfAbsent(biome.value(), value -> coldness(value.getBaseTemperature(), spruceForest(biome)));
+    /**
+     * The coldness of the land at a position, worked out once per biome while in this world. With
+     * Almanac it is the season's: its sub-season's copy of the biome has the season's temperature.
+     */
+    public float of(ClientLevel level, BlockPos pos) {
+        if (climateChanges != LocalClimate.changes()) {
+            climateChanges = LocalClimate.changes();
+            byBiome.clear();
+        }
+        Holder<Biome> biome = level.getBiome(pos);
+        Holder<Biome> seasonal = LocalClimate.seasonalBiome(level, biome, pos);
+        return byBiome.computeIfAbsent(seasonal.value(), value -> coldness(value.getBaseTemperature(), spruceForest(biome)));
     }
 
     /** One tick's step toward {@code target}; the first tick after a reset takes it at once. */
@@ -75,9 +89,11 @@ public final class AuroraColdness {
         byBiome.clear();
     }
 
+    /** By id for vanilla's (a seasonal copy's original's), by tag for other mods' (copies carry their original's tags). */
     private static boolean spruceForest(Holder<Biome> biome) {
-        return biome.is(Biomes.DAPPLED_FOREST) || biome.is(Biomes.TAIGA)
-            || biome.is(Biomes.OLD_GROWTH_PINE_TAIGA) || biome.is(Biomes.OLD_GROWTH_SPRUCE_TAIGA)
+        ResourceKey<Biome> id = LocalClimate.idOf(biome);
+        return Biomes.DAPPLED_FOREST.equals(id) || Biomes.TAIGA.equals(id)
+            || Biomes.OLD_GROWTH_PINE_TAIGA.equals(id) || Biomes.OLD_GROWTH_SPRUCE_TAIGA.equals(id)
             || biome.is(ConventionalBiomeTags.IS_CONIFEROUS_TREE);
     }
 }

@@ -7,6 +7,7 @@ import com.thenathe.litelights.render.RenderSettings;
 import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import com.thenathe.litelights.render.frame.DimensionGate;
 import com.thenathe.litelights.render.frame.FrameClock;
 import com.thenathe.litelights.render.frame.FrameState;
@@ -26,8 +27,8 @@ import org.jspecify.annotations.Nullable;
  * rain tops the water stream keeps under its column map, so this asks the water stream to keep
  * that map while there are puddles or rain to make them.
  *
- * <p>The wetness is the camera's: rain where the camera's biome has rain, nothing where it snows
- * or never rains. It keeps running with the row off, so switching it on shows the right puddles.
+ * <p>The wetness is the camera's: rain where it rains at the camera (with a seasons mod, as the
+ * season has it), nothing where it snows or never rains. It keeps running with the row off, so switching it on shows the right puddles.
  * While the settings screen previews rain, the puddles show at once as a long rain would leave
  * them; the world's own wetness carries on underneath.
  */
@@ -103,7 +104,7 @@ public final class Puddles {
         }
         cursor.set(frame.cameraBlockX, frame.cameraBlockY, frame.cameraBlockZ);
         Biome biome = level.getBiome(cursor).value();
-        PuddleWetness.Fall fall = switch (biome.getPrecipitationAt(cursor, level.getSeaLevel())) {
+        PuddleWetness.Fall fall = switch (LocalClimate.fallAt(level, cursor)) {
             case RAIN -> PuddleWetness.Fall.RAIN;
             case SNOW -> PuddleWetness.Fall.SNOW;
             case NONE -> PuddleWetness.Fall.NONE;

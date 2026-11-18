@@ -53,7 +53,8 @@ public final class RenderSettingsFeed {
                 LiteLightsOptions.MIST_BANKS.on(),
                 LiteLightsOptions.FAR_TERRAIN.on(),
                 LiteLightsOptions.BIOME_HAZE_TINT.value(),
-                LiteLightsOptions.SUN_GLOW.value()),
+                LiteLightsOptions.SUN_GLOW.value(),
+                LiteLightsOptions.FAR_SNOW.on()),
             new RenderSettings.Lighting(
                 LiteLightsOptions.HALO.on(),
                 LiteLightsOptions.HALO_STRENGTH.value(),
@@ -75,7 +76,8 @@ public final class RenderSettingsFeed {
                 LiteLightsOptions.GLINT_GROUND_INTENSITY.value(),
                 LiteLightsOptions.NIGHT_TONE.on(),
                 LiteLightsOptions.GLINT_ORES.on(),
-                LiteLightsOptions.HEAT_SHIMMER.on()),
+                LiteLightsOptions.HEAT_SHIMMER.on(),
+                RenderSettings.OreSparkle.valueOf(LiteLightsOptions.ORE_SPARKLE.get().name())),
             new RenderSettings.ColorGrading(
                 gradeSchedule(),
                 grade(GradeTime.ALL_DAY),

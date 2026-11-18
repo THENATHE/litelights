@@ -79,6 +79,10 @@ public final class SodiumOptions implements ConfigEntryPoint {
                 first = false;
             }
             for (Option<?> option : LiteLightsConfig.registry().onPage(info.id())) {
+                if (option == LiteLightsOptions.FAR_SNOW && !option.shown()) {
+                    // Only with Almanac on the client, as on the LiteLights screen.
+                    continue;
+                }
                 OptionBuilder built = buildOption(builder, option);
                 if (built == null) {
                     continue;

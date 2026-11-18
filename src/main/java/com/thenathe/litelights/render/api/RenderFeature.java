@@ -43,6 +43,8 @@ public enum RenderFeature {
     FAR_SHADOWS("far_shadows"),
     FAR_WATER("far_water"),
     FAR_WATER_DETAILS("far_water_details"),
+    /** Seasonal snow on far terrain, with Almanac (farsnow). */
+    FAR_SNOW("far_snow"),
     WAKES("water.wakes"),
     HEAT_SHIMMER("heat_shimmer");
 

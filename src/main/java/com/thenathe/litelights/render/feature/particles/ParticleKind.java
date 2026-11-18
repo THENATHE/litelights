@@ -61,10 +61,12 @@ public final class ParticleKind {
     public static final ParticleKind RAIN_RIPPLE = builder("rain_ripple", ParticleCategory.WEATHER)
         .sprites("ripple_0", "ripple_1", "ripple_2", "ripple_3").frames(Frames.BY_AGE).shape(Shape.FLAT).range(28).fixedRange().build();
     // Snow is soft so the air between covers distant flakes as it covers the land: in a blizzard's
-    // bright fog, flakes under vanilla's particle shader stood out as dark violet dots.
+    // bright fog, flakes under vanilla's particle shader stood out as dark violet dots. A flake
+    // drifting past within a block or so of the eye would fill part of the view as a big pale square,
+    // so it fades out from two blocks to one (snowmore).
     public static final ParticleKind SNOW = builder("snow", ParticleCategory.WEATHER)
         .sprites("snow_v_0", "snow_v_1", "snow_v_2", "snow_v_3").hdSprites("snow_hd_0", "snow_hd_1", "snow_hd_2", "snow_hd_3")
-        .layer(Layer.SOFT).gravity(0.004f).drag(0.95f).wind(0.08f).wander(0.012f, 0.13f).ground(Ground.SETTLE).fade(6, 0.15f).range(36).build();
+        .layer(Layer.SOFT).nearFade(2.0f).gravity(0.004f).drag(0.95f).wind(0.08f).wander(0.012f, 0.13f).ground(Ground.SETTLE).fade(6, 0.15f).range(36).build();
     public static final ParticleKind MIST = builder("mist", ParticleCategory.WEATHER).sprites("haze_0", "haze_1", "haze_2")
         .layer(Layer.SOFT).haze(Haze.MIST).nearFade(7.0f).drag(0.96f).wind(0.02f).wander(0.002f, 0.03f).fade(40, 0.35f).growth(1.3f).range(48).fixedRange().build();
     public static final ParticleKind SAND = builder("sand", ParticleCategory.WEATHER)

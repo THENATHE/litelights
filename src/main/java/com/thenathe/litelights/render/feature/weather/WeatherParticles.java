@@ -45,10 +45,18 @@ public final class WeatherParticles {
     // grains were held well under their rates by the old cap, so theirs were measured until the
     // view at Light showed as many as before (weather-shots QA; DECISIONS, fire). Grains also live
     // their whole life now, crossing the area at the storm's speed, which is why theirs is under 1.
+    // Snow then fell half as thick again (snowmore: 0.9 before).
     private static final float RAIN_COVERAGE = 2.7f;
-    private static final float SNOW_COVERAGE = 0.9f;
+    private static final float SNOW_COVERAGE = 1.35f;
     private static final float GRAIN_COVERAGE = 0.4f;
     private static final float CLOUD_COVERAGE = 2.2f;
+    /**
+     * How many more flakes a blizzard asks for than calm snow (1 + this times as many). Was 3 before
+     * snowmore, but the weather cap held blizzards to well under half of that; with the cap's room
+     * grown, 1.9 with calm snow's 1.5 asks a little more than before (1.09 times) and shows about
+     * 1.7 times the flakes in view.
+     */
+    private static final float BLIZZARD_SNOW = 1.9f;
     /** Share of the weather budget rain and snow leave free for mist and sand. */
     private static final float RESERVE_SHARE = 0.18f;
 
@@ -130,7 +138,7 @@ public final class WeatherParticles {
         // Enhanced adds a lighter layer on top of vanilla's sheets, filling out in thunder.
         float share = custom ? 1.0f : 0.25f + 0.35f * s.thunder;
         float rainRate = 56.0f * RAIN_COVERAGE * s.rain * (1.0f + 0.6f * s.thunder) * share * scale;
-        float snowRate = 15.0f * SNOW_COVERAGE * s.rain * (1.0f + 3.0f * s.storm.blizzard()) * share * scale;
+        float snowRate = 15.0f * SNOW_COVERAGE * s.rain * (1.0f + BLIZZARD_SNOW * s.storm.blizzard()) * share * scale;
         RandomSource random = s.random;
         int attempts = ParticleBudget.countFromRate(Math.max(rainRate, snowRate), random.nextFloat());
         float snowChance = snowRate / Math.max(rainRate, 0.001f);
@@ -302,7 +310,7 @@ public final class WeatherParticles {
                 continue;
             }
             BiomeClimate climate = grid.climateAt(spot[0], spot[2]);
-            if (!climate.isSandy() || climate == BiomeClimate.DESERT && !keeps(calmDesert, random)) {
+            if (!climate.isSandy() || rainingOn(s, grid, spot[0], spot[2]) || climate == BiomeClimate.DESERT && !keeps(calmDesert, random)) {
                 continue;
             }
             float height = random.nextFloat();
@@ -313,7 +321,7 @@ public final class WeatherParticles {
         // Low, thin drifts of dust skim the ground.
         if (HazeField.wanted(s.settings)) {
             BiomeClimate here = grid.climateAt(s.cameraX, s.cameraZ);
-            if (here.isSandy()) {
+            if (here.isSandy() && !rainingOn(s, grid, s.cameraX, s.cameraZ)) {
                 float share = everyday * (here == BiomeClimate.DESERT ? calmDesert : 1.0f);
                 float extinction = HazeField.extinction(0.8f * share * thicknessScale, 80, 0.5f, 1.1f * 1.3f, HazeField.ring(6.0f, RADIUS), 1.6f)
                     * skyExposure(s);
@@ -325,7 +333,7 @@ public final class WeatherParticles {
         int drifts = ParticleBudget.countFromRate(0.8f * everyday * thicknessScale, random.nextFloat());
         for (int i = 0; i < drifts && queue.room(ParticleCategory.WEATHER) > 0; i++) {
             double[] spot = groundSpot(s, grid, 6.0f, RADIUS);
-            if (spot != null && grid.climateAt(spot[0], spot[2]).isSandy()) {
+            if (spot != null && grid.climateAt(spot[0], spot[2]).isSandy() && !rainingOn(s, grid, spot[0], spot[2])) {
                 BiomeClimate climate = grid.climateAt(spot[0], spot[2]);
                 if (climate == BiomeClimate.DESERT && !keeps(calmDesert, random)) {
                     continue;
@@ -336,6 +344,14 @@ public final class WeatherParticles {
                     0.8f + random.nextFloat() * 0.6f, 60 + random.nextInt(40), color, grid.lightAt(spot[0], spot[2]), random.nextInt());
             }
         }
+    }
+
+    /**
+     * Wet sand doesn't drift: where the season brings a desert rain (never without a seasons mod,
+     * as sandy biomes don't rain), its sand stays down while it rains.
+     */
+    private static boolean rainingOn(Surroundings s, ColumnGrid grid, double x, double z) {
+        return s.rain > 0.2f && grid.precipitationAt(x, z) != ColumnGrid.PRECIPITATION_NONE;
     }
 
     /**
@@ -352,7 +368,7 @@ public final class WeatherParticles {
         RandomSource random = s.random;
         // Clouds of dust roll through, nearer and thicker the stronger the storm. They go first:
         // grains would fill the budget on their own. Cloud particles Off leaves them out.
-        float cloudsKept = s.settings.weather().storms().sandClouds(s.thunder);
+        float cloudsKept = s.settings.weather().storms().sandClouds(s.storm.sandThunder());
         float cloudRate = cloudsKept <= 0.0f ? 0.0f : 4.0f * CLOUD_COVERAGE * strength * thicknessScale * cloudsKept;
         boolean field = HazeField.wanted(s.settings);
         if (field) {

@@ -153,6 +153,23 @@ class LiteLightsOptionsTest {
     }
 
     @Test
+    void oreSparkleMotionGoesWithTheOreGlintAndStartsGentle() {
+        assertEquals("lighting.ore_sparkle", LiteLightsOptions.ORE_SPARKLE.id());
+        assertEquals(List.of(LiteLightsOptions.OreSparkle.STILL, LiteLightsOptions.OreSparkle.GENTLE),
+            LiteLightsOptions.ORE_SPARKLE.choices());
+        assertEquals(LiteLightsOptions.OreSparkle.GENTLE, LiteLightsOptions.ORE_SPARKLE.defaultValue());
+        assertEquals(Pages.LIGHTING, LiteLightsOptions.ORE_SPARKLE.page());
+        assertEquals(LiteLightsOptions.GLINT_ORES, LiteLightsOptions.ORE_SPARKLE.needs());
+        assertTrue(LiteLightsOptions.ORE_SPARKLE.active());
+        LiteLightsOptions.GLINT_ORES.set(false);
+        assertFalse(LiteLightsOptions.ORE_SPARKLE.active());
+        LiteLightsOptions.GLINT_ORES.reset();
+        // Its row sits right under Glint on ores and crystals.
+        List<Option<?>> lighting = LiteLightsConfig.registry().all().stream().filter(option -> Pages.LIGHTING.equals(option.page())).toList();
+        assertEquals(lighting.indexOf(LiteLightsOptions.GLINT_ORES) + 1, lighting.indexOf(LiteLightsOptions.ORE_SPARKLE));
+    }
+
+    @Test
     void glassWeatherAndRainDetailsDontDependOnTheRainMode() {
         LiteLightsOptions.PRECIPITATION.set(LiteLightsOptions.PrecipitationLook.VANILLA);
         assertTrue(LiteLightsOptions.GLASS_WEATHER.active());

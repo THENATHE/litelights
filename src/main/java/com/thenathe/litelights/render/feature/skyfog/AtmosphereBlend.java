@@ -37,7 +37,13 @@ public final class AtmosphereBlend {
         totalWeight = 0.0f;
     }
 
-    public void add(float weight, BiomeAtmosphere biome, boolean snows, boolean precipitates) {
+    /**
+     * @param snows        what falls here is snow
+     * @param precipitates anything falls here at all
+     * @param dryHeat      the season leaves the place dry and hot, so its sand can blow (always so
+     *                     without a seasons mod; never in a desert the season brings rain to)
+     */
+    public void add(float weight, BiomeAtmosphere biome, boolean snows, boolean precipitates, boolean dryHeat) {
         hazeRed += weight * biome.hazeRed();
         hazeGreen += weight * biome.hazeGreen();
         hazeBlue += weight * biome.hazeBlue();
@@ -46,8 +52,10 @@ public final class AtmosphereBlend {
         skyRed += weight * biome.skyRed();
         skyGreen += weight * biome.skyGreen();
         skyBlue += weight * biome.skyBlue();
-        sandy += weight * biome.sandy();
-        desert += weight * biome.desert();
+        if (dryHeat) {
+            sandy += weight * biome.sandy();
+            desert += weight * biome.desert();
+        }
         swampy += weight * biome.swampy();
         windy += weight * biome.windy();
         snowy += snows ? weight : 0.0f;

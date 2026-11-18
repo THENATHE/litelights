@@ -43,7 +43,8 @@
         "java": ">=25"
     },
     "breaks": {
-        "iris": "*"
+        "iris": "*",
+        "almanac": "<0.1.2"
     },
     "suggests": {
         "modmenu": "*",

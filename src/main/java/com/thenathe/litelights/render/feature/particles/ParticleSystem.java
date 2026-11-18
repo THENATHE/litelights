@@ -12,6 +12,7 @@ import com.thenathe.litelights.render.RenderSettingsAccess;
 import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import com.thenathe.litelights.render.feature.weather.AuroraColdness;
 import com.thenathe.litelights.render.feature.weather.SkyEvents;
 import com.thenathe.litelights.render.feature.weather.WeatherCompat;
@@ -351,13 +352,13 @@ public final class ParticleSystem {
         float visibility = darkness * (1.0f - rain);
         int cameraY = (int) Math.floor(surroundings.cameraY);
         float coldness = auroraColdness.ease(AuroraColdness.around((int) Math.floor(surroundings.cameraX), (int) Math.floor(surroundings.cameraZ),
-            (x, z) -> auroraColdness.of(level.getBiome(surroundings.cursor.set(x, cameraY, z)))));
+            (x, z) -> auroraColdness.of(level, surroundings.cursor.set(x, cameraY, z))));
         boolean skyAllowed = surroundings.overworldSky && surroundings.weatherAllowed && !surroundings.underground
             && RenderFeatureStatus.mayRun(RenderFeature.SKY_EVENTS);
         sky.update(settings.weather(), skyAllowed, surroundings.seed, surroundings.clockTime, surroundings.gameTime, coldness, visibility);
         // The rainbows follow the world's rain, not a previewed one, where the camera is.
         BlockPos camera = surroundings.cursor.set(surroundings.cameraX, surroundings.cameraY, surroundings.cameraZ);
-        boolean rainsHere = level.getBiome(camera).value().getPrecipitationAt(camera, level.getSeaLevel()) == Biome.Precipitation.RAIN;
+        boolean rainsHere = LocalClimate.fallAt(level, camera) == Biome.Precipitation.RAIN;
         sky.updateRainbow(settings.weather(), skyAllowed, surroundings.gameTime, surroundings.clockTime, level.getRainLevel(1.0f),
             level.getThunderLevel(1.0f), rainsHere);
         if (sky.burstStartedAt(surroundings.gameTime - FIREWORK_SOUND_DELAY, burst)) {

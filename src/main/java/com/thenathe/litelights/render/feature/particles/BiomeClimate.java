@@ -1,7 +1,9 @@
 package com.thenathe.litelights.render.feature.particles;
 
+import com.thenathe.litelights.render.feature.climate.SeasonalCopies;
 import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBiomeTags;
 import net.minecraft.core.Holder;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
@@ -12,6 +14,10 @@ import org.jspecify.annotations.Nullable;
  * key, modded ones first by the Conventional tags ({@code c:}) in the same order as sky-fog's
  * {@link com.thenathe.litelights.render.feature.skyfog.BiomeAtmospheres} picks a family, so the particles
  * and the fog agree on a modded biome, then by vanilla's tags and temperature.
+ *
+ * <p>Almanac's seasonal copies are matched by their original's key and carry its tags, while their
+ * temperature is the season's: plains in winter count as snowy, as callers pass the copy that holds
+ * now ({@link com.thenathe.litelights.render.feature.climate.LocalClimate#seasonalBiome}).
  */
 public enum BiomeClimate {
     TEMPERATE,
@@ -42,31 +48,32 @@ public enum BiomeClimate {
     }
 
     public static BiomeClimate of(Holder<Biome> biome) {
-        if (biome.is(Biomes.DESERT)) {
+        ResourceKey<Biome> id = SeasonalCopies.originalKey(biome);
+        if (is(id, Biomes.DESERT)) {
             return DESERT;
         }
-        if (biome.is(Biomes.PALE_GARDEN)) {
+        if (is(id, Biomes.PALE_GARDEN)) {
             return PALE_GARDEN;
         }
-        if (biome.is(Biomes.SWAMP) || biome.is(Biomes.MANGROVE_SWAMP)) {
+        if (is(id, Biomes.SWAMP) || is(id, Biomes.MANGROVE_SWAMP)) {
             return SWAMP;
         }
-        if (biome.is(Biomes.LUSH_CAVES)) {
+        if (is(id, Biomes.LUSH_CAVES)) {
             return LUSH_CAVES;
         }
-        if (biome.is(Biomes.MUSHROOM_FIELDS)) {
+        if (is(id, Biomes.MUSHROOM_FIELDS)) {
             return MUSHROOM;
         }
-        if (biome.is(Biomes.BASALT_DELTAS)) {
+        if (is(id, Biomes.BASALT_DELTAS)) {
             return BASALT_DELTAS;
         }
-        if (biome.is(Biomes.CRIMSON_FOREST)) {
+        if (is(id, Biomes.CRIMSON_FOREST)) {
             return CRIMSON_FOREST;
         }
-        if (biome.is(Biomes.WARPED_FOREST)) {
+        if (is(id, Biomes.WARPED_FOREST)) {
             return WARPED_FOREST;
         }
-        if (biome.is(Biomes.SOUL_SAND_VALLEY)) {
+        if (is(id, Biomes.SOUL_SAND_VALLEY)) {
             return SOUL_SAND_VALLEY;
         }
         if (biome.is(BiomeTags.IS_NETHER)) {
@@ -75,7 +82,7 @@ public enum BiomeClimate {
         if (biome.is(BiomeTags.IS_END)) {
             return END;
         }
-        if (!isVanilla(biome)) {
+        if (!isVanilla(id)) {
             BiomeClimate tagged = byConventionalTags(biome);
             if (tagged != null) {
                 return tagged;
@@ -85,18 +92,18 @@ public enum BiomeClimate {
             return BADLANDS;
         }
         if (biome.is(BiomeTags.IS_SAVANNA)) {
-            return biome.is(Biomes.WINDSWEPT_SAVANNA) ? WINDY : SAVANNA;
+            return is(id, Biomes.WINDSWEPT_SAVANNA) ? WINDY : SAVANNA;
         }
         float temperature = biome.value().getBaseTemperature();
-        if (biome.is(Biomes.WINDSWEPT_HILLS) || biome.is(Biomes.WINDSWEPT_GRAVELLY_HILLS) || biome.is(Biomes.WINDSWEPT_FOREST)
-            || biome.is(Biomes.STONY_PEAKS) || biome.is(Biomes.JAGGED_PEAKS) || biome.is(Biomes.FROZEN_PEAKS)) {
+        if (is(id, Biomes.WINDSWEPT_HILLS) || is(id, Biomes.WINDSWEPT_GRAVELLY_HILLS) || is(id, Biomes.WINDSWEPT_FOREST)
+            || is(id, Biomes.STONY_PEAKS) || is(id, Biomes.JAGGED_PEAKS) || is(id, Biomes.FROZEN_PEAKS)) {
             return WINDY;
         }
         if (temperature <= 0.15f) {
             return SNOWY;
         }
         // Meadows and cherry groves are tagged as mountains but are sheltered, flowery places.
-        if (biome.is(BiomeTags.IS_MOUNTAIN) && !biome.is(Biomes.MEADOW) && !biome.is(Biomes.CHERRY_GROVE)) {
+        if (biome.is(BiomeTags.IS_MOUNTAIN) && !is(id, Biomes.MEADOW) && !is(id, Biomes.CHERRY_GROVE)) {
             return WINDY;
         }
         if (biome.is(BiomeTags.IS_OCEAN) || biome.is(BiomeTags.IS_RIVER) || biome.is(BiomeTags.IS_BEACH)) {
@@ -105,7 +112,7 @@ public enum BiomeClimate {
         if (biome.is(BiomeTags.IS_JUNGLE)) {
             return JUNGLE;
         }
-        if (biome.is(BiomeTags.IS_FOREST) || biome.is(BiomeTags.IS_TAIGA) || biome.is(Biomes.DARK_FOREST)) {
+        if (biome.is(BiomeTags.IS_FOREST) || biome.is(BiomeTags.IS_TAIGA) || is(id, Biomes.DARK_FOREST)) {
             return FOREST;
         }
         // A modded biome that is hot and dry but not tagged: treat it as a desert.
@@ -115,8 +122,13 @@ public enum BiomeClimate {
         return TEMPERATE;
     }
 
-    private static boolean isVanilla(Holder<Biome> biome) {
-        return biome.unwrapKey().map(key -> key.identifier().getNamespace().equals("minecraft")).orElse(false);
+    /** By id, so a seasonal copy counts as its original. */
+    private static boolean is(@Nullable ResourceKey<Biome> id, ResourceKey<Biome> wanted) {
+        return wanted.equals(id);
+    }
+
+    private static boolean isVanilla(@Nullable ResourceKey<Biome> id) {
+        return id != null && id.identifier().getNamespace().equals("minecraft");
     }
 
     private static @Nullable BiomeClimate byConventionalTags(Holder<Biome> biome) {

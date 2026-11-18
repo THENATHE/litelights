@@ -4,6 +4,7 @@ import com.thenathe.litelights.config.DimensionOptions.Aspect;
 import com.thenathe.litelights.mixin.particles.BiomeManagerAccessor;
 import com.thenathe.litelights.render.LiteLightsRenderer;
 import com.thenathe.litelights.render.RenderSettings;
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import com.thenathe.litelights.render.feature.skyfog.StormAtmosphere;
 import com.thenathe.litelights.render.feature.weather.Wind;
 import com.thenathe.litelights.render.frame.DimensionGate;
@@ -108,7 +109,7 @@ public final class Surroundings {
             : FrameFlags.DIMENSION_MODDED;
         effectsAllowed = DimensionGate.allows(Aspect.EFFECTS);
         weatherAllowed = DimensionGate.allows(Aspect.WEATHER);
-        climate = BiomeClimate.of(currentLevel.getBiome(cursor));
+        climate = BiomeClimate.of(LocalClimate.seasonalBiome(currentLevel, currentLevel.getBiome(cursor), cursor));
         daylight = LiteLightsRenderer.get().frame().sunColor.w;
         // The settings screen's weather preview, if any, in place of the world's weather.
         rain = WeatherPreview.rain(currentLevel.getRainLevel(1.0f));

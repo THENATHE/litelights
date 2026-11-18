@@ -8,6 +8,13 @@ repositories {
     mavenCentral()
     maven { url = 'https://maven.terraformersmc.com/releases/' }
     maven { url = 'https://api.modrinth.com/maven' }
+    // Almanac is on no Maven, so its jar comes straight from its GitHub release.
+    ivy {
+        url = 'https://github.com/THENATHE/almanac/releases/download/'
+        patternLayout { artifact 'v[revision]/[module]-[revision].[ext]' }
+        metadataSources { artifact() }
+        content { includeModule('com.thenathe', 'almanac') }
+    }
 }
 
 dependencies {
@@ -31,6 +38,12 @@ dependencies {
     // 7.2.0); the hook is only loaded when Distant Horizons is installed and turns itself off with
     // a reason on the Far terrain row if the API has changed.
     compileOnly 'maven.modrinth:distanthorizons:TGgEbP9A'
+    // Optional at runtime: Almanac's public API (com.thenathe.almanac.api, a stable contract from
+    // 0.1.1), so the weather follows its seasons and far terrain its snow (0.1.2's far-terrain
+    // lookups, 0.1.3's precipitationOf and farSnowChangedTick, used only when 0.1.3 or later is
+    // installed). Taken from Almanac's public GitHub release (the ivy repository above). Only
+    // AlmanacClimate and AlmanacFarSnow name it, and they are loaded only when Almanac is installed.
+    compileOnly 'com.thenathe:almanac:0.1.3+26.3'
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

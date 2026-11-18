@@ -54,7 +54,7 @@ class StormFogTest {
     private static StormAtmosphere settled(BiomeAtmosphere biome, boolean snowy, float rain, float thunder) {
         AtmosphereBlend land = new AtmosphereBlend();
         land.clearForSampling();
-        land.add(1.0f, biome, snowy, snowy);
+        land.add(1.0f, biome, snowy, snowy, true);
         land.finishSampling();
         StormAtmosphere storm = new StormAtmosphere();
         for (int i = 0; i < 600; i++) {

@@ -16,6 +16,7 @@ import com.thenathe.litelights.config.DimensionOptions.Aspect;
 import com.thenathe.litelights.render.frame.FrameFlags;
 import com.thenathe.litelights.render.frame.FrameState;
 import com.thenathe.litelights.render.pipeline.PipelineOwners;
+import com.thenathe.litelights.render.post.PostTimings;
 import java.util.Objects;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.loader.api.FabricLoader;
@@ -48,6 +49,8 @@ import org.jspecify.annotations.Nullable;
  *   Distant Horizons copies it into the main target ({@link DistantHorizonsHook}).</li>
  *   <li><b>Far shadows</b> ({@link FarShadows}) cover both, and LiteLights' own land past the
  *   shadow distance.</li>
+ *   <li><b>Seasonal snow</b> ({@link FarSnow}), with Almanac on the client: the far mods' captured
+ *   snow brought in line with the season.</li>
  * </ul>
  * With no far-terrain mod drawing and far shadows off (or nothing past the shadow distance),
  * nothing here runs and nothing is allocated.
@@ -75,6 +78,7 @@ public final class FarTerrain {
     private final FarShadows shadows = new FarShadows();
     private final FarValues values = new FarValues();
     private final FarWaterCapture waterCapture = new FarWaterCapture();
+    private final FarSnow snow = FarSnow.create();
     private @Nullable DistantHorizonsHook distantHorizons;
     private @Nullable String distantHorizonsProblem;
 
@@ -86,6 +90,8 @@ public final class FarTerrain {
     private long distantHorizonsPasses;
     /** Of those, the ones drawn with the Experimental far water extras' shader variant. */
     private long waterDetailPasses;
+    /** And the ones drawn with far snow's variant. */
+    private long snowPasses;
 
     private FarTerrain() {
     }
@@ -99,6 +105,8 @@ public final class FarTerrain {
         PipelineOwners.claim(RenderFeature.FAR_TERRAIN, FarTerrainPass.MAIN, FarTerrainPass.DISTANT_HORIZONS);
         PipelineOwners.claim(RenderFeature.FAR_WATER_DETAILS, FarTerrainPass.MAIN_WATER_DETAILS, FarTerrainPass.DISTANT_HORIZONS_WATER_DETAILS);
         PipelineOwners.claim(RenderFeature.FAR_SHADOWS, FarShadows.SCREEN, FarShadows.SCREEN_DH, FarShadows.ADVANCED, FarShadows.ADVANCED_DH);
+        PipelineOwners.claim(RenderFeature.FAR_SNOW, FarTerrainPass.MAIN_SNOW, FarTerrainPass.DISTANT_HORIZONS_SNOW,
+            FarTerrainPass.MAIN_WATER_DETAILS_SNOW, FarTerrainPass.DISTANT_HORIZONS_WATER_DETAILS_SNOW);
         LiteRenderEvents.FRAME_UPDATE.register(INSTANCE::onFrameUpdate);
         ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> INSTANCE.shadows.heightfield().chunkChanged(chunk.getPos().x(), chunk.getPos().z()));
         ClientChunkEvents.CHUNK_UNLOAD.register((level, chunk) -> INSTANCE.shadows.heightfield().chunkChanged(chunk.getPos().x(), chunk.getPos().z()));
@@ -125,6 +133,10 @@ public final class FarTerrain {
         } else if (!VOXY_LOADED && !DISTANT_HORIZONS_LOADED) {
             row.markUnavailable("Needs Voxy or Distant Horizons");
             Feature.of("far_water_details").markUnavailable("Needs Voxy or Distant Horizons");
+            Feature.of("far_snow").markUnavailable("Needs Voxy or Distant Horizons");
+        }
+        if (snow.problem() != null) {
+            Feature.of("far_snow").markUnavailable(snow.problem());
         }
     }
 
@@ -330,8 +342,11 @@ public final class FarTerrain {
         if (!farTerrain && !values.farShadows) {
             return;
         }
+        FarSnow snowThisFrame = farTerrain && !skyless && level != null && prepareSnow(level) ? snow : null;
         try {
-            pass.draw(colorTexture, colorView, depthView, values, farShadow, waterA, waterB, distantHorizons);
+            PostTimings.begin(PostTimings.FAR_TERRAIN);
+            pass.draw(colorTexture, colorView, depthView, values, farShadow, waterA, waterB, distantHorizons, snowThisFrame);
+            PostTimings.end(PostTimings.FAR_TERRAIN);
             if (distantHorizons) {
                 distantHorizonsPasses++;
             } else {
@@ -344,10 +359,32 @@ public final class FarTerrain {
                 waterDetailPasses++;
                 RenderFeatureStatus.succeeded(RenderFeature.FAR_WATER_DETAILS);
             }
+            if (snowThisFrame != null) {
+                snowPasses++;
+                RenderFeatureStatus.succeeded(RenderFeature.FAR_SNOW);
+            }
         } catch (RuntimeException error) {
-            RenderFeature failing = values.anyWaterDetails() ? RenderFeature.FAR_WATER_DETAILS
+            RenderFeature failing = snowThisFrame != null ? RenderFeature.FAR_SNOW : values.anyWaterDetails() ? RenderFeature.FAR_WATER_DETAILS
                 : farTerrain ? RenderFeature.FAR_TERRAIN : RenderFeature.FAR_SHADOWS;
             RenderFeatureStatus.failed(failing, error);
+        }
+    }
+
+    /**
+     * Brings far snow up to date for this frame, if it is on and allowed: Almanac on the client,
+     * the switch on, the overworld's far terrain. Returns whether its variant should draw.
+     */
+    private boolean prepareSnow(ClientLevel level) {
+        if (!snow.available() || !settings.fog().farSnow() || !RenderFeatureStatus.mayRun(RenderFeature.FAR_SNOW)) {
+            return false;
+        }
+        try {
+            var levelState = Minecraft.getInstance().gameRenderer.gameRenderState().levelRenderState;
+            Vec3 camera = levelState.cameraRenderState.pos;
+            return snow.prepare(level, camera.x, camera.z, level.getGameTime(), levelState.worldPartialTicks);
+        } catch (RuntimeException error) {
+            RenderFeatureStatus.failed(RenderFeature.FAR_SNOW, error);
+            return false;
         }
     }
 
@@ -391,14 +428,41 @@ public final class FarTerrain {
         shadows.close();
         pass.close();
         waterCapture.close();
+        snow.close();
         voxyDrawing = false;
         voxyTreated = false;
+    }
+
+    /** For QA: far snow's change of season, 1 when none is being shown. */
+    public float farSnowProgress() {
+        return snow.progress();
+    }
+
+    /** For QA: how many changes of season far snow has shown since the world was joined. */
+    public int farSnowChanges() {
+        return snow.changes();
+    }
+
+    /** For QA: how many changes far snow picked up part way on joining. */
+    public int farSnowResumes() {
+        return snow.resumes();
+    }
+
+    /** For QA: the game tick the change being shown (or the last one) began at. */
+    public long farSnowChangeStart() {
+        return snow.changeStart();
+    }
+
+    /** For QA: far snow lines known in the inner ring. */
+    public int farSnowKnown() {
+        return snow.knownInner();
     }
 
     /** For QA: what the far-terrain support found. */
     public String describe() {
         return "voxyLoaded=" + VOXY_LOADED + ", voxyDrawing=" + voxyDrawing + ", voxyTreated=" + voxyTreated
             + ", mainPasses=" + mainPasses + ", distantHorizonsPasses=" + distantHorizonsPasses + ", waterDetailPasses=" + waterDetailPasses
+            + ", snowPasses=" + snowPasses + ", farSnow={" + snow.describe() + "}"
             + ", " + shadows.describe()
             + ", " + waterCapture.describe()
             + ", distantHorizons=" + (distantHorizons == null ? Objects.toString(distantHorizonsProblem, "absent") : distantHorizons.describe());

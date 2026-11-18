@@ -13,8 +13,8 @@ class AtmosphereBlendTest {
     void weightedMixAcrossABorder() {
         AtmosphereBlend blend = new AtmosphereBlend();
         blend.clearForSampling();
-        blend.add(3.0f, BiomeAtmospheres.DESERT, false, false);
-        blend.add(1.0f, BiomeAtmospheres.SWAMP, false, true);
+        blend.add(3.0f, BiomeAtmospheres.DESERT, false, false, true);
+        blend.add(1.0f, BiomeAtmospheres.SWAMP, false, true, true);
         blend.finishSampling();
         assertEquals(0.75f * BiomeAtmospheres.DESERT.hazeRed() + 0.25f * BiomeAtmospheres.SWAMP.hazeRed(), blend.hazeRed, EPSILON);
         assertEquals(0.75f, blend.sandy, EPSILON);
@@ -36,7 +36,7 @@ class AtmosphereBlendTest {
         AtmosphereBlend from = new AtmosphereBlend();
         AtmosphereBlend to = new AtmosphereBlend();
         to.clearForSampling();
-        to.add(1.0f, BiomeAtmospheres.PALE_GARDEN, true, true);
+        to.add(1.0f, BiomeAtmospheres.PALE_GARDEN, true, true, true);
         to.finishSampling();
         float start = from.density;
         from.approach(to, 0.25f);
@@ -47,10 +47,26 @@ class AtmosphereBlendTest {
     }
 
     @Test
+    void aDesertTheSeasonBringsRainToHasNoSandstorm() {
+        AtmosphereBlend winterDesert = new AtmosphereBlend();
+        winterDesert.clearForSampling();
+        winterDesert.add(1.0f, BiomeAtmospheres.DESERT, false, true, false);
+        winterDesert.finishSampling();
+        assertEquals(0.0f, winterDesert.sandy, EPSILON);
+        assertEquals(0.0f, winterDesert.desert, EPSILON);
+        assertEquals(1.0f, winterDesert.wet, EPSILON, "it rains there instead");
+        StormAtmosphere storm = new StormAtmosphere();
+        for (int i = 0; i < 600; i++) {
+            storm.update(winterDesert, 1.0f, 1.0f, true, true, 1.0f, 0.05f);
+        }
+        assertEquals(0.0f, storm.sandstorm(), EPSILON);
+    }
+
+    @Test
     void stormsFollowWeatherAndLand() {
         AtmosphereBlend desert = new AtmosphereBlend();
         desert.clearForSampling();
-        desert.add(1.0f, BiomeAtmospheres.DESERT, false, false);
+        desert.add(1.0f, BiomeAtmospheres.DESERT, false, false, true);
         desert.finishSampling();
         StormAtmosphere storm = new StormAtmosphere();
         for (int i = 0; i < 600; i++) {
@@ -80,7 +96,7 @@ class AtmosphereBlendTest {
     void blizzardNeedsSnowAndThunder() {
         AtmosphereBlend snowy = new AtmosphereBlend();
         snowy.clearForSampling();
-        snowy.add(1.0f, BiomeAtmospheres.SNOWY, true, true);
+        snowy.add(1.0f, BiomeAtmospheres.SNOWY, true, true, true);
         snowy.finishSampling();
         StormAtmosphere storm = new StormAtmosphere();
         for (int i = 0; i < 600; i++) {
@@ -124,7 +140,7 @@ class AtmosphereBlendTest {
     private static AtmosphereBlend blendOf(BiomeAtmosphere biome) {
         AtmosphereBlend blend = new AtmosphereBlend();
         blend.clearForSampling();
-        blend.add(1.0f, biome, false, true);
+        blend.add(1.0f, biome, false, true, true);
         blend.finishSampling();
         return blend;
     }
@@ -141,7 +157,7 @@ class AtmosphereBlendTest {
     void stormsEaseInOverSeconds() {
         AtmosphereBlend swamp = new AtmosphereBlend();
         swamp.clearForSampling();
-        swamp.add(1.0f, BiomeAtmospheres.SWAMP, false, true);
+        swamp.add(1.0f, BiomeAtmospheres.SWAMP, false, true, true);
         swamp.finishSampling();
         StormAtmosphere storm = new StormAtmosphere();
         storm.update(swamp, 1.0f, 0.0f, true, true, 1.0f, 1.0f / 60.0f);

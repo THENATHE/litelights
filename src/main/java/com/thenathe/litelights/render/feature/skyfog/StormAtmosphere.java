@@ -37,6 +37,7 @@ public final class StormAtmosphere {
     private float swampFog;
     private float snowFog;
     private float windDust;
+    private float sandThunder;
     private boolean atmosphere;
 
     StormAtmosphere() {
@@ -50,6 +51,14 @@ public final class StormAtmosphere {
     /** Sandstorm strength: 0.6 in rain, 1 in a thunderstorm, over the sandy land that may have one. */
     public float sandstorm() {
         return sandstorm;
+    }
+
+    /**
+     * The thunder a sandstorm blows with, 0 to 1: the world's, which with Almanac isn't the player's
+     * share. Decides how much of a sandstorm is a haboob.
+     */
+    public float sandThunder() {
+        return sandThunder;
     }
 
     /** Blizzard strength: thunder where it snows. */
@@ -89,6 +98,17 @@ public final class StormAtmosphere {
      * @param exposure how open to the sky the camera is (storms don't reach into caves)
      */
     void update(AtmosphereBlend land, float rain, float thunder, boolean atmosphere, boolean sandstorms, float exposure, float seconds) {
+        update(land, rain, thunder, rain, thunder, atmosphere, sandstorms, exposure, seconds);
+    }
+
+    /**
+     * The same, with the world's rain and thunder for the sandstorm. A seasons mod that shares the
+     * rain out by climate (Almanac) leaves the player in a desert none while it rains elsewhere, yet
+     * the desert's sand is what that rain becomes there.
+     */
+    void update(AtmosphereBlend land, float rain, float thunder, float sandRain, float sandThunder, boolean atmosphere,
+                boolean sandstorms, float exposure, float seconds) {
+        this.sandThunder = sandThunder;
         float sandTarget = 0.0f;
         float blizzardTarget = 0.0f;
         float swampTarget = 0.0f;
@@ -102,7 +122,7 @@ public final class StormAtmosphere {
         if (sandstorms) {
             // Deserts and savannas have no rain of their own: the storm is the rain there.
             float sandyLand = WeatherPreview.sandyLand(atmosphere ? land.sandy : land.desert);
-            sandTarget = sandyLand * rain * (0.6f + 0.4f * thunder) * open;
+            sandTarget = sandyLand * sandRain * (0.6f + 0.4f * sandThunder) * open;
         }
         if (atmosphere) {
             snowTarget = snowy * rain * open;
@@ -119,7 +139,7 @@ public final class StormAtmosphere {
     }
 
     void clear() {
-        sandstorm = blizzard = swampFog = snowFog = windDust = 0.0f;
+        sandstorm = blizzard = swampFog = snowFog = windDust = sandThunder = 0.0f;
         atmosphere = false;
     }
 
@@ -130,7 +150,7 @@ public final class StormAtmosphere {
      * factor is exactly 1, so the default is the fog as it always was.
      */
     float density(RenderSettings.Storms storms, float thunder) {
-        return 0.050f * (float) Math.pow(sandstorm, 1.3) * storms.sandFog(thunder)
+        return 0.050f * (float) Math.pow(sandstorm, 1.3) * storms.sandFog(sandThunder)
             + 0.075f * blizzard * storms.blizzard().fog().thickness
             + 0.024f * swampFog * storms.rainFog(thunder)
             + 0.005f * snowFog * storms.snowFog(thunder);

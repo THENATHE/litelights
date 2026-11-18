@@ -1,6 +1,7 @@
 package com.thenathe.litelights.render.feature.skyfog;
 
 import com.thenathe.litelights.render.LiteMath;
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import java.util.Arrays;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -78,10 +79,9 @@ final class AtmosphereSampler {
                 float weight = weightX * weightZ;
                 if (weight > 0.0f) {
                     Holder<Biome> biome = level.getBiomeManager().getNoiseBiomeAtPosition(blockX, sampleY, blockZ);
-                    Biome value = biome.value();
-                    boolean precipitates = value.hasPrecipitation();
-                    boolean snows = precipitates && value.coldEnoughToSnow(cursor.set(blockX, sampleY, blockZ), seaLevel);
-                    target.add(weight, table.of(biome, dimension), snows, precipitates);
+                    Biome.Precipitation fall = LocalClimate.fallAt(level, biome, cursor.set(blockX, sampleY, blockZ));
+                    boolean dry = LocalClimate.dryHeat(level, biome, cursor);
+                    target.add(weight, table.of(biome, dimension), fall == Biome.Precipitation.SNOW, fall != Biome.Precipitation.NONE, dry);
                 }
                 if (dimension.hasSkyLight()) {
                     int height = level.getHeight(Heightmap.Types.MOTION_BLOCKING, blockX, blockZ);

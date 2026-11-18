@@ -6,6 +6,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
+import net.fabricmc.loader.api.FabricLoader;
 
 /**
  * Every built-in option, with the defaults from the plan (section 5). Each field is registered
@@ -59,6 +60,9 @@ public final class LiteLightsOptions {
 
     /** How water's sparkles move: Still only with the viewpoint, Gentle and Lively also with the waves. */
     public enum WaterSparkle { STILL, GENTLE, LIVELY }
+
+    /** How ore and crystal sparkles move: Still only with the viewpoint, Gentle by themselves on the clock. */
+    public enum OreSparkle { STILL, GENTLE }
 
     public enum MirrorDetail { COARSE, BALANCED, FINE }
 
@@ -156,6 +160,10 @@ public final class LiteLightsOptions {
             .at(Pages.FOG, "mist").cost(Cost.MEDIUM).register();
     public static final BoolOption FAR_TERRAIN = BoolOption.builder("fog.far_terrain", true)
             .at(Pages.FOG, "far_terrain").feature("far_terrain").cost(Cost.LOW).register();
+    /** Shown only with Almanac on the client, which says where far land has snow (0.1.2 on; the row says so). */
+    public static final BoolOption FAR_SNOW = BoolOption.builder("fog.far_snow", true)
+            .at(Pages.FOG, "far_terrain").feature("far_snow").needs(FAR_TERRAIN).cost(Cost.LOW)
+            .shownWhen(LiteLightsOptions::almanacInstalled).register();
 
     // Lighting
 
@@ -200,6 +208,10 @@ public final class LiteLightsOptions {
     // Ores and crystals had their glimmer under sand and stone until 0.9.9 (shimmer099).
     public static final BoolOption GLINT_ORES = BoolOption.builder("lighting.glint_ores", true)
             .at(Pages.LIGHTING, "glint").cost(Cost.LOW).feature("glint").register();
+    // Still is 0.9.9's look, slowed down; Gentle (oreglint) doesn't change as you move.
+    public static final EnumOption<OreSparkle> ORE_SPARKLE = EnumOption.builder("lighting.ore_sparkle",
+                    OreSparkle.class, OreSparkle.GENTLE)
+            .at(Pages.LIGHTING, "glint").feature("glint").needs(GLINT_ORES).register();
     public static final FloatOption GLINT_GROUND_SOFTNESS = glintSlider("lighting.glint_ground_softness", LiteLightsOptions::groundGlint);
     public static final FloatOption GLINT_GROUND_INTENSITY = glintSlider("lighting.glint_ground_intensity", LiteLightsOptions::groundGlint);
     public static final BoolOption SUBMERGED_GLINT = BoolOption.builder("lighting.submerged_glint", true)
@@ -728,5 +740,9 @@ public final class LiteLightsOptions {
 
     private static boolean particlesOn() {
         return PARTICLE_DENSITY.get() != ParticleDensity.OFF;
+    }
+
+    private static boolean almanacInstalled() {
+        return FabricLoader.getInstance().isModLoaded("almanac");
     }
 }

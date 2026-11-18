@@ -104,12 +104,13 @@ public record RenderSettings(
      * farTerrain: LiteLights' air (and light) on Voxy's and Distant Horizons' far terrain.
      * biomeHazeTint: how much of each biome's haze colour shows (0 the plain temperate haze, 1 the
      * biome's own). sunGlow: the warm glow toward a low sun and the haze's twilight warming (1 as built).
+     * farSnow: far terrain's snow follows Almanac's season (only with Almanac on the client).
      */
-    public record Fog(FogLook look, float density, boolean mistBanks, boolean farTerrain, float biomeHazeTint, float sunGlow) {
+    public record Fog(FogLook look, float density, boolean mistBanks, boolean farTerrain, float biomeHazeTint, float sunGlow, boolean farSnow) {
         public static final Fog DEFAULTS = new Fog(FogLook.HAZE, 1.0f, true, true);
 
         public Fog(FogLook look, float density, boolean mistBanks, boolean farTerrain) {
-            this(look, density, mistBanks, farTerrain, 1.0f, 1.0f);
+            this(look, density, mistBanks, farTerrain, 1.0f, 1.0f, true);
         }
     }
 
@@ -134,11 +135,12 @@ public record RenderSettings(
         float glintGroundIntensity,
         boolean nightColorTone,
         boolean glintOres,
-        boolean heatShimmer
+        boolean heatShimmer,
+        OreSparkle oreSparkle
     ) {
         public static final Lighting DEFAULTS = new Lighting(
             true, 1.0f, true, true, 2.0f, true, 1.5f, SunbeamQuality.MEDIUM, true, WaterSparkle.GENTLE, true, true, false, true,
-            0.5f, 0.5f, 0.5f, 0.5f, true, true, true);
+            0.5f, 0.5f, 0.5f, 0.5f, true, true, true, OreSparkle.GENTLE);
 
         /** Whether anything glints above water. */
         public boolean landGlint() {
@@ -147,6 +149,8 @@ public record RenderSettings(
     }
 
     public enum WaterSparkle { STILL, GENTLE, LIVELY }
+
+    public enum OreSparkle { STILL, GENTLE }
 
     /**
      * How finely sunbeams are drawn: the divisor of the screen size their texture uses, and how many

@@ -7,6 +7,7 @@ import com.thenathe.litelights.render.RenderSettings;
 import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import com.thenathe.litelights.render.feature.particles.BiomeClimate;
 import com.thenathe.litelights.render.feature.skyfog.StormAtmosphere;
 import com.thenathe.litelights.render.frame.DimensionGate;
@@ -147,17 +148,16 @@ public final class GlassWeather {
     }
 
     /**
-     * The weather at the camera: rain or snow by the biome's precipitation there (vanilla's rule,
-     * height included), the sandstorm as sky-fog's storm model has it, and while the settings screen
+     * The weather at the camera: rain or snow by the climate there (vanilla's rule, height included,
+     * with a seasons mod the season's), the sandstorm as sky-fog's storm model has it, and while the settings screen
      * previews a weather, that weather.
      */
     private void readConditions(ClientLevel level, double x, double y, double z) {
         cursor.set(x, y, z);
         Holder<Biome> biome = level.getBiome(cursor);
-        int seaLevel = level.getSeaLevel();
         float rainLevel = WeatherPreview.rain(level.getRainLevel(1.0f));
         PreviewWeather.Fall previewed = WeatherPreview.previewing() ? WeatherPreview.fall() : null;
-        Biome.Precipitation fall = previewed == null ? biome.value().getPrecipitationAt(cursor, seaLevel)
+        Biome.Precipitation fall = previewed == null ? LocalClimate.fallAt(level, biome, cursor)
             : switch (previewed) {
                 case RAIN -> Biome.Precipitation.RAIN;
                 case SNOW -> Biome.Precipitation.SNOW;
@@ -166,7 +166,7 @@ public final class GlassWeather {
         BiomeClimate climate = BiomeClimate.of(biome);
         conditions.rain = fall == Biome.Precipitation.RAIN ? rainLevel : 0.0f;
         conditions.snow = fall == Biome.Precipitation.SNOW ? rainLevel : 0.0f;
-        conditions.cold = previewed == null ? biome.value().coldEnoughToSnow(cursor, seaLevel) : previewed == PreviewWeather.Fall.SNOW;
+        conditions.cold = previewed == null ? LocalClimate.coldEnoughToSnow(level, biome, cursor) : previewed == PreviewWeather.Fall.SNOW;
         conditions.sandstorm = StormAtmosphere.current().sandstorm();
         conditions.sandy = climate.isSandy() || previewed == PreviewWeather.Fall.SAND;
         conditions.redSand = climate == BiomeClimate.BADLANDS;

@@ -34,7 +34,7 @@ public final class ParticleReach {
     /** Each category's share of the cap is multiplied by this (by ordinal; see {@link ParticleBudget}). */
     public static void capScales(RenderSettings.Weather weather, RenderSettings.Particles particles, float[] into) {
         float ambient = countScale(particles.distance(), particles.distanceFill());
-        into[ParticleCategory.WEATHER.ordinal()] = ParticleBudget.WEATHER_COVERAGE * weather.density().particles
+        into[ParticleCategory.WEATHER.ordinal()] = ParticleBudget.WEATHER_COVERAGE * ParticleBudget.WEATHER_HEADROOM * weather.density().particles
             * countScale(weather.distance(), weather.distanceFill());
         into[ParticleCategory.AMBIENT.ordinal()] = ambient;
         into[ParticleCategory.FIRE.ordinal()] = 1.0f;

@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.GpuFormat;
 import com.mojang.renderpearl.api.textures.GpuTexture;
 import com.mojang.renderpearl.api.textures.GpuTextureView;
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import com.thenathe.litelights.render.feature.particles.BiomeClimate;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -11,10 +12,12 @@ import java.util.Arrays;
 import java.util.function.Predicate;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.AbstractFurnaceBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CampfireBlock;
@@ -78,6 +81,7 @@ final class HeatSources implements AutoCloseable {
     private final int[] columnTop = new int[256];
     private final boolean[] hotBiome = new boolean[16];
     private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+    private int climateChanges = LocalClimate.changes();
 
     private @Nullable ClientLevel level;
     private int centreChunkX;
@@ -143,8 +147,10 @@ final class HeatSources implements AutoCloseable {
             centreChunkZ = chunkZ;
             claimWindow();
         }
-        if (!hasCentre || sectionY != centreSectionY) {
+        // Every chunk is read again on a new section height, and when the season changes which desert is hot.
+        if (!hasCentre || sectionY != centreSectionY || climateChanges != LocalClimate.changes()) {
             centreSectionY = sectionY;
+            climateChanges = LocalClimate.changes();
             Arrays.fill(needsScan, true);
             changed = true;
         }
@@ -332,8 +338,8 @@ final class HeatSources implements AutoCloseable {
             readSection(chunk, section, baseX, sectionY << 4, baseZ);
         }
 
-        if (overworldSky) {
-            readHotBiomes(chunk);
+        if (overworldSky && level != null) {
+            readHotBiomes(level, chunk);
         }
         int slotX = (slot % SLOTS) * 16;
         int slotZ = (slot / SLOTS) * 16;
@@ -381,15 +387,19 @@ final class HeatSources implements AutoCloseable {
         }
     }
 
-    /** Which 4 x 4 column groups of a chunk are desert or badlands, by the biome at their surface (the biome grid's own size). */
-    private void readHotBiomes(LevelChunk chunk) {
+    /**
+     * Which 4 x 4 column groups of a chunk are desert or badlands in its hot, dry season (always,
+     * without a seasons mod), by the biome at their surface (the biome grid's own size).
+     */
+    private void readHotBiomes(ClientLevel currentLevel, LevelChunk chunk) {
         for (int quart = 0; quart < 16; quart++) {
-            int x = (quart & 3) * 4 + 2;
-            int z = (quart >> 2) * 4 + 2;
-            int surface = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-            BiomeClimate climate = BiomeClimate.of(chunk.getNoiseBiome(QuartPos.fromBlock(chunk.getPos().getMinBlockX() + x),
-                QuartPos.fromBlock(surface), QuartPos.fromBlock(chunk.getPos().getMinBlockZ() + z)));
-            hotBiome[quart] = climate == BiomeClimate.DESERT || climate == BiomeClimate.BADLANDS;
+            int x = chunk.getPos().getMinBlockX() + (quart & 3) * 4 + 2;
+            int z = chunk.getPos().getMinBlockZ() + (quart >> 2) * 4 + 2;
+            int surface = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x & 15, z & 15);
+            Holder<Biome> biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(surface), QuartPos.fromBlock(z));
+            BiomeClimate climate = BiomeClimate.of(biome);
+            hotBiome[quart] = (climate == BiomeClimate.DESERT || climate == BiomeClimate.BADLANDS)
+                && LocalClimate.dryHeat(currentLevel, biome, cursor.set(x, surface, z));
         }
     }
 

@@ -24,6 +24,9 @@ uniform sampler2D FarWaterA;
 uniform sampler2D FarWaterB;
 
 #include <litelights:farterrain/far_water.glsl>
+#ifdef LITE_FAR_SNOW
+#include <litelights:farterrain/far_snow.glsl>
+#endif
 
 layout(location = 0) in vec2 texCoord;
 layout(location = 0) out vec4 fragColor;
@@ -136,6 +139,25 @@ void main() {
 
     vec3 color = scene.rgb;
     if (farTerrain) {
+        #ifdef LITE_FAR_SNOW
+        // The snow variant finds the water first: snow goes on the land the far mod lit, before
+        // LiteLights relights it, and is never painted on a lake's or the sea's floor (far_snow.glsl).
+        #ifdef LITE_FAR_WATER_DETAILS
+        bool wantsThickness = FarWaterSwitches.y > 0.5 || FarWaterSwitches.z > 0.5 || FarWaterSwitches.w > 0.5;
+        #else
+        bool wantsThickness = false;
+        #endif
+        LiteFarWater water = lite_far_find_water(pixel, texCoord, depth, position, normal, wantsThickness);
+        color = lite_far_snow(color, LightmapSampler, position, normal, lite_far_footprint(texCoord, depth, position), water.found);
+        if (FarSnowState.w > 0.5) {
+            // The debug view: what the snow lines say, unlit and unfogged; water dark blue.
+            fragColor = vec4(water.found ? vec3(0.1, 0.25, 0.7) : color, scene.a);
+            return;
+        }
+        if (FarSwitches.y > 0.5) {
+            color = lite_far_relight(color, LightmapSampler, visibility, facing);
+        }
+        #else
         if (FarSwitches.y > 0.5) {
             color = lite_far_relight(color, LightmapSampler, visibility, facing);
         }
@@ -146,6 +168,7 @@ void main() {
         bool wantsThickness = false;
         #endif
         LiteFarWater water = lite_far_find_water(pixel, texCoord, depth, position, normal, wantsThickness);
+        #endif
         #ifdef LITE_FAR_WATER_DETAILS
         if (water.found) {
             float footprint = lite_far_footprint(texCoord, depth, position);

@@ -65,8 +65,9 @@ class ParticleReachTest {
             particles(SpawnDistance.VERY_FAR, DistanceFill.SPREAD), spread);
         ParticleReach.capScales(weather(WeatherDensity.MEDIUM, SpawnDistance.VERY_FAR, DistanceFill.FILL),
             particles(SpawnDistance.VERY_FAR, DistanceFill.FILL), fill);
-        // Near: weather's share is the coverage times the density, as in 0.1.4; the rest unscaled.
-        assertEquals(ParticleBudget.WEATHER_COVERAGE * WeatherDensity.MEDIUM.particles, near[ParticleCategory.WEATHER.ordinal()], 1.0e-6f);
+        // Near: weather's share is the coverage and its headroom times the density; the rest unscaled.
+        assertEquals(ParticleBudget.WEATHER_COVERAGE * ParticleBudget.WEATHER_HEADROOM * WeatherDensity.MEDIUM.particles,
+            near[ParticleCategory.WEATHER.ordinal()], 1.0e-5f);
         assertEquals(1.0f, near[ParticleCategory.AMBIENT.ordinal()]);
         for (ParticleCategory category : ParticleCategory.values()) {
             assertEquals(near[category.ordinal()], spread[category.ordinal()], 1.0e-6f, category + " keeps its cap with Spread");
