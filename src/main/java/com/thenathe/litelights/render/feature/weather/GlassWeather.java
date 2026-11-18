@@ -1,6 +1,5 @@
 package com.thenathe.litelights.render.feature.weather;
 
-import com.thenathe.litelights.config.DimensionOptions.Aspect;
 import com.thenathe.litelights.config.Feature;
 import com.thenathe.litelights.config.PreviewWeather;
 import com.thenathe.litelights.render.RenderSettings;
@@ -19,7 +18,6 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.world.level.biome.Biome;
-import net.minecraft.world.level.dimension.DimensionType;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -69,6 +67,13 @@ public final class GlassWeather {
         return surfaces;
     }
 
+    /** The world was left: nothing on any glass, and nothing kept of the level. */
+    public void onWorldLeft() {
+        surfaces.reset();
+        lastLevel = null;
+        wantsMaps = false;
+    }
+
     /** QA only: runs the surface weather this many times faster, so a check needn't wait minutes for snow. */
     public void setTimeScaleForQa(float scale) {
         timeScaleForQa = scale;
@@ -106,8 +111,7 @@ public final class GlassWeather {
         if (level == null) {
             seconds = 0.0f;
         }
-        boolean weatherHere = level != null && level.dimensionType().skybox() == DimensionType.Skybox.OVERWORLD
-            && DimensionGate.allows(Aspect.WEATHER);
+        boolean weatherHere = DimensionGate.hasWeather(level);
         double cameraX = frame.cameraBlockX + frame.cameraFraction.x;
         double cameraY = frame.cameraBlockY + frame.cameraFraction.y;
         double cameraZ = frame.cameraBlockZ + frame.cameraFraction.z;
@@ -163,7 +167,8 @@ public final class GlassWeather {
                 case SNOW -> Biome.Precipitation.SNOW;
                 case SAND -> Biome.Precipitation.NONE;
             };
-        BiomeClimate climate = BiomeClimate.of(biome);
+        // Classified by the season's biome, as the particles do: a winter plain counts as snowy land.
+        BiomeClimate climate = BiomeClimate.of(LocalClimate.seasonalBiome(level, biome, cursor));
         conditions.rain = fall == Biome.Precipitation.RAIN ? rainLevel : 0.0f;
         conditions.snow = fall == Biome.Precipitation.SNOW ? rainLevel : 0.0f;
         conditions.cold = previewed == null ? LocalClimate.coldEnoughToSnow(level, biome, cursor) : previewed == PreviewWeather.Fall.SNOW;

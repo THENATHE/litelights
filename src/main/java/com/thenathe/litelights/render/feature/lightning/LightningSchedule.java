@@ -6,9 +6,11 @@ import com.thenathe.litelights.render.feature.weather.SkyEventSchedule;
 /**
  * When and where lightning flashes inside the clouds. Like the sky events, everything comes from the
  * world's hashed seed and the game time, never from wall time or a random generator with state, so
- * every player on a world sees the same flash at the same moment in the same place, and a restart
- * changes nothing. The thunder level, which the server sends to every client, sets how many flashes
- * there are.
+ * a restart changes nothing, and players under the same thunder see the same flash at the same
+ * moment in the same place. The thunder level at the client sets how many flashes there are
+ * ({@link #storminess}): vanilla sends every player the same one, while a seasons mod that shares
+ * the rain out by climate (Almanac) sends each player their own, so a player the storm doesn't
+ * reach sees fewer flashes or none.
  *
  * <p>The sky is cut into square cells of {@link #CELL_BLOCKS} on the ground, and time into beats of
  * {@link #BEAT_TICKS}. Each cell has at most one flash a beat, starting at a hashed moment in it: a

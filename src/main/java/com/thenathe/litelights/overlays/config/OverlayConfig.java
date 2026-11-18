@@ -38,6 +38,8 @@ public final class OverlayConfig {
     static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static OverlayConfig current;
     private static OverlayConfigStore.ModuleData storage;
+    /** Where this session's unreadable saved settings were kept, if they couldn't be read; else {@code null}. */
+    private static String unreadableKeptAs;
 
     public int configVersion = CURRENT_VERSION;
 
@@ -72,9 +74,20 @@ public final class OverlayConfig {
     public static synchronized OverlayConfig get() {
         if (current == null) {
             storage = new LiteLightsModuleData();
-            current = OverlayConfigStore.load(storage, FabricLoader.getInstance().getConfigDir()).config();
+            OverlayConfigStore.Loaded loaded = OverlayConfigStore.load(storage, FabricLoader.getInstance().getConfigDir());
+            current = loaded.config();
+            unreadableKeptAs = loaded.keptAs();
         }
         return current;
+    }
+
+    /**
+     * Where the saved settings were kept, under {@code modules} in litelights.json, when they
+     * couldn't be read this session and the defaults were loaded instead; {@code null} otherwise.
+     */
+    public static synchronized String unreadableKeptAs() {
+        get();
+        return unreadableKeptAs;
     }
 
     /** Writes the settings into litelights.json and saves it. */

@@ -16,6 +16,9 @@ import org.jspecify.annotations.Nullable;
  * {@link ReloadDefines} switch in shaders/include/terrain_parts.glsl, fixed when the shaders compile;
  * "Use vanilla terrain shading" leaves out the master define, and the shaders then compile their
  * vanilla main and none of LiteLights' includes.
+ *
+ * <p>The Mac safety net ({@code TerrainStallOffer}) can turn vanilla terrain shading on for one
+ * session without touching the saved setting.
  */
 public final class TerrainParts {
     public static final Identifier INCLUDE = LiteLightsClient.id("terrain_parts.glsl");
@@ -55,11 +58,13 @@ public final class TerrainParts {
         }
     }
 
+    private static volatile boolean vanillaShadingThisSession;
+
     private TerrainParts() {
     }
 
     public static void register() {
-        ReloadDefines.register(INCLUDE, LITELIGHTS_SHADING, () -> !LiteLightsOptions.VANILLA_TERRAIN_SHADING.on());
+        ReloadDefines.register(INCLUDE, LITELIGHTS_SHADING, () -> !vanillaShading());
         LiteLightsOptions.VANILLA_TERRAIN_SHADING.addListener((was, now) -> ReloadDefines.changed());
         for (Part part : Part.values()) {
             ReloadDefines.register(INCLUDE, part.define(), part.option()::on);
@@ -67,9 +72,32 @@ public final class TerrainParts {
         }
     }
 
+    /** Vanilla terrain shading, from the saved setting or for this session only. */
+    public static boolean vanillaShading() {
+        return LiteLightsOptions.VANILLA_TERRAIN_SHADING.on() || vanillaShadingThisSession;
+    }
+
+    public static boolean vanillaShadingThisSession() {
+        return vanillaShadingThisSession;
+    }
+
+    /**
+     * The safety net's offer was taken: vanilla terrain shading until the game closes, with the
+     * saved setting left as it is. Called from the offer's screen, so the shaders reload once it closes.
+     */
+    public static void useVanillaShadingThisSession() {
+        vanillaShadingThisSession = true;
+        ReloadDefines.changed();
+    }
+
     /** For the "shaders ready" log line: what the shaders in use left out, or null before the include was read. */
     public static @Nullable String builtState() {
-        return describe(ReloadDefines.built(LITELIGHTS_SHADING), part -> ReloadDefines.built(part.define()));
+        String state = describe(ReloadDefines.built(LITELIGHTS_SHADING), part -> ReloadDefines.built(part.define()));
+        if (Boolean.FALSE.equals(ReloadDefines.built(LITELIGHTS_SHADING)) && vanillaShadingThisSession
+            && !LiteLightsOptions.VANILLA_TERRAIN_SHADING.on()) {
+            state += ", for this session only (offered after a launch froze in a terrain draw)";
+        }
+        return state;
     }
 
     /**

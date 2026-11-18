@@ -59,6 +59,8 @@ test {
     systemProperty 'litelights.wakes.preview', findProperty('litelights.wakes.preview') ?: ''
     // Where a generation's time and memory go (GenerationCostProbe), only when asked for.
     systemProperty 'litelights.overlays.probe', findProperty('litelights.overlays.probe') ?: 'false'
+    // The particle step's and cull list's times (SimulationStepProbe), only when asked for.
+    systemProperty 'litelights.particles.probe', findProperty('litelights.particles.probe') ?: 'false'
     testLogging { showStandardStreams = findProperty('litelights.overlays.probe') == 'true' }
 }
 

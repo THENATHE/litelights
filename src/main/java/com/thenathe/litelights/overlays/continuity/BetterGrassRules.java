@@ -3,6 +3,7 @@ package com.thenathe.litelights.overlays.continuity;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.thenathe.litelights.overlays.OverlaysModule;
 import com.thenathe.litelights.overlays.pack.BetterGrass;
 import java.io.IOException;
 import java.io.Reader;
@@ -181,36 +182,57 @@ final class BetterGrassRules {
         Set<Block> snowyVariants = new HashSet<>();
         Map<Block, Predicate<BlockState>> snowLayerPlants = new HashMap<>();
         resources.listResources(STATES, id -> id.getPath().endsWith(".json")).forEach((id, resource) -> {
-            String path = id.getPath();
-            Identifier blockId = Identifier.fromNamespaceAndPath(id.getNamespace(),
-                path.substring(STATES.length() + 1, path.length() - ".json".length()));
-            Optional<Block> block = BuiltInRegistries.BLOCK.getOptional(blockId);
-            JsonObject state = readObject(resource);
-            if (block.isEmpty() || state == null || !state.has("type")) {
-                return;
-            }
-            switch (state.get("type").getAsString()) {
-                case "grass" -> {
-                    blocks.add(block.get());
-                    if (hasSnowyVariant(state)) {
-                        snowyVariants.add(block.get());
-                    }
-                }
-                case "layer" -> {
-                    Predicate<BlockState> carriesSnow = snowLayerStates(resources, block.get(), state);
-                    if (carriesSnow != null) {
-                        snowLayerPlants.put(block.get(), carriesSnow);
-                    }
-                }
-                default -> {
-                }
+            try {
+                readStates(resources, id, resource, blocks, snowyVariants, snowLayerPlants);
+            } catch (RuntimeException unusable) {
+                // One file LambdaBetterGrass can't use (a wrong JSON type, an upper-case id) is
+                // skipped, as it skips it itself; the rest of its blocks still count.
+                skipped(id, unusable);
             }
         });
-        Predicate<BlockState> snow = resources.getResource(SNOW_LAYER_TYPE)
-            .map(BetterGrassRules::readObject)
-            .map(BetterGrassRules::snowMatcher)
-            .orElse(null);
+        Predicate<BlockState> snow = null;
+        try {
+            snow = resources.getResource(SNOW_LAYER_TYPE)
+                .map(BetterGrassRules::readObject)
+                .map(BetterGrassRules::snowMatcher)
+                .orElse(null);
+        } catch (RuntimeException unusable) {
+            skipped(SNOW_LAYER_TYPE, unusable);
+        }
         return new BetterGrassRules(blocks, snowyVariants, snowLayerPlants, snow);
+    }
+
+    /** One {@code states} file: a block of its own (type {@code grass}), or a plant that can carry snow (type {@code layer}). */
+    private static void readStates(ResourceManager resources, Identifier id, Resource resource, Set<Block> blocks,
+                                   Set<Block> snowyVariants, Map<Block, Predicate<BlockState>> snowLayerPlants) {
+        String path = id.getPath();
+        Identifier blockId = Identifier.fromNamespaceAndPath(id.getNamespace(),
+            path.substring(STATES.length() + 1, path.length() - ".json".length()));
+        Optional<Block> block = BuiltInRegistries.BLOCK.getOptional(blockId);
+        JsonObject state = readObject(resource);
+        if (block.isEmpty() || state == null || !state.has("type")) {
+            return;
+        }
+        switch (state.get("type").getAsString()) {
+            case "grass" -> {
+                blocks.add(block.get());
+                if (hasSnowyVariant(state)) {
+                    snowyVariants.add(block.get());
+                }
+            }
+            case "layer" -> {
+                Predicate<BlockState> carriesSnow = snowLayerStates(resources, block.get(), state);
+                if (carriesSnow != null) {
+                    snowLayerPlants.put(block.get(), carriesSnow);
+                }
+            }
+            default -> {
+            }
+        }
+    }
+
+    private static void skipped(Identifier file, RuntimeException reason) {
+        OverlaysModule.LOG.warn("Skipped LambdaBetterGrass's {}, which can't be read: {}", file, reason.toString());
     }
 
     private static boolean hasSnowyVariant(JsonObject state) {

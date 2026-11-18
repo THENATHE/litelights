@@ -61,8 +61,10 @@ float lite_snow_shading(vec3 vertexColor) {
 }
 
 // 0 to 1, how white a texel is: need is how much snow it takes to turn it, amount how much there is.
+// The softness never reaches below no snow at all, so a texel is bare while there is none: as the
+// snow starts, and at the snow map's edge, where the amount fades to none.
 float lite_snow_texel(float need, float amount, float distance) {
-    float soft = mix(0.02, 0.3, smoothstep(LITE_SNOW_SOFT_START, LITE_SNOW_SOFT_END, distance));
+    float soft = min(mix(0.02, 0.3, smoothstep(LITE_SNOW_SOFT_START, LITE_SNOW_SOFT_END, distance)), need);
     return smoothstep(need - soft, need + soft, amount);
 }
 

@@ -43,6 +43,12 @@ public final class FrameClock {
             ANIMATION.frameSeconds());
     }
 
+    /** The world was left: the world's clock starts afresh, and the level isn't kept. */
+    public static void onWorldLeft() {
+        TIME.reset();
+        lastLevel = null;
+    }
+
     /** The shaders' clock in seconds, wrapped at an hour; stands still while the game is paused. */
     public static float animationSeconds() {
         return (float) ANIMATION.seconds();

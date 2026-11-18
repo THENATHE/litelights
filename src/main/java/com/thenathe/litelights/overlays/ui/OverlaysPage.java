@@ -3,6 +3,7 @@ package com.thenathe.litelights.overlays.ui;
 import com.mojang.blaze3d.Blaze3D;
 import com.thenathe.litelights.config.CustomRow;
 import com.thenathe.litelights.config.Feature;
+import com.thenathe.litelights.config.LiteLightsConfig;
 import com.thenathe.litelights.config.PageContent;
 import com.thenathe.litelights.config.Pages;
 import com.thenathe.litelights.config.RowState;
@@ -82,8 +83,13 @@ public final class OverlaysPage {
 
     private static void addMainSection(PageContent page, OverlayConfig config, OverlayConfig defaults, BooleanSupplier usable) {
         page.section("overlays_main", text("section.overlays"), false)
-            .note(statusLine())
-            .row(CustomRow.toggle(setting("enabled"), description("enabled"), defaults.enabled,
+            .note(statusLine());
+        String keptAs = OverlayConfig.unreadableKeptAs();
+        if (keptAs != null) {
+            page.note(Component.translatable("litelights.overlays.note.defaults_loaded",
+                LiteLightsConfig.path().getFileName().toString(), "modules." + keptAs).withStyle(ChatFormatting.GOLD));
+        }
+        page.row(CustomRow.toggle(setting("enabled"), description("enabled"), defaults.enabled,
                     () -> flag(config.enabled), value -> config.enabled = value != 0)
                 .state(OverlaysPage::masterRowState)
                 .enabledWhen(usable))
@@ -210,6 +216,10 @@ public final class OverlaysPage {
         }
         if (OverlayBuilds.isBuilding()) {
             return text("status.building");
+        }
+        if (FEATURE.state() instanceof RowState.Failed) {
+            // Whatever the last report says, this reload went without overlays.
+            return text("status.failed");
         }
         GenerationReport report = OverlayBuilds.lastReport();
         if (report == GenerationReport.NONE) {

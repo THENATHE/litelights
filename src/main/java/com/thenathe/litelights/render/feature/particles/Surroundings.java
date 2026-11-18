@@ -52,8 +52,9 @@ public final class Surroundings {
     public int dimensionKind;
     /** Whether the dimension has the overworld's sky (rain, stars, the sun). */
     public boolean overworldSky;
-    /** Modded dimensions' "effects" and "weather and events" switches; always on for vanilla ones. */
+    /** Modded dimensions' "effects" switch; always on for vanilla ones. */
     public boolean effectsAllowed;
+    /** Whether this dimension has weather at all ({@link DimensionGate#hasWeather}). */
     public boolean weatherAllowed;
     public BiomeClimate climate = BiomeClimate.TEMPERATE;
     /** 1 at noon, 0 at night, from LiteLights' own sun (it follows the settings' time preview too). */
@@ -108,7 +109,7 @@ public final class Surroundings {
             : currentLevel.dimension() == Level.END ? FrameFlags.DIMENSION_END
             : FrameFlags.DIMENSION_MODDED;
         effectsAllowed = DimensionGate.allows(Aspect.EFFECTS);
-        weatherAllowed = DimensionGate.allows(Aspect.WEATHER);
+        weatherAllowed = DimensionGate.hasWeather(currentLevel);
         climate = BiomeClimate.of(LocalClimate.seasonalBiome(currentLevel, currentLevel.getBiome(cursor), cursor));
         daylight = LiteLightsRenderer.get().frame().sunColor.w;
         // The settings screen's weather preview, if any, in place of the world's weather.
@@ -120,10 +121,7 @@ public final class Surroundings {
         seed = ((BiomeManagerAccessor) currentLevel.getBiomeManager()).litelights$biomeZoomSeed();
         gameTime = currentLevel.getGameTime();
         clockTime = currentLevel.getOverworldClockTime();
-        // Rain brings some wind of its own; sandstorms and blizzards blow hardest.
-        float rainWind = rain * (0.55f + 0.45f * thunder) * 0.45f;
-        float windStorm = Math.max(rainWind, Math.max(storm.sandstorm(), storm.blizzard()));
-        Wind.sample(seed, clockTime, gameTime, windStorm, wind);
+        Wind.sample(seed, clockTime, gameTime, Wind.stormStrength(rain, thunder, storm.sandstorm(), storm.blizzard()), wind);
         RenderSettings.Weather weatherSettings = currentSettings.weather();
         RenderSettings.Particles particleSettings = currentSettings.particles();
         weatherReach = weatherSettings.distance().radius;

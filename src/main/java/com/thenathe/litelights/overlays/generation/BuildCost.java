@@ -1,7 +1,6 @@
 package com.thenathe.litelights.overlays.generation;
 
 import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadInfo;
 import java.util.function.Supplier;
 
 /**
@@ -10,7 +9,9 @@ import java.util.function.Supplier;
  *
  * <p>Allocation is read from the JVM's per-thread counters ({@code com.sun.management}), summed
  * over the coordinator and worker threads, so the game's own allocations in the same moment don't
- * count. Where the JVM doesn't offer the counters, allocation reads as -1.
+ * count. The threads come from {@link Workers}, which keeps them as it makes them, so no build
+ * takes a dump of every thread in the game. Where the JVM doesn't offer the counters, allocation
+ * reads as -1.
  *
  * @param millis          wall time of the build
  * @param allocatedBytes  heap allocated by the build threads during the build, or -1
@@ -49,12 +50,10 @@ public record BuildCost(long millis, long allocatedBytes, long outputBytes, Stri
             return -1;
         }
         long total = 0;
-        for (ThreadInfo info : threads.dumpAllThreads(false, false)) {
-            if (info.getThreadName().startsWith(Workers.THREAD_PREFIX)) {
-                long bytes = threads.getThreadAllocatedBytes(info.getThreadId());
-                if (bytes > 0) {
-                    total += bytes;
-                }
+        for (Thread thread : Workers.threads()) {
+            long bytes = threads.getThreadAllocatedBytes(thread.threadId());
+            if (bytes > 0) {
+                total += bytes;
             }
         }
         return total;

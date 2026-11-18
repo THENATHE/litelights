@@ -49,18 +49,23 @@ abstract class LevelRendererWaterMixin {
         }
         renderPass.close();
         RenderTarget mainTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
-        // Far terrain first, so water's copy (its reflections and what shows through it) sees it shaded.
-        farTerrain.beforeTranslucents(mainTarget);
-        lightPost.beforeTranslucents(mainTarget);
-        hazeDepth.take(mainTarget);
-        if (copyScene) {
-            water.copyScene(mainTarget);
-        }
-        try (RenderPass translucentPass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
-            () -> "Main (translucent, LiteLights)", mainTarget.getColorTextureView(), Optional.empty(),
-            mainTarget.getDepthTextureView(), OptionalDouble.empty())) {
-            RenderSystem.bindDefaultUniforms(translucentPass);
-            original.call(chunkSectionsToRender, featureFrame, translucentPass);
+        try {
+            // Far terrain first, so water's copy (its reflections and what shows through it) sees it shaded.
+            farTerrain.beforeTranslucents(mainTarget);
+            lightPost.beforeTranslucents(mainTarget);
+            hazeDepth.take(mainTarget);
+            if (copyScene) {
+                water.copyScene(mainTarget);
+            }
+        } finally {
+            // Vanilla's pass is closed by now, so the translucent half runs in a new one whatever
+            // happened above; each of those calls catches its own errors, this is the backstop.
+            try (RenderPass translucentPass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
+                () -> "Main (translucent, LiteLights)", mainTarget.getColorTextureView(), Optional.empty(),
+                mainTarget.getDepthTextureView(), OptionalDouble.empty())) {
+                RenderSystem.bindDefaultUniforms(translucentPass);
+                original.call(chunkSectionsToRender, featureFrame, translucentPass);
+            }
         }
     }
 

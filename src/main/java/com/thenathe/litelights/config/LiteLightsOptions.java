@@ -5,7 +5,6 @@ import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BooleanSupplier;
 import net.fabricmc.loader.api.FabricLoader;
 
 /**
@@ -146,7 +145,7 @@ public final class LiteLightsOptions {
             .cost(Cost.MEDIUM).register();
     public static final IntOption CLOUD_LAYERS = IntOption.builder("sky.cloud_layers", 2, 1, 2, 1)
             .at(Pages.SKY, "clouds").feature("clouds").cost(Cost.LOW)
-            .enabledWhen(() -> LiteLightsOptions.CLOUDS.get() != Clouds.OFF).register();
+            .enabledWhen(values -> values.get(LiteLightsOptions.CLOUDS) != Clouds.OFF).register();
 
     // Fog
 
@@ -155,7 +154,7 @@ public final class LiteLightsOptions {
             .choiceCost(FogLook.VANILLA, Cost.FREE).choiceCost(FogLook.OFF, Cost.FREE).register();
     public static final FloatOption FOG_DENSITY = FloatOption.builder("fog.density", 1.0F, 0.0F, 2.0F, 0.05F)
             .at(Pages.FOG, "fog").feature("atmospheric_fog")
-            .enabledWhen(() -> LiteLightsOptions.FOG_LOOK.get() == FogLook.HAZE).register();
+            .enabledWhen(values -> values.get(LiteLightsOptions.FOG_LOOK) == FogLook.HAZE).register();
     public static final BoolOption MIST_BANKS = BoolOption.builder("fog.mist_banks", true)
             .at(Pages.FOG, "mist").cost(Cost.MEDIUM).register();
     public static final BoolOption FAR_TERRAIN = BoolOption.builder("fog.far_terrain", true)
@@ -189,7 +188,7 @@ public final class LiteLightsOptions {
                     SunbeamQuality.class, SunbeamQuality.MEDIUM)
             .at(Pages.LIGHTING, "light_rays").feature("light_rays").cost(Cost.LOW)
             .choiceCost(SunbeamQuality.HIGH, Cost.MEDIUM).choiceCost(SunbeamQuality.ULTRA, Cost.HIGH)
-            .enabledWhen(() -> LiteLightsOptions.SUNBEAMS.on() || LiteLightsOptions.UNDERWATER_SUNBEAMS.on()).register();
+            .enabledWhen(values -> values.on(LiteLightsOptions.SUNBEAMS) || values.on(LiteLightsOptions.UNDERWATER_SUNBEAMS)).register();
     public static final BoolOption GLINT_WATER = BoolOption.builder("lighting.glint_water", true)
             .at(Pages.LIGHTING, "glint").cost(Cost.LOW).feature("glint").register();
     public static final EnumOption<WaterSparkle> WATER_SPARKLE = EnumOption.builder("lighting.water_sparkle",
@@ -494,11 +493,11 @@ public final class LiteLightsOptions {
     /** How much of each biome's own haze colour shows: 0 is the plain temperate haze everywhere, 1 the biomes' colours. */
     public static final FloatOption BIOME_HAZE_TINT = FloatOption.builder("fog.biome_haze_tint", 1.0F, 0.0F, 1.0F, 0.05F)
             .at(Pages.FOG, "fog").feature("atmospheric_fog")
-            .enabledWhen(() -> LiteLightsOptions.FOG_LOOK.get() == FogLook.HAZE).register();
+            .enabledWhen(values -> values.get(LiteLightsOptions.FOG_LOOK) == FogLook.HAZE).register();
     /** The warm glow toward a low sun and the haze's warming around sunrise and sunset; 1 is the built-in look. */
     public static final FloatOption SUN_GLOW = FloatOption.builder("fog.sun_glow", 1.0F, 0.0F, 2.0F, 0.05F)
             .at(Pages.FOG, "fog").feature("atmospheric_fog")
-            .enabledWhen(() -> LiteLightsOptions.FOG_LOOK.get() == FogLook.HAZE).register();
+            .enabledWhen(values -> values.get(LiteLightsOptions.FOG_LOOK) == FogLook.HAZE).register();
 
     // Particle distance. Registered last, so its rows come at the end of the Particles section.
 
@@ -588,7 +587,7 @@ public final class LiteLightsOptions {
         return FloatOption.builder("colour_grade." + timeName + "." + name, gradeDefault(time, name, neutral), min, max, step)
                 .at(Pages.COLOUR_GRADING, "grade").feature("colour_grading").format(format)
                 .text(labelKey, labelKey + ".description")
-                .enabledWhen(() -> LiteLightsOptions.GRADE_SCHEDULE.get() != GradeSchedule.OFF)
+                .enabledWhen(values -> values.get(LiteLightsOptions.GRADE_SCHEDULE) != GradeSchedule.OFF)
                 .shownWhen(() -> shownGradeTime() == time)
                 .register();
     }
@@ -653,7 +652,7 @@ public final class LiteLightsOptions {
     private static BoolOption terrainPart(String name) {
         return BoolOption.builder("general.mac.terrain_" + name, true)
                 .at(Pages.GENERAL, "compatibility/mac")
-                .enabledWhen(() -> !LiteLightsOptions.VANILLA_TERRAIN_SHADING.on()).register();
+                .enabledWhen(values -> !values.on(LiteLightsOptions.VANILLA_TERRAIN_SHADING)).register();
     }
 
     private static BoolOption end(String name, Cost cost) {
@@ -661,19 +660,19 @@ public final class LiteLightsOptions {
                 .at(Pages.DIMENSIONS, "end").cost(cost).feature("end_" + name).register();
     }
 
-    private static FloatOption glintSlider(String id, BooleanSupplier enabled) {
+    private static FloatOption glintSlider(String id, Option.Condition enabled) {
         return FloatOption.builder(id, 0.5F, 0.0F, 1.0F, 0.01F)
                 .at(Pages.LIGHTING, "glint").feature("glint").enabledWhen(enabled).register();
     }
 
     /** Whether the water's glint sliders do anything: glint on water, or under it. */
-    public static boolean waterGlint() {
-        return GLINT_WATER.on() || SUBMERGED_GLINT.on();
+    public static boolean waterGlint(OptionValues values) {
+        return values.on(GLINT_WATER) || values.on(SUBMERGED_GLINT);
     }
 
     /** Whether the ground's glint sliders do anything: glint on any of the other materials. */
-    public static boolean groundGlint() {
-        return GLINT_ICE_SNOW.on() || GLINT_METAL_GLASS.on() || GLINT_SAND_STONE.on() || GLINT_ORES.on();
+    public static boolean groundGlint(OptionValues values) {
+        return values.on(GLINT_ICE_SNOW) || values.on(GLINT_METAL_GLASS) || values.on(GLINT_SAND_STONE) || values.on(GLINT_ORES);
     }
 
     /** Whether any glint is on: above water by material, or under water. */
@@ -695,7 +694,7 @@ public final class LiteLightsOptions {
             String id = "weather.storms." + name;
             String section = "storms/" + name;
             boolean sandy = type == StormType.SANDSTORM || type == StormType.HABOOB;
-            BooleanSupplier stormShows = sandy ? () -> SANDSTORMS.on() : () -> true;
+            Option.Condition stormShows = sandy ? values -> values.on(SANDSTORMS) : values -> true;
             // Rain, snow and sandstorms start with light fog, their thunder variants with the usual
             // fog (user, 2026-11-16).
             boolean thundery = type == StormType.THUNDERSTORM || type == StormType.BLIZZARD || type == StormType.HABOOB;
@@ -706,7 +705,7 @@ public final class LiteLightsOptions {
             EnumOption.Builder<StormClouds> clouds = EnumOption.builder(id + ".clouds", StormClouds.class, StormClouds.FOLLOW_DENSITY)
                     .at(Pages.WEATHER, section).text("litelights.option.weather.storm_clouds", "litelights.option." + id + ".clouds.description")
                     .cost(Cost.LOW).choiceCost(StormClouds.OFF, Cost.FREE)
-                    .enabledWhen(() -> particlesOn() && stormShows.getAsBoolean());
+                    .enabledWhen(values -> particlesOn(values) && stormShows.holds(values));
             if (!sandy) {
                 clouds.needs(RAIN_MIST);
             }
@@ -726,20 +725,20 @@ public final class LiteLightsOptions {
     private static EnumOption<DistanceFill> distanceFill(String id, String page, String section, EnumOption<SpawnDistance> distance) {
         return EnumOption.builder(id, DistanceFill.class, DistanceFill.SPREAD)
                 .at(page, section).cost(Cost.FREE).choiceCost(DistanceFill.FILL, Cost.HIGH)
-                .enabledWhen(() -> particlesOn() && distance.get() != SpawnDistance.NEAR).register();
+                .enabledWhen(values -> particlesOn(values) && values.get(distance) != SpawnDistance.NEAR).register();
     }
 
-    private static boolean anyMirrors() {
-        return WATER_MIRRORS.on() || ICE_MIRRORS.on();
+    private static boolean anyMirrors(OptionValues values) {
+        return values.on(WATER_MIRRORS) || values.on(ICE_MIRRORS);
     }
 
     /** Foam motion moves the edge foam and the foam where falling water lands, so it matters while either is on. */
-    private static boolean anyFoam() {
-        return EDGE_FOAM.on() || ENHANCED_WATER.on();
+    private static boolean anyFoam(OptionValues values) {
+        return values.on(EDGE_FOAM) || values.on(ENHANCED_WATER);
     }
 
-    private static boolean particlesOn() {
-        return PARTICLE_DENSITY.get() != ParticleDensity.OFF;
+    private static boolean particlesOn(OptionValues values) {
+        return values.get(PARTICLE_DENSITY) != ParticleDensity.OFF;
     }
 
     private static boolean almanacInstalled() {

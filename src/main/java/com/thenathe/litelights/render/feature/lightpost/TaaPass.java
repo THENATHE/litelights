@@ -178,6 +178,12 @@ final class TaaPass implements PostPass {
         return followsOn;
     }
 
+    /** The world was left: the next frame follows on from nothing, and the level isn't kept. */
+    void onWorldLeft() {
+        lastLevel = null;
+        historyValid = false;
+    }
+
     /** Sets the jitter the next frame's level is drawn with. */
     private void nextJitter(int width, int height) {
         frame++;

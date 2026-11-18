@@ -48,7 +48,10 @@ public final class PackExporter {
     private PackExporter() {
     }
 
-    /** Builds from the packs currently loaded and writes the zip into the resource pack folder. */
+    /**
+     * Builds from the packs currently loaded and writes the zip into the resource pack folder. A
+     * failure is logged with its stack, and no half-written file is left in the folder.
+     */
     public static CompletableFuture<Path> exportToResourcePacks() {
         Minecraft minecraft = Minecraft.getInstance();
         // Earlier exports are left out too, or their overlays would count as a pack's own and be skipped.
@@ -61,8 +64,8 @@ public final class PackExporter {
         Path folder = minecraft.getResourcePackDirectory();
         String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HHmmss"));
         Path target = folder.resolve("LiteLights overlays export " + stamp + ".zip");
-        return CompletableFuture.supplyAsync(() -> {
-            GeneratedFiles files = OverlayGenerator.generate(packs, input);
+        CompletableFuture<Path> export = CompletableFuture.supplyAsync(() -> {
+            GeneratedFiles files = OverlayGenerator.generateExport(packs, input);
             try {
                 write(files, target);
             } catch (IOException failure) {
@@ -71,6 +74,12 @@ public final class PackExporter {
             OverlaysModule.LOG.info("Exported overlays to {}: {}", target, files.report().summary());
             return target;
         }, Workers.coordinator());
+        export.whenComplete((path, failure) -> {
+            if (failure != null) {
+                OverlaysModule.LOG.error("Couldn't export the overlays to {}", target, failure);
+            }
+        });
+        return export;
     }
 
     private static boolean isExport(PackResources pack) {
@@ -78,19 +87,28 @@ public final class PackExporter {
         return namespaces.contains(NAMESPACE) || namespaces.contains(DYNAMIC_OVERLAYS_NAMESPACE);
     }
 
-    private static void write(GeneratedFiles files, Path target) throws IOException {
+    static void write(GeneratedFiles files, Path target) throws IOException {
         Files.createDirectories(target.getParent());
         Path temporary = target.resolveSibling(target.getFileName() + ".part");
-        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(temporary))) {
-            put(zip, "pack.mcmeta", packMetadata().getBytes(StandardCharsets.UTF_8));
-            try (InputStream icon = OverlayBuilds.packIcon()) {
-                put(zip, "pack.png", icon.readAllBytes());
+        try {
+            try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(temporary))) {
+                put(zip, "pack.mcmeta", packMetadata().getBytes(StandardCharsets.UTF_8));
+                try (InputStream icon = OverlayBuilds.packIcon()) {
+                    put(zip, "pack.png", icon.readAllBytes());
+                }
+                for (Map.Entry<String, byte[]> file : files.files().entrySet()) {
+                    put(zip, file.getKey(), file.getValue());
+                }
             }
-            for (Map.Entry<String, byte[]> file : files.files().entrySet()) {
-                put(zip, file.getKey(), file.getValue());
+            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException | RuntimeException failure) {
+            try {
+                Files.deleteIfExists(temporary);
+            } catch (IOException leftOver) {
+                failure.addSuppressed(leftOver);
             }
+            throw failure;
         }
-        Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
 
     private static void put(ZipOutputStream zip, String path, byte[] bytes) throws IOException {

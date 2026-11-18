@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.event.Event;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.dimension.DimensionType;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -56,6 +57,27 @@ public final class DimensionGate {
     public static boolean allows(Aspect aspect) {
         refresh();
         return ALLOWED[aspect.ordinal()];
+    }
+
+    /**
+     * Whether the level has weather, and its dimension's switch lets it through: the one test every
+     * weather effect makes (rain and snow, their fog, puddles, glass, snowy leaves, lightning).
+     */
+    public static boolean hasWeather(@Nullable ClientLevel level) {
+        if (level == null) {
+            return false;
+        }
+        return weatherDimension(level.dimensionType().skybox(), level.canHaveWeather()) && allows(Aspect.WEATHER);
+    }
+
+    /**
+     * A dimension with weather: one where the game keeps a weather cycle at all ({@code
+     * Level#canHaveWeather}: sky light, no ceiling, not the End), under the overworld's kind of sky,
+     * which LiteLights' clouds, storms and lightning belong to. The overworld has it; the Nether and
+     * the End don't, as in vanilla.
+     */
+    static boolean weatherDimension(DimensionType.Skybox skybox, boolean gameHasWeather) {
+        return skybox == DimensionType.Skybox.OVERWORLD && gameHasWeather;
     }
 
     /** Forgets the level checked last, so the gate holds no reference to a world the player left. */

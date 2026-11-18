@@ -84,6 +84,8 @@ public final class WaterRenderer {
     private final TextureAtlasSprite[] alternateSprites = new TextureAtlasSprite[4];
     private @Nullable TextureAtlasSprite otherWaterStill;
     private @Nullable TextureAtlasSprite otherWaterFlow;
+    /** The fluid models {@link #otherWaterStill} and {@link #otherWaterFlow} were read from. */
+    private @Nullable FluidStateModelSet otherWaterModels;
     private float @Nullable [] stripStillMean;
     private float @Nullable [] stripFlowMean;
     private boolean vanillaWaterSprites;
@@ -410,8 +412,7 @@ public final class WaterRenderer {
         float rain = frame.weather.x;
         float thunder = frame.weather.y;
         StormAtmosphere storm = StormAtmosphere.current();
-        float rainWind = rain * (0.55f + 0.45f * thunder) * 0.45f;
-        float windStorm = Math.max(rainWind, Math.max(storm.sandstorm(), storm.blizzard()));
+        float windStorm = Wind.stormStrength(rain, thunder, storm.sandstorm(), storm.blizzard());
         Wind.sample(seed, clockTime, gameTime, 0.0f, windSample);
         double calmSpeed = Math.hypot(windSample[0], windSample[1]);
         Wind.sample(seed, clockTime, gameTime, windStorm, windSample);
@@ -632,6 +633,7 @@ public final class WaterRenderer {
         } else {
             otherWaterStill = alternateSprites[0];
             otherWaterFlow = alternateSprites[1];
+            otherWaterModels = null;
         }
 
         // For the Enhanced colours: each sprite's average colour, and whether the water is vanilla's.
@@ -650,6 +652,12 @@ public final class WaterRenderer {
      * take the other-namespace slots when no same-named sprite claimed them.
      */
     private void readOtherWaterFluids(FluidStateModelSet fluids, TextureAtlasSprite still, TextureAtlasSprite flow) {
+        // The models only change in a resource reload, which makes a new set; the fluid tags arrive
+        // with a world, so the walk is made again after one is left.
+        if (fluids == otherWaterModels) {
+            return;
+        }
+        otherWaterModels = fluids;
         for (Fluid fluid : BuiltInRegistries.FLUID) {
             FluidState state = fluid.defaultFluidState();
             if (fluid == Fluids.WATER || fluid == Fluids.FLOWING_WATER || state.isEmpty() || !state.is(FluidTags.WATER)) {
@@ -682,6 +690,7 @@ public final class WaterRenderer {
 
     /** The player left the world: forget its columns and the entities being watched for splashes. */
     public void onWorldLeft() {
+        otherWaterModels = null;
         columns.reset();
         glassWindows.forget();
         swell.reset();

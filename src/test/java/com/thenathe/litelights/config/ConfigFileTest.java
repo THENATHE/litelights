@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -12,7 +13,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 class ConfigFileTest {
     enum Quality { LOW, NORMAL, HIGH }
@@ -204,10 +208,74 @@ class ConfigFileTest {
         ConfigFile file = load(fixture.registry);
         assertEquals(0, fixture.registry.changedCount());
         try (var listing = Files.list(folder)) {
-            assertTrue(listing.anyMatch(path -> path.getFileName().toString().startsWith("litelights.json.broken-")));
+            assertTrue(listing.anyMatch(path -> path.getFileName().toString().startsWith("litelights.json.broken-")
+                && readQuietly(path).equals("{ this is not json")));
         }
+        assertNull(file.notSavingReason(), "with the broken file safely aside, saving goes on as usual");
+        fixture.distance.set(128);
         file.save();
-        assertTrue(written().has("options"));
+        assertEquals(128, written().getAsJsonObject("options").get("test.distance").getAsInt());
+    }
+
+    /**
+     * R2: a file that can't be read (locked by a virus scanner or a sync tool on Windows; here, no
+     * read permission) still holds the player's settings. The session runs on the defaults and
+     * never saves, so the file is never replaced, and nothing is moved aside.
+     */
+    @Test
+    void anUnreadableFileIsNeverReplacedByTheDefaults() throws IOException {
+        String saved = "{\"schema\": 1, \"options\": {\"test.distance\": 96}}";
+        Files.writeString(file(), saved);
+        Files.setPosixFilePermissions(file(), PosixFilePermissions.fromString("---------"));
+        Fixture fixture = new Fixture();
+        ConfigFile file;
+        try {
+            assumeFalse(Files.isReadable(file()), "running with permissions that read anything (root)");
+            file = load(fixture.registry);
+        } finally {
+            Files.setPosixFilePermissions(file(), PosixFilePermissions.fromString("rw-------"));
+        }
+        assertEquals(256, fixture.distance.value(), "the defaults are used");
+        assertNotNull(file.notSavingReason());
+
+        fixture.distance.set(320);
+        file.save();
+        file.save();
+        assertEquals(saved, Files.readString(file()), "the player's file is untouched, even once it can be read again");
+        try (var listing = Files.list(folder)) {
+            assertEquals(1, listing.count(), "nothing was moved aside or written beside it");
+        }
+    }
+
+    /** R2: a broken file that can't be renamed aside (its folder is read-only) is never written over either. */
+    @Test
+    void aBrokenFileThatCantBeMovedAsideIsNeverReplaced() throws IOException {
+        Files.writeString(file(), "{ this is not json");
+        Files.setPosixFilePermissions(folder, PosixFilePermissions.fromString("r-x------"));
+        Fixture fixture = new Fixture();
+        ConfigFile file;
+        try {
+            assumeFalse(Files.isWritable(folder), "running with permissions that write anything (root)");
+            file = load(fixture.registry);
+        } finally {
+            Files.setPosixFilePermissions(folder, PosixFilePermissions.fromString("rwx------"));
+        }
+        assertNotNull(file.notSavingReason());
+
+        fixture.toggle.set(false);
+        file.save();
+        assertEquals("{ this is not json", Files.readString(file()), "the folder is writable again, and still nothing replaced it");
+        try (var listing = Files.list(folder)) {
+            assertEquals(1, listing.count());
+        }
+    }
+
+    private static String readQuietly(Path path) {
+        try {
+            return Files.readString(path);
+        } catch (IOException failure) {
+            return "";
+        }
     }
 
     @Test

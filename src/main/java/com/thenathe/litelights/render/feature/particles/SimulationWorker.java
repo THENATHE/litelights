@@ -5,8 +5,10 @@ import java.util.concurrent.Semaphore;
 
 /**
  * One background thread that runs the particle step between client ticks. The client thread
- * starts a step after it has queued the tick's spawns and waits for it at the start of the next
- * tick; the step normally takes well under a millisecond, so the wait is nearly always zero.
+ * starts a step after it has queued the tick's spawns and checks at the next tick whether it has
+ * finished, without waiting: at the top settings a step takes about half a tick on a fast CPU, so a
+ * slower CPU, or the catch-up ticks Minecraft runs back to back after a hitch, would otherwise wait
+ * for it. While a step still runs, the client thread skips that tick's particle work.
  *
  * <p>No allocation per step: the task is fixed and the handshake is two semaphores.
  */
@@ -49,7 +51,7 @@ final class SimulationWorker {
         }
     }
 
-    /** Starts a step. The caller must not touch the step's state until {@link #await} returns. */
+    /** Starts a step. The caller must not touch the step's state until {@link #poll} or {@link #await} says it is done. */
     void launch() {
         ensureStarted();
         busy = true;
@@ -57,15 +59,30 @@ final class SimulationWorker {
     }
 
     /**
-     * Waits for the step started last, if any. Returns the error it threw, or null; a failed step
-     * leaves the next state as it was, and the caller decides what to do.
+     * Whether the step started last has finished (or none was started), without ever waiting. Once
+     * it has, the caller may touch the step's state again, and {@link #takeFailure} has what it threw.
+     */
+    boolean poll() {
+        if (busy && done.tryAcquire()) {
+            busy = false;
+        }
+        return !busy;
+    }
+
+    /**
+     * Waits for the step started last, if any: only for a clear (a new world, everything switched
+     * off, a failure), never once a tick. Returns the error it threw, or null.
      */
     Throwable await() {
-        if (!busy) {
-            return null;
+        if (busy) {
+            done.acquireUninterruptibly();
+            busy = false;
         }
-        done.acquireUninterruptibly();
-        busy = false;
+        return takeFailure();
+    }
+
+    /** The error the last finished step threw, once, or null; a failed step leaves the next state as it was. */
+    Throwable takeFailure() {
         Throwable error = failure;
         failure = null;
         return error;

@@ -21,10 +21,15 @@ public final class LiteLightsModuleData implements OverlayConfigStore.ModuleData
         LiteLightsConfig.save();
     }
 
-    /** Kept under {@code modules.overlays_unreadable}, where nothing reads or replaces it. */
     @Override
-    public void keepUnreadable(JsonObject data) {
-        OverlayConfigStore.replaceContents(LiteLightsConfig.module(OverlayConfigStore.MODULE_ID + "_unreadable"), data);
+    public JsonObject readBeside(String key) {
+        return LiteLightsConfig.hasModule(key) ? LiteLightsConfig.module(key) : null;
+    }
+
+    /** Kept under {@code modules.<key>}, where nothing reads or replaces it. */
+    @Override
+    public void writeBeside(String key, JsonObject data) {
+        OverlayConfigStore.replaceContents(LiteLightsConfig.module(key), data);
         LiteLightsConfig.save();
     }
 }

@@ -26,6 +26,7 @@ import net.minecraft.client.renderer.fog.FogData;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.FogType;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4fc;
@@ -164,6 +165,10 @@ public final class FarTerrain {
         RenderSettings.FarShadows mode = farShadowMode(frame);
         shadows.applyMode(mode);
         ClientLevel level = Minecraft.getInstance().level;
+        if (level == null || level.dimension() != Level.OVERWORLD) {
+            // Far snow is the overworld's (Almanac's map): elsewhere it keeps nothing of the overworld.
+            snow.leaveLevel();
+        }
         if (mode == RenderSettings.FarShadows.ADVANCED && level != null) {
             try {
                 BlockPos cameraBlock = camera.blockPos;
@@ -342,7 +347,7 @@ public final class FarTerrain {
         if (!farTerrain && !values.farShadows) {
             return;
         }
-        FarSnow snowThisFrame = farTerrain && !skyless && level != null && prepareSnow(level) ? snow : null;
+        FarSnow snowThisFrame = farTerrain && !skyless && level != null && level.dimension() == Level.OVERWORLD && prepareSnow(level) ? snow : null;
         try {
             PostTimings.begin(PostTimings.FAR_TERRAIN);
             pass.draw(colorTexture, colorView, depthView, values, farShadow, waterA, waterB, distantHorizons, snowThisFrame);

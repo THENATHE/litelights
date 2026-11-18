@@ -1,6 +1,5 @@
 package com.thenathe.litelights.render.feature.weather;
 
-import com.thenathe.litelights.config.DimensionOptions.Aspect;
 import com.thenathe.litelights.config.PreviewWeather;
 import com.thenathe.litelights.render.LiteMath;
 import com.thenathe.litelights.render.RenderSettings;
@@ -15,8 +14,8 @@ import com.thenathe.litelights.render.frame.WeatherPreview;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.world.level.biome.Biome;
-import net.minecraft.world.level.dimension.DimensionType;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -73,6 +72,13 @@ public final class Puddles {
         timeScaleForQa = scale;
     }
 
+    /** The world was left: dry ground, and nothing kept of the level. */
+    public void onWorldLeft() {
+        wetness.reset();
+        lastLevel = null;
+        wantsMaps = false;
+    }
+
     /** QA only: dry ground, and the next reading starts afresh as on joining a world. */
     public void resetForQa() {
         wetness.reset();
@@ -95,16 +101,14 @@ public final class Puddles {
             wetness.reset();
             lastLevel = level;
         }
-        boolean weatherHere = level != null && level.dimensionType().skybox() == DimensionType.Skybox.OVERWORLD
-            && DimensionGate.allows(Aspect.WEATHER);
-        if (!weatherHere) {
+        if (!DimensionGate.hasWeather(level)) {
             wantsMaps = false;
             frame.puddles.set(0.0f);
             return;
         }
         cursor.set(frame.cameraBlockX, frame.cameraBlockY, frame.cameraBlockZ);
-        Biome biome = level.getBiome(cursor).value();
-        PuddleWetness.Fall fall = switch (LocalClimate.fallAt(level, cursor)) {
+        Holder<Biome> biome = level.getBiome(cursor);
+        PuddleWetness.Fall fall = switch (LocalClimate.fallAt(level, biome, cursor)) {
             case RAIN -> PuddleWetness.Fall.RAIN;
             case SNOW -> PuddleWetness.Fall.SNOW;
             case NONE -> PuddleWetness.Fall.NONE;
@@ -130,7 +134,7 @@ public final class Puddles {
             frame.puddles.set(0.0f);
             return;
         }
-        int tint = biome.getWaterColor() & 0xFFFFFF;
+        int tint = biome.value().getWaterColor() & 0xFFFFFF;
         frame.puddles.set(cover, falling, tint == 0 ? VANILLA_WATER : tint, 0.0f);
     }
 }

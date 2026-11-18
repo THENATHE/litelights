@@ -1,19 +1,18 @@
 package com.thenathe.litelights.render.feature.weather;
 
-import com.thenathe.litelights.config.DimensionOptions.Aspect;
 import com.thenathe.litelights.config.PreviewWeather;
 import com.thenathe.litelights.render.LiteMath;
 import com.thenathe.litelights.render.RenderSettings;
 import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
+import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import com.thenathe.litelights.render.frame.DimensionGate;
 import com.thenathe.litelights.render.frame.FrameClock;
 import com.thenathe.litelights.render.frame.FrameState;
 import com.thenathe.litelights.render.frame.WeatherPreview;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.world.level.dimension.DimensionType;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -68,6 +67,13 @@ public final class SnowyLeaves {
         timeScaleForQa = scale;
     }
 
+    /** The world was left: no snow, and nothing kept of the level. */
+    public void onWorldLeft() {
+        snow.reset();
+        lastLevel = null;
+        wantsMap = false;
+    }
+
     /** QA only: no snow, and the next reading starts afresh as on joining a world. */
     public void resetForQa() {
         snow.reset();
@@ -90,16 +96,16 @@ public final class SnowyLeaves {
             snow.reset();
             lastLevel = level;
         }
-        boolean weatherHere = level != null && level.dimensionType().skybox() == DimensionType.Skybox.OVERWORLD
-            && DimensionGate.allows(Aspect.WEATHER);
-        if (!weatherHere) {
+        if (!DimensionGate.hasWeather(level)) {
             wantsMap = false;
             frame.snowCover.set(0.0f);
             return;
         }
-        // The world's own weather, never the preview's: the preview only changes what is drawn.
+        // The world's own weather, never the preview's: the preview only changes what is drawn. With
+        // a seasons mod that shares the rain out by climate (Almanac), the world's levels, not the
+        // player's share: a snowing taiga's canopies frost while the player stands in dry land.
         float seconds = FrameClock.gameSeconds(Math.min(LONGEST_STEP, FrameClock.frameSeconds()));
-        snow.update(seconds * timeScaleForQa, level.getRainLevel(1.0f), level.getThunderLevel(1.0f));
+        snow.update(seconds * timeScaleForQa, LocalClimate.worldRain(level), LocalClimate.worldThunder(level));
 
         float cover = snow.cover();
         float anyBiome = 0.0f;

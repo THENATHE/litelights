@@ -129,7 +129,13 @@ public final class WeatherParticles {
         }
     }
 
-    private static void precipitation(Surroundings s, SpawnQueue queue, ColumnGrid grid, RenderSettings.Weather weather, float scale) {
+    /**
+     * Rain and snow. Each tries at its own rate, and only where some land in the circle falls that
+     * way: snow lingers far longer than rain and needs fewer new flakes, and trying at rain's rate
+     * over snow threw most of the attempts away after placing them. Per column the same drops and
+     * flakes come out on average.
+     */
+    static void precipitation(Surroundings s, SpawnQueue queue, ColumnGrid grid, RenderSettings.Weather weather, float scale) {
         boolean custom = ownPrecipitation(weather);
         if (!custom && weather.precipitation() == RenderSettings.PrecipitationLook.VANILLA || WeatherCompat.precipitationHandledElsewhere()
             || s.rain < 0.01f) {
@@ -139,11 +145,15 @@ public final class WeatherParticles {
         float share = custom ? 1.0f : 0.25f + 0.35f * s.thunder;
         float rainRate = 56.0f * RAIN_COVERAGE * s.rain * (1.0f + 0.6f * s.thunder) * share * scale;
         float snowRate = 15.0f * SNOW_COVERAGE * s.rain * (1.0f + BLIZZARD_SNOW * s.storm.blizzard()) * share * scale;
-        RandomSource random = s.random;
-        int attempts = ParticleBudget.countFromRate(Math.max(rainRate, snowRate), random.nextFloat());
-        float snowChance = snowRate / Math.max(rainRate, 0.001f);
-        int reserve = (int) (queue.categoryCap(ParticleCategory.WEATHER) * RESERVE_SHARE);
         float radius = RADIUS * s.weatherReach;
+        double centerX = s.cameraX - s.wind[0] * UPWIND_TICKS;
+        double centerZ = s.cameraZ - s.wind[1] * UPWIND_TICKS;
+        RandomSource random = s.random;
+        int rainAttempts = fallsNear(grid, centerX, centerZ, radius, ColumnGrid.PRECIPITATION_RAIN)
+            ? ParticleBudget.countFromRate(rainRate, random.nextFloat()) : 0;
+        int snowAttempts = fallsNear(grid, centerX, centerZ, radius, ColumnGrid.PRECIPITATION_SNOW)
+            ? ParticleBudget.countFromRate(snowRate, random.nextFloat()) : 0;
+        int reserve = (int) (queue.categoryCap(ParticleCategory.WEATHER) * RESERVE_SHARE);
         // Further out, the view reaches higher: drops and flakes start higher up to fill it.
         float rainHeight = 15.0f * s.weatherReach;
         float snowHeight = 14.0f * s.weatherReach;
@@ -152,41 +162,68 @@ public final class WeatherParticles {
         // A blizzard carries its intensity in the flakes (fog098): larger, and a shade greyer, as
         // flakes look against a white-out, so they show against the storm fog instead of melting into it.
         int snowColor = LiteMath.mixRgb(SNOW_COLOR, BLIZZARD_SNOW_COLOR, 0.8f * s.storm.blizzard()) | (SNOW_COLOR & 0xFF000000);
-        for (int i = 0; i < attempts && queue.roomInCap(ParticleCategory.WEATHER) > reserve; i++) {
-            float angle = random.nextFloat() * (float) (Math.PI * 2.0);
-            // Not right at the camera, where a drop would fill the view.
-            float distance = 1.5f + (float) Math.pow(random.nextFloat(), spread) * (radius - 1.5f);
-            double x = s.cameraX - s.wind[0] * UPWIND_TICKS + Math.cos(angle) * distance;
-            double z = s.cameraZ - s.wind[1] * UPWIND_TICKS + Math.sin(angle) * distance;
-            byte fall = previewedFall(grid.precipitationAt(x, z));
-            if (fall == ColumnGrid.PRECIPITATION_NONE) {
-                continue;
+        // Interleaved, so where both fall and the cap is reached neither is left out.
+        for (int i = 0; i < Math.max(rainAttempts, snowAttempts) && queue.roomInCap(ParticleCategory.WEATHER) > reserve; i++) {
+            if (i < rainAttempts && fallSpot(random, grid, centerX, centerZ, radius, spread, ColumnGrid.PRECIPITATION_RAIN)) {
+                drop(s, queue, grid, SPOT[0], s.cameraY + 5.0 + random.nextFloat() * rainHeight, SPOT[2]);
             }
-            double ground = grid.groundHeight(x, z);
-            boolean snow = fall == ColumnGrid.PRECIPITATION_SNOW;
-            double y = s.cameraY + (snow ? 1.0 + random.nextFloat() * snowHeight : 5.0 + random.nextFloat() * rainHeight);
-            if (ground == Double.NEGATIVE_INFINITY || ground > y) {
-                continue; // under a roof, or underground
-            }
-            // Snow lingers far longer than rain, so it needs fewer new flakes: most attempts over snow are skipped.
-            if (snow && random.nextFloat() > snowChance) {
-                continue;
-            }
-            int light = grid.lightAt(x, z);
-            if (snow) {
-                float blizzard = s.storm.blizzard();
-                float fallSpeed = -(0.05f + random.nextFloat() * 0.05f) * (1.0f + 0.8f * blizzard);
-                float size = (0.07f + random.nextFloat() * 0.05f) * (1.0f + 0.5f * blizzard);
-                queue.add(ParticleKind.SNOW, x, y, z, s.wind[0], fallSpeed, s.wind[1], size,
-                    150 + random.nextInt(80), snowColor, light, random.nextInt());
-            } else {
-                boolean dark = s.storm.atmosphere() && grid.climateAt(x, z) == BiomeClimate.PALE_GARDEN;
-                // Thunderstorm rain falls harder: faster, so its streaks are longer (0.2 before fog098).
-                float fallSpeed = -(0.7f + random.nextFloat() * 0.3f) * (1.0f + 0.35f * s.thunder);
-                queue.add(ParticleKind.RAIN, x, y, z, s.wind[0] * 1.5f, fallSpeed, s.wind[1] * 1.5f, 0.026f,
-                    60, dark ? DARK_RAIN_COLOR : RAIN_COLOR, light, random.nextInt());
+            if (i < snowAttempts && fallSpot(random, grid, centerX, centerZ, radius, spread, ColumnGrid.PRECIPITATION_SNOW)) {
+                flake(s, queue, grid, SPOT[0], s.cameraY + 1.0 + random.nextFloat() * snowHeight, SPOT[2], snowColor);
             }
         }
+    }
+
+    /**
+     * Whether any land in the square around the circle falls as {@code fall}: the grid's cells, or
+     * a previewed weather, which falls everywhere.
+     */
+    private static boolean fallsNear(ColumnGrid grid, double centerX, double centerZ, float radius, byte fall) {
+        if (WeatherPreview.previewing() && WeatherPreview.fall() != null) {
+            return previewedFall(ColumnGrid.PRECIPITATION_NONE) == fall;
+        }
+        return grid.fallsWithin(centerX, centerZ, radius, fall);
+    }
+
+    /**
+     * A random spot in the circle rain and snow spawn in, written to SPOT (x and z), and whether
+     * its land falls as {@code wanted}.
+     */
+    private static boolean fallSpot(RandomSource random, ColumnGrid grid, double centerX, double centerZ, float radius, float spread,
+                                    byte wanted) {
+        float angle = random.nextFloat() * (float) (Math.PI * 2.0);
+        // Not right at the camera, where a drop would fill the view.
+        float distance = 1.5f + (float) Math.pow(random.nextFloat(), spread) * (radius - 1.5f);
+        SPOT[0] = centerX + Math.cos(angle) * distance;
+        SPOT[2] = centerZ + Math.sin(angle) * distance;
+        return previewedFall(grid.precipitationAt(SPOT[0], SPOT[2])) == wanted;
+    }
+
+    /** A raindrop starting at (x, y, z), unless the land there is above it (under a roof, or underground). */
+    private static void drop(Surroundings s, SpawnQueue queue, ColumnGrid grid, double x, double y, double z) {
+        double ground = grid.groundHeight(x, z);
+        if (ground == Double.NEGATIVE_INFINITY || ground > y) {
+            return;
+        }
+        RandomSource random = s.random;
+        boolean dark = s.storm.atmosphere() && grid.climateAt(x, z) == BiomeClimate.PALE_GARDEN;
+        // Thunderstorm rain falls harder: faster, so its streaks are longer (0.2 before fog098).
+        float fallSpeed = -(0.7f + random.nextFloat() * 0.3f) * (1.0f + 0.35f * s.thunder);
+        queue.add(ParticleKind.RAIN, x, y, z, s.wind[0] * 1.5f, fallSpeed, s.wind[1] * 1.5f, 0.026f,
+            60, dark ? DARK_RAIN_COLOR : RAIN_COLOR, grid.lightAt(x, z), random.nextInt());
+    }
+
+    /** A snowflake starting at (x, y, z), unless the land there is above it. */
+    private static void flake(Surroundings s, SpawnQueue queue, ColumnGrid grid, double x, double y, double z, int color) {
+        double ground = grid.groundHeight(x, z);
+        if (ground == Double.NEGATIVE_INFINITY || ground > y) {
+            return;
+        }
+        RandomSource random = s.random;
+        float blizzard = s.storm.blizzard();
+        float fallSpeed = -(0.05f + random.nextFloat() * 0.05f) * (1.0f + 0.8f * blizzard);
+        float size = (0.07f + random.nextFloat() * 0.05f) * (1.0f + 0.5f * blizzard);
+        queue.add(ParticleKind.SNOW, x, y, z, s.wind[0], fallSpeed, s.wind[1], size,
+            150 + random.nextInt(80), color, grid.lightAt(x, z), random.nextInt());
     }
 
     private static void mist(Surroundings s, SpawnQueue queue, ColumnGrid grid, float scale) {

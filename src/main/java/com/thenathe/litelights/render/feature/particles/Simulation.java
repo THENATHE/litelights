@@ -1,9 +1,12 @@
 package com.thenathe.litelights.render.feature.particles;
 
+import net.minecraft.util.Mth;
+
 /**
  * One tick of particle motion: reads one {@link ParticleState} and writes the next, then adds the
  * tick's new particles. Plain arithmetic over arrays, no game objects, so it runs on a worker
- * thread and in unit tests.
+ * thread and in unit tests. After the step the worker also picks the particles frames may draw
+ * ({@link CullList}).
  */
 final class Simulation {
     /** Settled snow melts this many ticks after landing. */
@@ -70,10 +73,13 @@ final class Simulation {
             }
             if (kind.wanderStrength > 0.0f) {
                 // Each particle wanders on its own phase, from its seed, so neighbours don't move in step.
+                // Vanilla's table sine: a blizzard at the top settings makes about 860,000 of these
+                // a tick, and the table's error (a ten-thousandth) can't be seen in a drift of a
+                // hundredth of a block.
                 float phase = age * kind.wanderRate + (seed & 1023) * 0.0614f;
-                speedX += (float) Math.sin(phase) * kind.wanderStrength;
-                speedY += (float) Math.sin(phase * 1.31f + 1.7f) * kind.wanderStrength * 0.5f;
-                speedZ += (float) Math.cos(phase * 0.87f + 0.4f) * kind.wanderStrength;
+                speedX += Mth.sin(phase) * kind.wanderStrength;
+                speedY += Mth.sin(phase * 1.31f + 1.7f) * kind.wanderStrength * 0.5f;
+                speedZ += Mth.cos(phase * 0.87f + 0.4f) * kind.wanderStrength;
             }
             speedX *= kind.drag;
             speedY *= kind.drag;

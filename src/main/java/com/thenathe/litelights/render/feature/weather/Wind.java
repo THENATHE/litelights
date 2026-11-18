@@ -35,6 +35,20 @@ public final class Wind {
     }
 
     /**
+     * How much the storms add to the wind, 0 (calm) to 1, for {@link #sample}'s {@code storm}: rain
+     * brings some wind of its own, more in thunder, and sandstorms and blizzards blow hardest. The
+     * one rule for everything that moves with the wind: the particles, the sea's waves and the
+     * swinging lanterns.
+     *
+     * @param sandstorm the sandstorm's strength where the camera is (StormAtmosphere), 0 to 1
+     * @param blizzard  the blizzard's strength where the camera is, 0 to 1
+     */
+    public static float stormStrength(float rain, float thunder, float sandstorm, float blizzard) {
+        float rainWind = rain * (0.55f + 0.45f * thunder) * 0.45f;
+        return Math.max(rainWind, Math.max(sandstorm, blizzard));
+    }
+
+    /**
      * The direction the wind blows toward, in radians: x is its cosine, z its sine. It changes
      * smoothly, also from one day to the next, so swaying plants never snap round.
      */

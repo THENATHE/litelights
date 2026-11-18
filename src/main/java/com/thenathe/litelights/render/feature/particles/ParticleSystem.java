@@ -1,6 +1,7 @@
 package com.thenathe.litelights.render.feature.particles;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.thenathe.litelights.LiteLightsClient;
 import com.thenathe.litelights.config.Feature;
 import com.thenathe.litelights.config.LiteLightsOptions;
 import com.thenathe.litelights.config.PreviewEvent;
@@ -32,8 +33,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.biome.Biome;
@@ -44,11 +47,18 @@ import net.minecraft.world.level.block.state.BlockState;
  * steps the simulation on its worker, and hands each frame's quads to the submit API. Also drives
  * the night sky events.
  *
- * <p>Per tick, on the client thread: wait for last tick's step, make its result the published
- * state, look at the surroundings, queue new particles within the cap, start the next step. Per
- * frame, on the same thread: build quads from the published state. The worker only reads the
- * published state, the spawn queue and the column grid, and only writes the other state, so
- * nothing is shared while it runs.
+ * <p>Per tick, on the client thread: if last tick's step has finished, make its result the
+ * published state, look at the surroundings, queue new particles within the cap and start the next
+ * step; if it hasn't (a catch-up tick after a hitch, or a CPU too slow for the settings), skip the
+ * particles for this tick rather than wait, and hold them where they are. The worker only reads the
+ * published state, the spawn queue and the column grid, and only writes the other state, with the
+ * list of its particles a frame may draw ({@link CullList}), so nothing is shared while it runs.
+ *
+ * <p>Per frame: as soon as the frame's camera is known (LiteLights' frame update, before the level
+ * draws), the render thread hands the quad building to {@link QuadHelpers} in slices; when the
+ * level reaches the particles it builds what is left, collects the slices in order and submits
+ * them. The published state can't change in between: ticks run outside frames, and every tick,
+ * clear and resize finishes the frame's slices first.
  */
 public final class ParticleSystem {
     // Diagnostics slots: totals since the last reset, and where a tick's time goes, for the QA probe.
@@ -60,6 +70,13 @@ public final class ParticleSystem {
     private static final int SKY_NANOS = 4;
     private static final int PARTICLES_DRAWN = 5;
     private static final int VERTEX_NANOS = 6;
+    private static final int LATE_TICKS = 7;
+    private static final int LIST_FRAMES = 8;
+    private static final int WALKED = 9;
+    private static final int AUDITED_FRAMES = 10;
+    private static final int AUDIT_MISSING = 11;
+    private static final int AUDIT_EXTRA = 12;
+    private static final int AUDITED_LIST_FRAMES = 13;
     private static final String[] PART_NAMES = {"wait", "surroundings", "grid", "weather", "ambient", "fire", "dimension"};
     private static final int PART_WAIT = 0;
     private static final int PART_SURROUNDINGS = 1;
@@ -91,6 +108,20 @@ public final class ParticleSystem {
     private static final int EMBER_VEIN_ORDER = 2;
     /** The sky-event rows drawn here; meteor showers are the sky pass's (SkyFogFeature marks that row). */
     private static final String[] SKY_ROWS = {"weather.polar_lights", "weather.far_fireworks", "weather.rainbows"};
+    /** The frame update's phase that starts the quad slices, after every stream has filled in the frame (the storm fog). */
+    private static final Identifier QUAD_PHASE = LiteLightsClient.id("particle_quads");
+    /**
+     * The cull list's margins (CullList): it serves frames one to two ticks after the camera it is
+     * picked for, so it allows three ticks of the last tick's movement and turning, plus a little for
+     * starting to move or turn. A frame beyond them walks every particle.
+     */
+    private static final float MOVE_MARGIN = 2.0f;
+    private static final float TURN_MARGIN = (float) Math.toRadians(12.0);
+    private static final float LEAD_TICKS = 3.0f;
+    /** A move this long in a tick is a teleport: no reason to widen the next list for it. */
+    private static final double TELEPORT = 16.0;
+    /** The storm fog thins between ticks; the list keeps soft particles this much further out than it hides them. */
+    private static final float FOG_LEAD = 1.25f;
 
     private ParticleState published = new ParticleState(ParticleBudget.totalCap(RenderSettings.ParticleDensity.FULL));
     private ParticleState next = new ParticleState(ParticleBudget.totalCap(RenderSettings.ParticleDensity.FULL));
@@ -104,12 +135,35 @@ public final class ParticleSystem {
     private final Simulation.Inputs inputs = new Simulation.Inputs();
     private final ParticleSprites sprites = new ParticleSprites();
     private final ParticleRenderer renderer = new ParticleRenderer(sprites);
+    private final QuadHelpers quads = new QuadHelpers(renderer::buildSlice, QuadHelpers.helpersFor(Runtime.getRuntime().availableProcessors()));
+    /** What the next step's cull list is picked for (written on the client thread before each step). */
+    private final CullList.Basis cullBasis = new CullList.Basis();
+    private boolean hasLastView;
+    private double lastViewX;
+    private double lastViewY;
+    private double lastViewZ;
+    private float lastForwardX;
+    private float lastForwardY;
+    private float lastForwardZ;
+    /** Whether this frame's slices have been started (the frame update ran) and not yet collected. */
+    private boolean framePrepared;
+    /**
+     * The last step hadn't finished when this tick came, so the published state is a tick old:
+     * frames hold its particles where they are instead of running through the tick again.
+     */
+    private boolean stepLate;
+    /** QA only: compare every frame's particles against a walk over all of them. */
+    private boolean auditing;
+    /** QA only: no particle ticks, and frames hold the particles at their newest position. */
+    private boolean heldForQa;
+    private ParticleBatch auditScratch;
     private final SkyEvents sky = new SkyEvents();
     private final AuroraColdness auroraColdness = new AuroraColdness();
     private final HazeDrift hazeDrift = new HazeDrift();
     private final SimulationWorker worker = new SimulationWorker(this::stepOnWorker);
-    /** Worker-thread time spent stepping, summed (written by the worker only; read for the QA probe). */
+    /** Worker-thread time spent stepping and picking the cull list, summed (written by the worker only; read for the QA probe). */
     private volatile long workerNanos;
+    private volatile long cullNanos;
     private final float[] burst = new float[5];
 
     private boolean stepPending;
@@ -129,7 +183,7 @@ public final class ParticleSystem {
     // since the last reset.
     private long lastTickNanos;
     private long lastFrameNanos;
-    private final long[] totals = new long[7];
+    private final long[] totals = new long[14];
 
     private ParticleSystem() {
     }
@@ -146,9 +200,14 @@ public final class ParticleSystem {
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
         LevelRenderEvents.COLLECT_SUBMITS.register(this::collect);
         LiteRenderEvents.FRAME_UPDATE.register(this::frameUpdate);
+        LiteRenderEvents.FRAME_UPDATE.addPhaseOrdering(Event.DEFAULT_PHASE, QUAD_PHASE);
+        LiteRenderEvents.FRAME_UPDATE.register(QUAD_PHASE, this::startQuads);
         LiteRenderEvents.AFTER_SKY.addPhaseOrdering(Event.DEFAULT_PHASE, SkyEvents.DRAW_PHASE);
         LiteRenderEvents.AFTER_SKY.register(SkyEvents.DRAW_PHASE, this::afterSky);
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> worker.stop());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            quads.stop();
+            worker.stop();
+        });
         markHandledRows();
         FallingLeaves.register();
     }
@@ -201,7 +260,12 @@ public final class ParticleSystem {
 
     private void tick(Minecraft minecraft) {
         long started = System.nanoTime();
-        publishLastStep(started);
+        // A frame whose level never reached the particles still has its slices out.
+        quads.finish();
+        if (heldForQa) {
+            return;
+        }
+        boolean stepDone = publishLastStep(started);
 
         RenderSettings settings = RenderSettingsAccess.current();
         ClientLevel level = minecraft.level;
@@ -215,6 +279,7 @@ public final class ParticleSystem {
         }
         if (level != lastLevel) {
             clear();
+            stepDone = true;
             auroraColdness.reset();
             sky.resetRainbows();
             lastLevel = level;
@@ -243,11 +308,19 @@ public final class ParticleSystem {
 
         RenderSettings.ParticleDensity amount = running ? settings.particles().density() : RenderSettings.ParticleDensity.OFF;
         FallingLeaves.update(surroundings, amount);
-        fitToReach(settings);
-        queue.begin(amount, capScales, published.categoryCounts, published.count);
         hazeDrift.tick(surroundings.wind[0], surroundings.wind[1]);
         surroundings.hazeDriftX = hazeDrift.x();
         surroundings.hazeDriftZ = hazeDrift.z();
+        stepLate = !stepDone;
+        if (stepLate) {
+            // The worker still reads the queue and the grid: this tick spawns nothing and steps
+            // nothing, and the particles lose a tick.
+            totals[LATE_TICKS]++;
+            countTick(started);
+            return;
+        }
+        fitToReach(settings);
+        queue.begin(amount, capScales, published.categoryCounts, published.count);
         HazeField.get().beginTick();
         if (amount != RenderSettings.ParticleDensity.OFF) {
             spawn(level, part);
@@ -258,6 +331,10 @@ public final class ParticleSystem {
         if (published.count > 0 || queue.count > 0) {
             startStep(amount);
         }
+        countTick(started);
+    }
+
+    private void countTick(long started) {
         lastTickNanos = System.nanoTime() - started;
         totals[TICK_NANOS] += lastTickNanos;
         totals[TICKS]++;
@@ -282,20 +359,28 @@ public final class ParticleSystem {
         grid.resize(ParticleReach.gridHalf(settings.weather().distance()));
     }
 
-    /** Waits for the worker's step and makes its result the published state. */
-    private void publishLastStep(long started) {
-        Throwable failure = worker.await();
+    /**
+     * Makes the worker's finished step the published state, without waiting: returns false while
+     * the step still runs.
+     */
+    private boolean publishLastStep(long started) {
+        boolean finished = worker.poll();
         mark(PART_WAIT, started);
+        if (!finished) {
+            return false;
+        }
         if (stepPending) {
             ParticleState stepped = next;
             next = published;
             published = stepped;
             stepPending = false;
         }
+        Throwable failure = worker.takeFailure();
         if (failure != null) {
             RenderFeatureStatus.failed(RenderFeature.PARTICLES, failure);
             clear();
         }
+        return true;
     }
 
     /** Queues this tick's new particles from every spawner, timing each for the QA probe. */
@@ -322,7 +407,11 @@ public final class ParticleSystem {
     private void stepOnWorker() {
         long started = System.nanoTime();
         Simulation.step(published, next, queue, grid, inputs);
-        workerNanos += System.nanoTime() - started;
+        long stepped = System.nanoTime();
+        next.drawable.pick(next, cullBasis);
+        long picked = System.nanoTime();
+        workerNanos += picked - started;
+        cullNanos += picked - stepped;
     }
 
     /** Hands the worker this tick's camera and wind and starts the next simulation step. */
@@ -334,8 +423,46 @@ public final class ParticleSystem {
         inputs.windZ = surroundings.wind[1];
         inputs.cap = ParticleBudget.totalCap(amount, capScales);
         System.arraycopy(rangeScales, 0, inputs.rangeScales, 0, rangeScales.length);
+        updateCullBasis();
         worker.launch();
         stepPending = true;
+    }
+
+    /**
+     * What the step's cull list is picked for: the last frame's camera and view, with margins grown
+     * from how far that camera moved and turned since the last tick's.
+     */
+    private void updateCullBasis() {
+        if (!renderer.writeView(cullBasis)) {
+            cullBasis.known = false;
+            hasLastView = false;
+            return;
+        }
+        double moved = 0.0;
+        float turned = 0.0f;
+        if (hasLastView) {
+            double movedX = cullBasis.cameraX - lastViewX;
+            double movedY = cullBasis.cameraY - lastViewY;
+            double movedZ = cullBasis.cameraZ - lastViewZ;
+            moved = Math.sqrt(movedX * movedX + movedY * movedY + movedZ * movedZ);
+            if (moved > TELEPORT) {
+                moved = 0.0;
+            }
+            float cos = cullBasis.forwardX * lastForwardX + cullBasis.forwardY * lastForwardY + cullBasis.forwardZ * lastForwardZ;
+            turned = (float) Math.acos(Math.clamp(cos, -1.0f, 1.0f));
+        }
+        hasLastView = true;
+        lastViewX = cullBasis.cameraX;
+        lastViewY = cullBasis.cameraY;
+        lastViewZ = cullBasis.cameraZ;
+        lastForwardX = cullBasis.forwardX;
+        lastForwardY = cullBasis.forwardY;
+        lastForwardZ = cullBasis.forwardZ;
+        cullBasis.moveMargin = MOVE_MARGIN + LEAD_TICKS * (float) moved;
+        cullBasis.coneAngle += TURN_MARGIN + LEAD_TICKS * turned;
+        cullBasis.softLimit *= FOG_LEAD;
+        System.arraycopy(rangeScales, 0, cullBasis.rangeScales, 0, rangeScales.length);
+        cullBasis.known = true;
     }
 
     private static boolean anythingOn(RenderSettings settings) {
@@ -377,18 +504,28 @@ public final class ParticleSystem {
     /** An atlas was stitched again; the particle atlas holds this system's sprites. */
     public void onAtlasUploaded(TextureAtlas atlas) {
         if (atlas.location().equals(TextureAtlas.LOCATION_PARTICLES)) {
+            quads.finish();
             sprites.forget();
         }
     }
 
-    /** The player left the world: drops every particle and the level they were spawned in. */
+    /**
+     * The player left the world: drops every particle, the level they were spawned in and the
+     * aurora's biome lookups (which hold the old world's biome registry), and ends the quad helpers
+     * until the next world draws particles.
+     */
     public void onWorldLeft() {
         clear();
+        quads.stop();
+        auroraColdness.reset();
         lastLevel = null;
         surroundings.level = null;
+        hasLastView = false;
+        framePrepared = false;
     }
 
     private void clear() {
+        quads.finish();
         worker.await();
         stepPending = false;
         published.clear();
@@ -398,34 +535,79 @@ public final class ParticleSystem {
         HazeField.get().clear();
     }
 
+    /**
+     * The frame update's last phase: the frame's camera, projection and storm fog are known, so the
+     * quad slices start now and the helpers build them while the level draws.
+     */
+    private void startQuads(FrameState frame, RenderSettings settings) {
+        long started = System.nanoTime();
+        framePrepared = false;
+        try {
+            quads.finish();
+            if (!RenderFeatureStatus.mayRun(RenderFeature.PARTICLES) || !sprites.refresh()) {
+                return;
+            }
+            LevelRenderState levelState = Minecraft.getInstance().gameRenderer.gameRenderState().levelRenderState;
+            prepareFrame(levelState.cameraRenderState, levelState.worldPartialTicks, frame, settings);
+            quads.start(renderer.sliceCount());
+        } catch (RuntimeException error) {
+            RenderFeatureStatus.failed(RenderFeature.PARTICLES, error);
+        }
+        totals[FRAME_NANOS] += System.nanoTime() - started;
+    }
+
+    private void prepareFrame(CameraRenderState camera, float worldPartialTicks, FrameState frame, RenderSettings settings) {
+        boolean hdStyle = settings.particles().snowSandSprites() == RenderSettings.SnowSandSprites.DETAILED;
+        // A late step leaves last tick's particles published: hold them at their newest position.
+        float partialTick = stepLate || heldForQa ? 1.0f : worldPartialTicks;
+        renderer.prepare(published, camera.pos.x, camera.pos.y, camera.pos.z, camera.orientation, frame.viewProjection, partialTick,
+            hdStyle, rangeScales, stormFogOverParticles(frame), settings.weather().mistStyle());
+        framePrepared = true;
+    }
+
     private void collect(LevelRenderContext context) {
         if (published.count == 0 && !fire.hasDecals() || !RenderFeatureStatus.mayRun(RenderFeature.PARTICLES)) {
+            quads.finish();
+            framePrepared = false;
             return;
         }
         long started = System.nanoTime();
         // Vanilla built last frame's vertices after this method returned; count that time too.
-        totals[VERTEX_NANOS] += renderer.batch().takeBuildNanos() + renderer.burnMarkBatch().takeBuildNanos()
-            + renderer.emberVeinBatch().takeBuildNanos();
+        totals[VERTEX_NANOS] += renderer.takeBuildNanos();
         try {
-            if (!sprites.refresh()) {
-                return;
+            quads.finish();
+            if (!framePrepared) {
+                // No frame update this frame (LiteLights' renderer isn't ready yet): build it all now.
+                if (!sprites.refresh()) {
+                    return;
+                }
+                prepareFrame(context.levelState().cameraRenderState, context.levelState().worldPartialTicks,
+                    LiteLightsRenderer.get().frame(), RenderSettingsAccess.current());
+                for (int slice = 0; slice < renderer.sliceCount(); slice++) {
+                    renderer.buildSlice(slice);
+                }
+            }
+            framePrepared = false;
+            renderer.finishSlices();
+            if (auditing) {
+                audit();
             }
             CameraRenderState camera = context.levelState().cameraRenderState;
-            RenderSettings settings = RenderSettingsAccess.current();
-            boolean hdStyle = settings.particles().snowSandSprites() == RenderSettings.SnowSandSprites.DETAILED;
-            FrameState frame = LiteLightsRenderer.get().frame();
-            renderer.build(published, camera.pos.x, camera.pos.y, camera.pos.z, camera.orientation,
-                frame.viewProjection, context.levelState().worldPartialTicks, hdStyle, rangeScales, stormFogOverParticles(frame),
-                settings.weather().mistStyle());
             if (fire.hasDecals()) {
                 // Wraps once an hour, so the pulse keeps a float's precision on old worlds.
                 float seconds = (surroundings.gameTime % 72000L + context.levelState().worldPartialTicks) / 20.0f;
                 fire.drawDecals(renderer, sprites, camera.pos.x, camera.pos.y, camera.pos.z, seconds);
             }
             SubmitNodeCollector collector = context.submitNodeCollector();
-            boolean drew = !renderer.batch().isEmpty();
-            if (drew) {
-                collector.submitQuadParticleGroup(renderer.batch());
+            boolean drew = false;
+            // In slice order: vanilla appends each batch's quads to one draw per layer, so the
+            // frame's quads keep the order of one walk over the particles.
+            for (int slice = 0; slice < renderer.sliceCount(); slice++) {
+                ParticleBatch batch = renderer.slice(slice);
+                if (!batch.isEmpty()) {
+                    collector.submitQuadParticleGroup(batch);
+                    drew = true;
+                }
             }
             // The decals go after everything else in the solid phase, in their own orders, so the
             // soot is laid on the face first and the veins glow over it.
@@ -455,6 +637,27 @@ public final class ParticleSystem {
         totals[FRAME_NANOS] += lastFrameNanos;
         totals[FRAMES]++;
         totals[PARTICLES_DRAWN] += renderer.drawnLastFrame();
+        totals[WALKED] += renderer.walkCount();
+        if (renderer.walksList()) {
+            totals[LIST_FRAMES]++;
+        }
+    }
+
+    /** QA only: this frame's particles against a walk over every particle (see {@link #auditCullListForQa}). */
+    private void audit() {
+        if (auditScratch == null) {
+            auditScratch = new ParticleBatch();
+        }
+        int[] result = renderer.compareWithFullWalk(auditScratch);
+        if (result[0] < 0) {
+            return;
+        }
+        totals[AUDITED_FRAMES]++;
+        totals[AUDIT_MISSING] += result[0];
+        totals[AUDIT_EXTRA] += result[1];
+        if (renderer.walksList()) {
+            totals[AUDITED_LIST_FRAMES]++;
+        }
     }
 
     /**
@@ -557,6 +760,7 @@ public final class ParticleSystem {
 
     public void resetTotals() {
         workerNanos = 0L;
+        cullNanos = 0L;
         Arrays.fill(totals, 0L);
         Arrays.fill(partNanos, 0L);
     }
@@ -573,6 +777,61 @@ public final class ParticleSystem {
     /** Average worker-thread milliseconds per tick for the simulation step since the last reset. */
     public double averageWorkerMillis() {
         return totals[TICKS] == 0 ? 0.0 : workerNanos / 1.0e6 / totals[TICKS];
+    }
+
+    /** Average worker-thread milliseconds per tick picking the cull list (included in {@link #averageWorkerMillis}). */
+    public double averageCullMillis() {
+        return totals[TICKS] == 0 ? 0.0 : cullNanos / 1.0e6 / totals[TICKS];
+    }
+
+    /** Ticks since the last reset whose particle work was skipped because the worker's step hadn't finished. */
+    public long lateTicks() {
+        return totals[LATE_TICKS];
+    }
+
+    /** The share of frames since the last reset that walked the worker's cull list rather than every particle. */
+    public double listFrameShare() {
+        return totals[FRAMES] == 0 ? 0.0 : totals[LIST_FRAMES] / (double) totals[FRAMES];
+    }
+
+    /** Particles walked per frame since the last reset (the cull list's, or every live one). */
+    public double averageWalked() {
+        return totals[FRAMES] == 0 ? 0.0 : totals[WALKED] / (double) totals[FRAMES];
+    }
+
+    /** Quad helper threads running now. */
+    public int quadHelperThreads() {
+        return quads.threadCount();
+    }
+
+    /**
+     * QA only: from now on compare every frame's particles against a walk over all of them (slow:
+     * not for timing runs), or stop.
+     */
+    public void auditCullListForQa(boolean on) {
+        quads.finish();
+        auditing = on;
+        renderer.recordDrawn(on);
+    }
+
+    /** QA only: stop the particles where they are (no ticks), so one moment can be drawn several ways. */
+    public void holdForQa(boolean hold) {
+        heldForQa = hold;
+    }
+
+    /** QA only: walk every particle every frame, as before the cull list. */
+    public void useCullListForQa(boolean use) {
+        renderer.cullListOff = !use;
+    }
+
+    /** The audit since the last reset: frames compared, of them walking the list, and particles missing and extra. */
+    public Map<String, Object> cullAudit() {
+        Map<String, Object> audit = new LinkedHashMap<>();
+        audit.put("frames", totals[AUDITED_FRAMES]);
+        audit.put("listFrames", totals[AUDITED_LIST_FRAMES]);
+        audit.put("missing", totals[AUDIT_MISSING]);
+        audit.put("extra", totals[AUDIT_EXTRA]);
+        return audit;
     }
 
     /** Average client-thread milliseconds per tick for spawning and grid upkeep since the last reset. */

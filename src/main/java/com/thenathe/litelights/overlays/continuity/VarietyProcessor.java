@@ -135,15 +135,14 @@ final class VarietyProcessor implements QuadProcessor {
             }
             return;
         }
-        BetterGrass.Settings betterGrass = settings.betterGrassRole() == null ? BetterGrass.Settings.ABSENT : BetterGrass.settings();
         Direction[] directions = TEXTURE_DIRECTIONS[face.ordinal()];
         BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
         Pieces pieces = new Pieces(face, pos, directions, context.getExtraQuadEmitter(), level, audit != null);
         if (onFace) {
-            drawEdges(pieces, level, pos, appearanceState, state, face, own, betterGrass, directions, probe);
+            drawEdges(pieces, level, pos, appearanceState, state, face, own, directions, probe);
         }
         if (stepsHere) {
-            drawSteps(pieces, level, pos, appearanceState, state, betterGrass, directions, probe);
+            drawSteps(pieces, level, pos, appearanceState, state, directions, probe);
         }
         if (audit != null) {
             audit.face(settings.folder(), pos.asLong(), face, appearanceState, leftToBetterGrass, pieces.drawn());
@@ -202,8 +201,7 @@ final class VarietyProcessor implements QuadProcessor {
     }
 
     private void drawEdges(Pieces pieces, BlockAndTintGetter level, BlockPos pos, BlockState appearanceState, BlockState state,
-                           Direction face, BetterGrassRules.Side own, BetterGrass.Settings betterGrass, Direction[] directions,
-                           BlockPos.MutableBlockPos probe) {
+                           Direction face, BetterGrassRules.Side own, Direction[] directions, BlockPos.MutableBlockPos probe) {
         boolean[] spills = new boolean[4];
         boolean beside = face.getAxis().isHorizontal() && settings.betterGrassRole() != null;
         boolean soil = settings.betterGrassSoil().contains(appearanceState.getBlock());
@@ -215,11 +213,11 @@ final class VarietyProcessor implements QuadProcessor {
             probe.setWithOffset(pos, directions[edge]);
             BlockState neighbour = level.getBlockState(probe);
             BlockState appearance = neighbour.getAppearance(level, probe, face, state, pos);
-            if (!isSource(neighbour, appearance, probe, level, appearanceState, betterGrass)) {
+            if (!isSource(neighbour, appearance, probe, level, appearanceState, pieces)) {
                 continue;
             }
             spills[edge] = !beside || settings.betterGrassRole().spillsBeside(
-                settings.betterGrassRules().side(level, probe, neighbour, face, betterGrass), own, soil);
+                settings.betterGrassRules().side(level, probe, neighbour, face, pieces.betterGrass()), own, soil);
         }
         for (int edge = 0; edge < 4; edge++) {
             if (spills[edge]) {
@@ -244,7 +242,7 @@ final class VarietyProcessor implements QuadProcessor {
      * step, and a blended one is green down to its bottom corner.
      */
     private void drawSteps(Pieces pieces, BlockAndTintGetter level, BlockPos pos, BlockState appearanceState, BlockState state,
-                           BetterGrass.Settings betterGrass, Direction[] directions, BlockPos.MutableBlockPos probe) {
+                           Direction[] directions, BlockPos.MutableBlockPos probe) {
         probe.setWithOffset(pos, Direction.UP);
         if (level.getBlockState(probe).isSolidRender()) {
             return;
@@ -258,22 +256,23 @@ final class VarietyProcessor implements QuadProcessor {
             BlockState upper = level.getBlockState(probe);
             Direction toward = directions[edge].getOpposite();
             BlockState appearance = upper.getAppearance(level, probe, toward, state, pos);
-            if (!isSource(upper, appearance, probe, level, appearanceState, betterGrass)) {
+            if (!isSource(upper, appearance, probe, level, appearanceState, pieces)) {
                 continue;
             }
             if (settings.betterGrassRole() == null
-                || settings.betterGrassRules().side(level, probe, upper, toward, betterGrass) == BetterGrassRules.Side.VANILLA) {
+                || settings.betterGrassRules().side(level, probe, upper, toward, pieces.betterGrass()) == BetterGrassRules.Side.VANILLA) {
                 pieces.step(edge);
             }
         }
     }
 
     private boolean isSource(BlockState neighbour, BlockState appearance, BlockPos at, BlockAndTintGetter level,
-                             BlockState receiverAppearance, BetterGrass.Settings betterGrass) {
+                             BlockState receiverAppearance, Pieces pieces) {
         return appearance.getBlock() != receiverAppearance.getBlock()
             && settings.source().test(appearance)
             && neighbour.isCollisionShapeFullBlock(level, at)
-            && !(settings.betterGrassRole() != null && settings.betterGrassRules().drawnSnowy(level, at, neighbour, betterGrass));
+            && !(settings.betterGrassRole() != null
+                && settings.betterGrassRules().drawnSnowy(level, at, neighbour, pieces.betterGrass()));
     }
 
     /** Continuity draws overlays only on quads that fill their block face; partial faces are left alone. */
@@ -306,24 +305,34 @@ final class VarietyProcessor implements QuadProcessor {
         return Math.abs(value) < 0.0001f || Math.abs(value - 1) < 0.0001f;
     }
 
-    /** Picks and emits the pieces for one face, working out its corner classes once. */
+    /**
+     * Picks and emits the pieces for one face, working out its corner classes once. The tint colour
+     * and LambdaBetterGrass's settings are only looked up when a face needs them: most faces a set
+     * is asked about have no source beside them and draw nothing.
+     */
     private final class Pieces {
         private final Direction face;
+        private final BlockPos pos;
         private final Direction[] directions;
         private final QuadEmitter emitter;
+        private final BlockAndTintGetter level;
         private final int[] cornerClasses = new int[4];
         private final int centreX;
         private final int centreY;
         private final int centreZ;
-        private final int color;
         private final StringBuilder drawn;
+        private boolean colorKnown;
+        private int color;
+        private BetterGrass.Settings betterGrass;
 
         Pieces(Direction face, BlockPos pos, Direction[] directions, QuadEmitter emitter, BlockAndTintGetter level,
                boolean recording) {
             this.face = face;
+            this.pos = pos;
             this.drawn = recording ? new StringBuilder() : null;
             this.directions = directions;
             this.emitter = emitter;
+            this.level = level;
             // Half-block units: the face's centre, from which corners and edge midpoints are one step away.
             this.centreX = pos.getX() * 2 + 1 + face.getStepX();
             this.centreY = pos.getY() * 2 + 1 + face.getStepY();
@@ -335,7 +344,23 @@ final class VarietyProcessor implements QuadProcessor {
                     centreY + first.getStepY() + second.getStepY(), centreZ + first.getStepZ() + second.getStepZ(),
                     layout.classes());
             }
-            this.color = tintSource == null ? -1 : tintSource.colorInWorld(settings.tintState(), level, pos);
+        }
+
+        /** LambdaBetterGrass's mode and better layers, read once per face (only sets with a role ask). */
+        BetterGrass.Settings betterGrass() {
+            if (betterGrass == null) {
+                betterGrass = BetterGrass.settings();
+            }
+            return betterGrass;
+        }
+
+        /** The tint colour, worked out once for the face, when its first piece is emitted. */
+        private int color() {
+            if (!colorKnown) {
+                color = tintSource == null ? -1 : tintSource.colorInWorld(settings.tintState(), level, pos);
+                colorKnown = true;
+            }
+            return color;
         }
 
         void band(int edge) {
@@ -375,8 +400,9 @@ final class VarietyProcessor implements QuadProcessor {
             if (drawn != null) {
                 drawn.append(piece).append(' ');
             }
+            int tint = color();
             emitter.square(face, 0, 0, 1, 1, 0);
-            emitter.color(color, color, color, color);
+            emitter.color(tint, tint, tint, tint);
             emitter.uv(0, sprite.getU0(), sprite.getV0());
             emitter.uv(1, sprite.getU0(), sprite.getV1());
             emitter.uv(2, sprite.getU1(), sprite.getV1());

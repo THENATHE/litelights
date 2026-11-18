@@ -20,7 +20,9 @@ import net.minecraft.resources.Identifier;
  * asking the baked models) lets this run on a worker thread while the game is still reloading.
  *
  * <p>Only models made of whole-block cuboids count. Anything else, such as a model with a custom
- * loader or a partial element, isn't a full cube and is skipped with a reason.
+ * loader or a partial element, isn't a full cube and is skipped with a reason. So is a model the
+ * game itself can't load (an upper-case id, a face without a texture, a value of the wrong JSON
+ * type): the game draws that one block with the missing texture, and the overlays leave it out.
  */
 public final class BlockFaceResolver {
     private static final int MAX_PARENT_DEPTH = 32;
@@ -37,6 +39,11 @@ public final class BlockFaceResolver {
         public UnusableModelException(String reason) {
             super(reason);
         }
+
+        /** A model whose files threw while being read; the cause keeps the stack for the log. */
+        UnusableModelException(String reason, RuntimeException cause) {
+            super(reason, cause);
+        }
     }
 
     /**
@@ -44,6 +51,23 @@ public final class BlockFaceResolver {
      * @param defaultValues property values of the block's default state, used to pick the variant
      */
     public FaceLayers resolve(String blockId, Map<String, String> defaultValues) throws UnusableModelException {
+        try {
+            return read(blockId, defaultValues);
+        } catch (RuntimeException malformed) {
+            throw new UnusableModelException("unusable model (" + shortly(malformed) + ")", malformed);
+        }
+    }
+
+    /** The error's kind and the start of its message, short enough for the Overlays page; the log has the rest. */
+    private static String shortly(RuntimeException error) {
+        String message = error.getMessage() == null ? "" : ": " + error.getMessage();
+        if (message.length() > 100) {
+            message = message.substring(0, 99) + "…";
+        }
+        return error.getClass().getSimpleName() + message;
+    }
+
+    private FaceLayers read(String blockId, Map<String, String> defaultValues) throws UnusableModelException {
         Identifier block = Identifier.parse(blockId);
         JsonObject blockstate = readJson(block.withPath(path -> "blockstates/" + path + ".json"));
         if (blockstate == null) {

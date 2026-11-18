@@ -67,6 +67,11 @@ public final class LightPost {
         ClientTickEvents.END_CLIENT_TICK.register(shimmer::tick);
     }
 
+    /** The world was left: nothing of it is kept. */
+    public void onWorldLeft() {
+        taa.onWorldLeft();
+    }
+
     /** A block changed in the client's level: the heat shimmer's sources may have too. */
     public void onBlockChanged(BlockPos position, BlockState oldState, BlockState newState) {
         shimmer.blockChanged(position, oldState, newState);

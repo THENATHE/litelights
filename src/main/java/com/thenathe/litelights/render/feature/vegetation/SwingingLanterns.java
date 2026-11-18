@@ -9,6 +9,7 @@ import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.feature.particles.LeafWind;
+import com.thenathe.litelights.render.feature.skyfog.StormAtmosphere;
 import com.thenathe.litelights.render.feature.weather.Wind;
 import com.thenathe.litelights.render.frame.DimensionGate;
 import com.thenathe.litelights.render.frame.FrameState;
@@ -490,11 +491,13 @@ public final class SwingingLanterns {
 
     /**
      * How hard the wind blows on the lanterns, 0 (calm) to 1 (the strongest storm): LiteLights'
-     * wind with the rain's and thunder's share of it, the way the particles' surroundings add it.
+     * wind with the storms' share of it (rain, thunder, sandstorms and blizzards), the same wind the
+     * particles blow in.
      */
     private float windStrength(ClientLevel current, float rain, float thunder) {
         long seed = ((BiomeManagerAccessor) current.getBiomeManager()).litelights$biomeZoomSeed();
-        float storm = rain * (0.55f + 0.45f * thunder) * 0.45f;
+        StormAtmosphere storms = StormAtmosphere.current();
+        float storm = Wind.stormStrength(rain, thunder, storms.sandstorm(), storms.blizzard());
         Wind.sample(seed, current.getOverworldClockTime(), current.getGameTime(), storm, wind);
         return LeafWind.strength(wind[0], wind[1]);
     }

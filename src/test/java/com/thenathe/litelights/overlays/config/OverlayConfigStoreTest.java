@@ -6,7 +6,9 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -25,7 +27,7 @@ class OverlayConfigStoreTest {
 
     private static final class MemoryData implements OverlayConfigStore.ModuleData {
         JsonObject saved;
-        JsonObject keptAside;
+        final Map<String, JsonObject> beside = new LinkedHashMap<>();
         int writes;
 
         @Override
@@ -45,8 +47,13 @@ class OverlayConfigStoreTest {
         }
 
         @Override
-        public void keepUnreadable(JsonObject object) {
-            keptAside = object;
+        public JsonObject readBeside(String key) {
+            return beside.get(key);
+        }
+
+        @Override
+        public void writeBeside(String key, JsonObject object) {
+            beside.put(key, object.deepCopy());
         }
     }
 
@@ -164,7 +171,42 @@ class OverlayConfigStoreTest {
 
         assertEquals(OverlayConfigStore.Origin.DEFAULTS, loaded.origin());
         assertEquals(0, data.writes, "nothing is written over it until the player changes something");
-        assertEquals("not a list", data.keptAside.get("groups").getAsString(), "a copy is kept before anything can replace it");
+        assertEquals("not a list", data.beside.get("overlays_unreadable").get("groups").getAsString(),
+            "a copy is kept before anything can replace it");
+        assertEquals("overlays_unreadable", loaded.keptAs(), "the page can say where the copy is");
+    }
+
+    /**
+     * R5: the player's hand-edited hierarchy broke, the defaults were saved over it, and a later
+     * edit broke again. The first copy stays as it was and the second goes beside it; loading the
+     * same broken settings again keeps no third copy.
+     */
+    @Test
+    void aSecondBadLoadNeverReplacesTheKeptCopy() {
+        data.saved = new JsonObject();
+        data.saved.addProperty("groups", "first typo");
+        OverlayConfigStore.load(data, configDir);
+        OverlayConfigStore.save(new OverlayConfig(), data);
+        data.saved.addProperty("groups", "second typo");
+
+        OverlayConfigStore.Loaded second = OverlayConfigStore.load(data, configDir);
+        OverlayConfigStore.Loaded again = OverlayConfigStore.load(data, configDir);
+
+        assertEquals("first typo", data.beside.get("overlays_unreadable").get("groups").getAsString(),
+            "the copy kept first is never replaced");
+        assertEquals("second typo", data.beside.get("overlays_unreadable_2").get("groups").getAsString());
+        assertEquals("overlays_unreadable_2", second.keptAs());
+        assertEquals("overlays_unreadable_2", again.keptAs(), "the same broken settings reuse their copy");
+        assertEquals(2, data.beside.size());
+    }
+
+    @Test
+    void readableSettingsKeepNothingAside() {
+        data.saved = OverlayConfig.GSON.toJsonTree(new OverlayConfig()).getAsJsonObject();
+        OverlayConfigStore.Loaded loaded = OverlayConfigStore.load(data, configDir);
+        assertEquals(OverlayConfigStore.Origin.LITELIGHTS, loaded.origin());
+        assertEquals(null, loaded.keptAs());
+        assertTrue(data.beside.isEmpty());
     }
 
     /**

@@ -54,6 +54,14 @@ public final class ShadowCasterStore implements AutoCloseable {
         }
     }
 
+    /**
+     * A worker's finished mesh and the generation its build started in. A level change between the
+     * build's start and its collection makes it stale, and only the render thread decides that: a
+     * check on the worker could pass just before the change and let the old level's mesh through.
+     */
+    private record Finished(CasterMesh mesh, long generation) {
+    }
+
     private static final int NEAREST_LIMIT = MAX_BUILDS_PER_FRAME * 2;
     private final long[] nearestKeys = new long[NEAREST_LIMIT];
     private final double[] nearestDistances = new double[NEAREST_LIMIT];
@@ -64,7 +72,7 @@ public final class ShadowCasterStore implements AutoCloseable {
     private final LongOpenHashSet dirty = new LongOpenHashSet();
     private final LongOpenHashSet inFlight = new LongOpenHashSet();
     private final LongArrayList changed = new LongArrayList();
-    private final Queue<CasterMesh> finished = new ConcurrentLinkedQueue<>();
+    private final Queue<Finished> finished = new ConcurrentLinkedQueue<>();
     private final ExecutorService workers;
     private final CasterArrayPool meshArrays = new CasterArrayPool();
     private final ThreadLocal<CasterMeshBuilder> builders = ThreadLocal.withInitial(() -> new CasterMeshBuilder(meshArrays));
@@ -76,9 +84,10 @@ public final class ShadowCasterStore implements AutoCloseable {
      * sharing them between worker threads is safe. Cleared when the update ends.
      */
     private final Long2ObjectOpenHashMap<PalettedContainer<BlockState>> frameCopies = new Long2ObjectOpenHashMap<>();
-    private final CasterBufferPool buffers = CasterBufferPool.onGpu();
+    private final CasterBufferPool buffers;
     private @Nullable ClientLevel level;
-    private volatile long generation;
+    /** Counts level changes and releases; render thread only, handed to each build as it starts. */
+    private long generation;
     private int pendingInRange;
     /** Set by {@link #nearestDirty}: every dirty section within range not already being built. */
     private int dirtyInRange;
@@ -86,6 +95,11 @@ public final class ShadowCasterStore implements AutoCloseable {
     private long unchangedRebuilds;
 
     public ShadowCasterStore() {
+        this(CasterBufferPool.onGpu());
+    }
+
+    ShadowCasterStore(CasterBufferPool buffers) {
+        this.buffers = buffers;
         int threads = Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() / 4));
         workers = Executors.newFixedThreadPool(threads, runnable -> {
             Thread thread = new Thread(runnable, "LiteLights shadow casters");
@@ -102,6 +116,23 @@ public final class ShadowCasterStore implements AutoCloseable {
         }
         clear();
         level = newLevel;
+    }
+
+    /**
+     * Frees the GPU memory of every mesh (shadows have been switched off for a while) and marks those
+     * sections dirty, so they are built again once shadows are back on. Sections known to be empty
+     * hold no memory and stay known; builds still running are dropped and their sections marked
+     * dirty too. Chunks keep arriving and leaving meanwhile, which keeps the dirty set current.
+     */
+    public void releaseMeshes() {
+        dirty.addAll(built.keySet());
+        dirty.addAll(inFlight);
+        generation++;
+        buffers.clear();
+        built.clear();
+        inFlight.clear();
+        changed.clear();
+        finished.clear();
     }
 
     /** Rebuild everything, for example after a resource reload changed the block models. */
@@ -237,17 +268,19 @@ public final class ShadowCasterStore implements AutoCloseable {
     }
 
     private void build(SectionSnapshot snapshot, BlockStateModelSet models, long buildGeneration) {
+        CasterMesh mesh;
         try {
-            CasterMesh mesh = builders.get().build(snapshot, models);
-            if (buildGeneration == generation) {
-                finished.add(mesh);
-            } else {
-                meshArrays.give(mesh.vertices());
-            }
+            mesh = builders.get().build(snapshot, models);
         } catch (Throwable error) {
             LiteLightsClient.LOG.warn("Couldn't build shadow casters for section {}", SectionPos.of(snapshot.sectionKey()), error);
-            finished.add(CasterMesh.empty(snapshot.sectionKey()));
+            mesh = CasterMesh.empty(snapshot.sectionKey());
         }
+        finishedBuild(mesh, buildGeneration);
+    }
+
+    /** A worker hands over a mesh built for {@code buildGeneration}; any thread. */
+    void finishedBuild(CasterMesh mesh, long buildGeneration) {
+        finished.add(new Finished(mesh, buildGeneration));
     }
 
     @SuppressWarnings("unchecked")
@@ -296,12 +329,29 @@ public final class ShadowCasterStore implements AutoCloseable {
         return section.getStates().copy();
     }
 
-    private void collectFinished() {
-        CasterMesh mesh;
-        while ((mesh = finished.poll()) != null) {
-            inFlight.remove(mesh.sectionKey());
-            accept(mesh);
+    /** Render thread: keeps the meshes built for the current level and drops the rest. */
+    void collectFinished() {
+        Finished entry;
+        while ((entry = finished.poll()) != null) {
+            if (entry.generation() != generation) {
+                // Built for a level (or a release) that is gone. Its section may already be in
+                // flight again for the new one, so it mustn't touch that build's entry either.
+                meshArrays.give(entry.mesh().vertices());
+                continue;
+            }
+            inFlight.remove(entry.mesh().sectionKey());
+            accept(entry.mesh());
         }
+    }
+
+    /** Sections waiting to be built, for the tests. */
+    int dirtyCount() {
+        return dirty.size();
+    }
+
+    /** The current generation, for the tests (builds started now carry it). */
+    long generation() {
+        return generation;
     }
 
     /** Keeps a freshly built mesh, and reports it as changed only if its geometry differs. */
@@ -404,7 +454,7 @@ public final class ShadowCasterStore implements AutoCloseable {
         return pendingInRange;
     }
 
-    private void clear() {
+    void clear() {
         generation++;
         buffers.clear();
         built.clear();

@@ -36,6 +36,8 @@ public final class OverlayBuilds {
     private static final int FALLBACK_MAX_TEXTURE_SIZE = 16384;
     /** Dynamic Overlays' pack icon, shown on the generated pack in the Resource Packs screen and in exports. */
     private static final String PACK_ICON = "/assets/litelights/overlays/pack.png";
+    /** Holds every build back this long first, for the QA run that checks a build that times out. */
+    private static final String DELAY_PROPERTY = "litelights.debug.overlayBuildDelayMillis";
     private static EligibleBlocks eligible;
     private static volatile GenerationReport lastReport = GenerationReport.NONE;
     private static volatile GeneratedFiles lastFiles = GeneratedFiles.EMPTY;
@@ -77,25 +79,43 @@ public final class OverlayBuilds {
         PackStack stack = new PackStack(GeneratedPack.withoutGenerated(packs));
         lastStartMicros = (System.nanoTime() - started) / 1000;
         building = true;
-        CompletableFuture<GeneratedFiles> build = CompletableFuture
-            .supplyAsync(() -> timed(stack, input), Workers.coordinator())
-            .whenComplete((files, failure) -> {
+        GeneratedPack pack = target;
+        CompletableFuture<GeneratedFiles> build = CompletableFuture.supplyAsync(() -> timed(stack, input), Workers.coordinator());
+        pack.attachBuild(build, GeneratedFolders.CONTINUITY);
+        build.whenComplete((files, failure) -> {
+            try {
+                finished(pack, files, failure);
+            } finally {
+                // Last, so whoever waits for the build to end sees its report.
                 building = false;
-                if (failure != null) {
-                    OverlaysModule.LOG.error("Overlay build failed", failure);
-                    // The page shows why, with a Retry button; the next resource reload tries again by itself too.
-                    OverlaysPage.FEATURE.markFailed(failure.toString(), () -> Minecraft.getInstance().reloadResourcePacks());
-                    return;
-                }
-                OverlaysPage.FEATURE.markReady();
-                lastReport = files.report();
-                lastFiles = files;
-                OverlaysModule.LOG.info("Built overlays: {} ({})", files.report().summary(), BuildCost.last().summary());
-                for (String reason : files.report().skipped()) {
-                    OverlaysModule.LOG.info("Skipped {}", reason);
-                }
-            });
-        target.attachBuild(build, GeneratedFolders.CONTINUITY);
+            }
+        });
+    }
+
+    private static void finished(GeneratedPack pack, GeneratedFiles files, Throwable failure) {
+        boolean taken = pack.takeFinishedBuild();
+        if (failure != null) {
+            OverlaysModule.LOG.error("Overlay build failed; this reload goes without overlays", failure);
+            if (taken) {
+                // The page shows why, with a Retry button; the next resource reload tries again by itself too.
+                OverlaysPage.FEATURE.markFailed(failure.toString(), () -> Minecraft.getInstance().reloadResourcePacks());
+            }
+            return;
+        }
+        if (!taken) {
+            // The reload gave up waiting and went on without overlays; the page offers Retry.
+            OverlaysModule.LOG.warn("The overlay build finished after the reload stopped waiting for it ({}); "
+                + "its overlays aren't loaded", BuildCost.last().summary());
+            lastFiles = GeneratedFiles.EMPTY;
+            return;
+        }
+        OverlaysPage.FEATURE.markReady();
+        lastReport = files.report();
+        lastFiles = files;
+        OverlaysModule.LOG.info("Built overlays: {} ({})", files.report().summary(), BuildCost.last().summary());
+        for (String reason : files.report().skipped()) {
+            OverlaysModule.LOG.info("Skipped {}", reason);
+        }
     }
 
     /**
@@ -110,6 +130,14 @@ public final class OverlayBuilds {
 
     /** Runs a build and records its cost: wall time, and the heap it allocated on this thread and the workers. */
     private static GeneratedFiles timed(PackStack stack, OverlayGenerator.Input input) {
+        long delay = Long.getLong(DELAY_PROPERTY, 0);
+        if (delay > 0) {
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
         return BuildCost.measure(() -> OverlayGenerator.generate(stack, input));
     }
 

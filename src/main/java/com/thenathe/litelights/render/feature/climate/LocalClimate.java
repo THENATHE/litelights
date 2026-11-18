@@ -77,8 +77,9 @@ public final class LocalClimate {
     }
 
     /**
-     * Almanac's API (0.1.1 on); an older Almanac without it still hooks the client level's
-     * precipitation lookup (0.1.0 on), so it is asked like any seasons mod.
+     * Almanac's API. fabric.mod.json refuses an Almanac older than 0.1.2, so it is always there; if
+     * it ever weren't, the client level's precipitation lookup, which Almanac hooks, is asked as for
+     * any seasons mod.
      */
     private static ClimateSource almanac() {
         try {

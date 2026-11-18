@@ -176,7 +176,7 @@ void main() {
                 color = lite_far_caustics(color, water, footprint, visibility);
             }
             if (FarWaterSwitches.z > 0.5) {
-                color = lite_far_depth_colour(color, pixel, water);
+                color = lite_far_depth_colour(color, water, lite_far_light(LightmapSampler, visibility, 1.0));
             }
             if (FarSwitches.w > 0.5) {
                 color = lite_far_water(color, water.surface, visibility);

@@ -203,11 +203,11 @@ public final class SkyFogFeature {
         boolean liteFog = liteFogAllowed(fogSettings, camera, minecraft);
         boolean haze = liteFog && fogSettings.look() == RenderSettings.FogLook.HAZE
             && (!end || settings.dimensions().endHaze());
-        boolean weatherAllowed = DimensionGate.allows(Aspect.WEATHER);
-        boolean rainMist = settings.weather().rainMist() && weatherAllowed;
+        boolean weatherHere = DimensionGate.hasWeather(currentLevel);
+        boolean rainMist = settings.weather().rainMist() && weatherHere;
 
         float mist = fillHaze(frame, camera, currentLevel, fogSettings, haze, rainMist);
-        float stormDensity = fillStorm(frame, settings, weatherAllowed, seconds);
+        float stormDensity = fillStorm(frame, settings, weatherHere, seconds);
         float stormCover = liteFog && haze ? Math.min(stormDensity * 22.0f, 0.92f) : 0.0f;
         fillSky(frame, settings, skyState, currentLevel, overworldSky, stormCover);
         boolean endTint = end && settings.dimensions().endColorTint() && DimensionGate.allows(Aspect.EFFECTS);
@@ -304,15 +304,15 @@ public final class SkyFogFeature {
      * Storms: worked out whatever the fog style, so the weather particles can follow them.
      * Returns the storm fog's density.
      */
-    private float fillStorm(FrameState frame, RenderSettings settings, boolean weatherAllowed, float seconds) {
-        boolean stormsHere = !WeatherCompat.stormAtmosphereHandledElsewhere() && weatherAllowed && !skyless;
+    private float fillStorm(FrameState frame, RenderSettings settings, boolean weatherHere, float seconds) {
+        boolean stormsHere = !WeatherCompat.stormAtmosphereHandledElsewhere() && weatherHere;
         // The sand blows with the world's rain, which a seasons mod may share out by climate.
         float sandRain = level == null ? rain : WeatherPreview.rain(LocalClimate.worldRain(level));
         float sandThunder = level == null ? thunder : WeatherPreview.thunder(LocalClimate.worldThunder(level));
         storm.update(land, rain, thunder, sandRain, sandThunder, stormsHere && settings.weather().stormAtmosphere(),
             stormsHere && settings.weather().sandstorms(), exposure, FrameClock.gameSeconds(seconds));
         float stormPart = storm.density(settings.weather().storms(), thunder);
-        float rainPart = weatherAllowed && !skyless ? rainFog(settings.weather().storms()) : 0.0f;
+        float rainPart = weatherHere ? rainFog(settings.weather().storms()) : 0.0f;
         float density = stormPart;
         if (rainPart > 0.0f) {
             density += rainPart;

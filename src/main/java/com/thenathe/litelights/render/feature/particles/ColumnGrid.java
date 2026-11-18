@@ -2,6 +2,7 @@ package com.thenathe.litelights.render.feature.particles;
 
 import com.thenathe.litelights.render.feature.climate.LocalClimate;
 import java.util.Arrays;
+import java.util.function.IntBinaryOperator;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -20,13 +21,19 @@ import net.minecraft.world.level.material.FluidState;
  * <p>Filled on the client thread between two simulation steps, never while one runs. Four rows are
  * read again every tick, so at Near (64 blocks across) placed and broken blocks show within 0.8 s,
  * and the wider grids of the further Weather distances take a little longer at their far edges;
- * moving the camera shifts what is known and reads only the new edge. Each cell also keeps the
- * light at its ground, so weather particles don't each look up their light.
+ * moving the camera shifts what is known and reads only the new edge. Columns in chunks that
+ * aren't loaded yet (a server's short view distance under a wide Weather distance) are tried again
+ * on the rolling refresh, not every tick. Each cell also keeps the light at its ground, so weather
+ * particles don't each look up their light, and the grid counts its rain and snow cells, so the
+ * spawners can skip the kind of weather nothing around the camera has.
  */
 public final class ColumnGrid implements Simulation.Ground {
     private static final int CELL = 4;
     private static final int SNAP = ParticleReach.GRID_SNAP;
+    /** A column not read since it came into the grid: read on the next update. */
     private static final int UNKNOWN = Integer.MIN_VALUE;
+    /** A column whose chunk wasn't loaded when it was read: tried again on the rolling refresh only. */
+    private static final int UNLOADED = Integer.MIN_VALUE + 1;
     private static final byte UNREAD = -1;
     private static final int ROWS_PER_TICK = 4;
 
@@ -140,6 +147,25 @@ public final class ColumnGrid implements Simulation.Ground {
         refreshRow = (refreshRow + 1) % refreshTicks;
     }
 
+    /**
+     * For tests, which have no level: centres the grid on (x, z) over flat land open to the sky at
+     * {@code height}, each cell falling as {@code fallAt} says for its centre's block x and z.
+     */
+    public void fillFlatForTests(double x, double z, int height, IntBinaryOperator fallAt) {
+        originX = Math.floorDiv((int) Math.floor(x), SNAP) * SNAP - half;
+        originZ = Math.floorDiv((int) Math.floor(z), SNAP) * SNAP - half;
+        hasOrigin = true;
+        Arrays.fill(heights, height);
+        Arrays.fill(water, false);
+        Arrays.fill(cellLight, LightCoordsUtil.FULL_SKY);
+        Arrays.fill(climate, (byte) BiomeClimate.TEMPERATE.ordinal());
+        for (int cellIndex = 0; cellIndex < cells * cells; cellIndex++) {
+            int blockX = originX + cellIndex % cells * CELL + CELL / 2;
+            int blockZ = originZ + cellIndex / cells * CELL + CELL / 2;
+            precipitation[cellIndex] = (byte) fallAt.applyAsInt(blockX, blockZ);
+        }
+    }
+
     private void shift(int deltaX, int deltaZ) {
         System.arraycopy(heights, 0, scratchHeights, 0, heights.length);
         System.arraycopy(water, 0, scratchWater, 0, water.length);
@@ -184,7 +210,7 @@ public final class ColumnGrid implements Simulation.Ground {
 
     private void readColumn(ClientLevel level, int index, int blockX, int blockZ) {
         if (!level.hasChunk(blockX >> 4, blockZ >> 4)) {
-            heights[index] = UNKNOWN;
+            heights[index] = UNLOADED;
             return;
         }
         int height = level.getHeight(Heightmap.Types.MOTION_BLOCKING, blockX, blockZ);
@@ -199,7 +225,7 @@ public final class ColumnGrid implements Simulation.Ground {
         int blockX = originX + cellX * CELL + CELL / 2;
         int blockZ = originZ + cellZ * CELL + CELL / 2;
         int height = heights[(cellZ * CELL + CELL / 2) * size + cellX * CELL + CELL / 2];
-        if (height == UNKNOWN || !level.hasChunk(blockX >> 4, blockZ >> 4)) {
+        if (!known(height) || !level.hasChunk(blockX >> 4, blockZ >> 4)) {
             precipitation[cellIndex] = PRECIPITATION_NONE;
             climate[cellIndex] = (byte) BiomeClimate.TEMPERATE.ordinal();
             return;
@@ -209,6 +235,10 @@ public final class ColumnGrid implements Simulation.Ground {
         Holder<Biome> biome = level.getBiome(cursor);
         precipitation[cellIndex] = precipitationByte(LocalClimate.fallAt(level, biome, cursor));
         climate[cellIndex] = (byte) BiomeClimate.of(LocalClimate.seasonalBiome(level, biome, cursor)).ordinal();
+    }
+
+    private static boolean known(int height) {
+        return height != UNKNOWN && height != UNLOADED;
     }
 
     static byte precipitationByte(Biome.Precipitation fall) {
@@ -244,7 +274,7 @@ public final class ColumnGrid implements Simulation.Ground {
     @Override
     public double groundHeight(double x, double z) {
         int index = columnIndex(x, z);
-        if (index < 0 || heights[index] == UNKNOWN) {
+        if (index < 0 || !known(heights[index])) {
             return Double.NEGATIVE_INFINITY;
         }
         return heights[index];
@@ -253,12 +283,31 @@ public final class ColumnGrid implements Simulation.Ground {
     @Override
     public boolean isWaterSurface(double x, double z) {
         int index = columnIndex(x, z);
-        return index >= 0 && heights[index] != UNKNOWN && water[index];
+        return index >= 0 && known(heights[index]) && water[index];
     }
 
     public byte precipitationAt(double x, double z) {
         int index = cellIndex(x, z);
         return index < 0 || precipitation[index] == UNREAD ? PRECIPITATION_NONE : precipitation[index];
+    }
+
+    /**
+     * Whether any cell of the grid within {@code reach} blocks of (x, z), as a square, falls as
+     * {@code fall}. Cells not read yet count as none, as {@link #precipitationAt} reads them.
+     */
+    public boolean fallsWithin(double x, double z, double reach, byte fall) {
+        int firstColumn = Math.max(0, Math.floorDiv((int) Math.floor(x - reach) - originX, CELL));
+        int lastColumn = Math.min(cells - 1, Math.floorDiv((int) Math.floor(x + reach) - originX, CELL));
+        int firstRow = Math.max(0, Math.floorDiv((int) Math.floor(z - reach) - originZ, CELL));
+        int lastRow = Math.min(cells - 1, Math.floorDiv((int) Math.floor(z + reach) - originZ, CELL));
+        for (int row = firstRow; row <= lastRow; row++) {
+            for (int column = firstColumn; column <= lastColumn; column++) {
+                if (precipitation[row * cells + column] == fall) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Vanilla's packed light just above the ground of this column's cell; full sky light where unknown. */

@@ -9,13 +9,18 @@ import com.thenathe.litelights.config.IntOption;
 import com.thenathe.litelights.config.LiteLightsConfig;
 import com.thenathe.litelights.config.LiteLightsOptions;
 import com.thenathe.litelights.config.Option;
+import com.thenathe.litelights.config.OptionValues;
 import com.thenathe.litelights.config.Pages;
 import com.thenathe.litelights.config.RowState;
 import com.thenathe.litelights.gui.SettingsScreen;
 import com.thenathe.litelights.gui.Theme;
 import com.thenathe.litelights.gui.ValueFormats;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.caffeinemc.mods.sodium.api.config.ConfigEntryPoint;
@@ -34,6 +39,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.resources.Identifier;
 
 /**
  * LiteLights' pages inside Sodium's Video Settings, through Sodium's public config API (no mixins).
@@ -52,6 +58,11 @@ public final class SodiumOptions implements ConfigEntryPoint {
      * {@link #addPages}, not at class load, so a changed Sodium API is caught there like the rest.
      */
     private static StorageEventHandler save;
+    /**
+     * The options on Sodium's pages. Their greying conditions read these from Sodium's own state,
+     * which holds changes until Apply; any other option is read as it is.
+     */
+    private static Set<Option<?>> listed = Set.of();
 
     @Override
     public void registerConfigLate(ConfigBuilder builder) {
@@ -71,13 +82,13 @@ public final class SodiumOptions implements ConfigEntryPoint {
                 .setColorTheme(builder.createColorTheme().setBaseThemeRGB(Theme.ACCENT & 0xFFFFFF))
                 .setNonTintedIcon(LiteLightsClient.id("icon-128.png"));
 
-        boolean first = true;
+        // Every row is made first and only then added to its group: Sodium builds a row as it is
+        // added, and the rows' enabled rules can only be declared once all of them exist, since
+        // Sodium refuses a dependency on an option it doesn't have.
+        Map<OptionBuilder, Option<?>> rules = new LinkedHashMap<>();
+        Map<Pages.PageInfo, List<PlacedRow>> pages = new LinkedHashMap<>();
         for (Pages.PageInfo info : Pages.all()) {
-            Map<String, OptionGroupBuilder> groups = new LinkedHashMap<>();
-            if (first) {
-                groups.put("", builder.createOptionGroup().addOption(openScreenButton(builder)));
-                first = false;
-            }
+            List<PlacedRow> rows = new ArrayList<>();
             for (Option<?> option : LiteLightsConfig.registry().onPage(info.id())) {
                 if (option == LiteLightsOptions.FAR_SNOW && !option.shown()) {
                     // Only with Almanac on the client, as on the LiteLights screen.
@@ -87,23 +98,91 @@ public final class SodiumOptions implements ConfigEntryPoint {
                 if (built == null) {
                     continue;
                 }
-                OptionGroupBuilder group = groups.computeIfAbsent(groupKey(option), key -> builder.createOptionGroup()
-                        .setName(groupName(info.id(), option)));
-                group.addOption(built);
+                rules.put(built, option);
+                rows.add(new PlacedRow(info, option, built));
                 if (option == LiteLightsOptions.SHADOW_REACH && FarTerrainReach.available()) {
-                    group.addOption(calculateDistanceButton(builder));
+                    // The button greys with Reach, the row it sets.
+                    OptionBuilder calculate = calculateDistanceButton(builder);
+                    rules.put(calculate, option);
+                    rows.add(new PlacedRow(info, option, calculate));
                 }
+            }
+            pages.put(info, rows);
+        }
+        declareEnabledRules(rules);
+
+        boolean first = true;
+        for (Map.Entry<Pages.PageInfo, List<PlacedRow>> entry : pages.entrySet()) {
+            Map<String, OptionGroupBuilder> groups = new LinkedHashMap<>();
+            if (first) {
+                groups.put("", builder.createOptionGroup().addOption(openScreenButton(builder)));
+                first = false;
+            }
+            for (PlacedRow row : entry.getValue()) {
+                groups.computeIfAbsent(groupKey(row.option()), key -> builder.createOptionGroup()
+                        .setName(groupName(row.page().id(), row.option()))).addOption(row.builder());
             }
             if (groups.isEmpty()) {
                 continue;
             }
-            OptionPageBuilder page = builder.createOptionPage().setName(Component.translatable(info.labelKey()));
+            OptionPageBuilder page = builder.createOptionPage().setName(Component.translatable(entry.getKey().labelKey()));
             groups.values().forEach(page::addOptionGroup);
             mod.addPage(page);
         }
         mod.addPage(builder.createExternalPage()
                 .setName(Component.translatable("litelights.sodium.full_screen_page"))
                 .setScreenConsumer(SodiumOptions::openLiteLights));
+    }
+
+    /** A row made for a page, waiting to be added to its group. */
+    private record PlacedRow(Pages.PageInfo page, Option<?> option, OptionBuilder builder) {
+    }
+
+    /**
+     * Greys each row by the same rule as on LiteLights' screen ({@link Option#active(OptionValues)}),
+     * read from Sodium's unapplied values, and declares every option that rule reads as a
+     * dependency so Sodium asks again the moment one of them changes, not only on Apply.
+     * Sodium refuses a dependency cycle by crashing, so an edge that would close one is left out
+     * (none exist today) and logged.
+     */
+    private static void declareEnabledRules(Map<OptionBuilder, Option<?>> rules) {
+        listed = Set.copyOf(rules.values());
+        Map<Option<?>, Set<Option<?>>> graph = new LinkedHashMap<>();
+        for (Option<?> option : listed) {
+            Set<Option<?>> dependencies = new LinkedHashSet<>(option.dependencies());
+            dependencies.retainAll(listed);
+            graph.put(option, dependencies);
+        }
+        removeCycles(graph);
+        rules.forEach((row, option) -> row.setEnabledProvider(state -> enabled(option, state),
+                graph.get(option).stream().map(dependency -> LiteLightsClient.id(dependency.id())).toArray(Identifier[]::new)));
+    }
+
+    /** Drops the edges that close a cycle, depth first, so what is left is one Sodium accepts. */
+    private static void removeCycles(Map<Option<?>, Set<Option<?>>> graph) {
+        Set<Option<?>> done = new HashSet<>();
+        for (Option<?> option : graph.keySet()) {
+            removeCycles(graph, option, new LinkedHashSet<>(), done);
+        }
+    }
+
+    private static void removeCycles(Map<Option<?>, Set<Option<?>>> graph, Option<?> option, Set<Option<?>> path,
+                                     Set<Option<?>> done) {
+        if (done.contains(option)) {
+            return;
+        }
+        path.add(option);
+        for (Option<?> dependency : new ArrayList<>(graph.get(option))) {
+            if (path.contains(dependency)) {
+                graph.get(option).remove(dependency);
+                LiteLightsClient.LOG.warn("Sodium's pages don't grey {} at once when {} changes: the two depend on each other",
+                        option.id(), dependency.id());
+            } else {
+                removeCycles(graph, dependency, path, done);
+            }
+        }
+        path.remove(option);
+        done.add(option);
     }
 
     private static OptionBuilder openScreenButton(ConfigBuilder builder) {
@@ -119,12 +198,10 @@ public final class SodiumOptions implements ConfigEntryPoint {
      */
     private static OptionBuilder calculateDistanceButton(ConfigBuilder builder) {
         int chunks = FarTerrainReach.renderDistance();
-        Option<?> reach = LiteLightsOptions.SHADOW_REACH;
         return builder.createExternalButtonOption(LiteLightsClient.id("shadows.calculate_distance"))
                 .setName(Component.translatable("litelights.shadows.calculate_distance.button"))
                 .setTooltip(Component.translatable("litelights.shadows.calculate_distance.description", chunks,
                         FarTerrainReach.forRenderDistance(chunks)))
-                .setEnabledProvider(state -> enabled(reach, state), LiteLightsClient.id(LiteLightsOptions.WORLD_SHADOWS.id()))
                 .setScreenConsumer(parent -> {
                     FarTerrainReach.apply();
                     LiteLightsConfig.saveIfChanged();
@@ -230,22 +307,36 @@ public final class SodiumOptions implements ConfigEntryPoint {
         if (impact != null) {
             builder.setImpact(impact);
         }
-        BoolOption needs = option.needs();
-        if (needs != null) {
-            // Read the master switch from Sodium's state, so turning it off greys the row before Apply.
-            builder.setEnabledProvider(state -> enabled(option, state), LiteLightsClient.id(needs.id()));
-        } else {
-            builder.setEnabledProvider(state -> enabled(option, state));
-        }
         return builder;
     }
 
     private static boolean enabled(Option<?> option, ConfigState state) {
-        if (!option.feature().state().editable() || !option.conditionHolds()) {
-            return false;
-        }
-        BoolOption needs = option.needs();
-        return needs == null || state.readBooleanOption(LiteLightsClient.id(needs.id()));
+        return option.feature().state().editable() && option.active(pending(state));
+    }
+
+    /** The values on Sodium's pages, applied or not, for the options listed there; the rest as they are. */
+    private static OptionValues pending(ConfigState state) {
+        return new OptionValues() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public <T> T get(Option<T> option) {
+                if (!listed.contains(option)) {
+                    return option.get();
+                }
+                Identifier id = LiteLightsClient.id(option.id());
+                Object value = switch (option) {
+                    case BoolOption ignored -> state.readBooleanOption(id);
+                    case EnumOption<?> choice -> readChoice(state, id, choice);
+                    case IntOption ignored -> state.readIntOption(id);
+                    case FloatOption decimal -> decimal.valueAtStep(state.readIntOption(id));
+                };
+                return (T) value;
+            }
+        };
+    }
+
+    private static <E extends Enum<E>> E readChoice(ConfigState state, Identifier id, EnumOption<E> option) {
+        return state.readEnumOption(id, option.type());
     }
 
     private static OptionImpact impact(Option<?> option) {

@@ -62,9 +62,20 @@ public final class MobShadowMap implements AutoCloseable {
         var device = RenderSystem.getDevice();
         int usage = GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_COPY_DST;
         texture = device.createTexture("LiteLights mob shadow", usage, GpuFormat.D32_FLOAT, size, size, 1, 1);
-        view = device.createTextureView(texture);
-        projectionBuffer = device.createBuffer(() -> "LiteLights mob shadow projection",
-            GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, RenderSystem.PROJECTION_MATRIX_UBO_SIZE);
+        GpuTextureView madeView = null;
+        try {
+            madeView = device.createTextureView(texture);
+            projectionBuffer = device.createBuffer(() -> "LiteLights mob shadow projection",
+                GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_COPY_DST, RenderSystem.PROJECTION_MATRIX_UBO_SIZE);
+        } catch (RuntimeException error) {
+            // Nobody gets a half-made map to close, so free what was made before the throw.
+            if (madeView != null) {
+                madeView.close();
+            }
+            texture.close();
+            throw error;
+        }
+        view = madeView;
     }
 
     public int size() {

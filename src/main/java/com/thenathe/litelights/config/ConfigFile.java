@@ -8,6 +8,7 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.thenathe.litelights.LiteLightsClient;
 import java.io.IOException;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -31,6 +32,11 @@ import java.time.format.DateTimeFormatter;
  * Top-level keys it doesn't know are written back unchanged. A file that isn't valid JSON is
  * renamed aside (never deleted) and LiteLights starts from the defaults. Before a migration, the
  * original file is copied aside as {@code litelights.json.schema<N>.bak}.
+ *
+ * <p>A file that exists but can't be read for another reason (locked by a virus scanner or a sync
+ * tool, no permission), or a broken file that can't be renamed aside, is still the player's
+ * settings. LiteLights then runs on the defaults without saving for the rest of the session, so
+ * the defaults never replace it, and says so in the log.
  */
 public final class ConfigFile {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
@@ -42,6 +48,9 @@ public final class ConfigFile {
     private JsonObject root = new JsonObject();
     /** Whether the last load found no file at all: a fresh install (FirstSetup). */
     private boolean startedWithoutFile;
+    /** Why this session doesn't save, or {@code null} while it does. */
+    private String notSaving;
+    private boolean toldNotSaving;
 
     public ConfigFile(Path path, OptionRegistry registry, ConfigMigrations migrations) {
         this.path = path;
@@ -55,18 +64,33 @@ public final class ConfigFile {
 
     public synchronized void load() {
         root = new JsonObject();
+        notSaving = null;
+        toldNotSaving = false;
         startedWithoutFile = !Files.exists(path);
         if (!Files.isRegularFile(path)) {
             registry.acceptStored(null, null);
             return;
         }
+        String text;
         try {
-            JsonElement parsed = JsonParser.parseString(Files.readString(path, StandardCharsets.UTF_8));
+            text = Files.readString(path, StandardCharsets.UTF_8);
+        } catch (CharacterCodingException notText) {
+            // It was read, but it isn't UTF-8 text: as broken as bad JSON.
+            setAside(notText);
+            registry.acceptStored(null, null);
+            return;
+        } catch (IOException unreadable) {
+            stopSaving("it couldn't be read (" + unreadable + ")");
+            registry.acceptStored(null, null);
+            return;
+        }
+        try {
+            JsonElement parsed = JsonParser.parseString(text);
             if (!parsed.isJsonObject()) {
                 throw new JsonParseException("the file isn't a JSON object");
             }
             root = parsed.getAsJsonObject();
-        } catch (IOException | JsonParseException | IllegalStateException broken) {
+        } catch (JsonParseException | IllegalStateException broken) {
             setAside(broken);
             registry.acceptStored(null, null);
             return;
@@ -103,12 +127,26 @@ public final class ConfigFile {
 
     private void setAside(Exception reason) {
         Path aside = path.resolveSibling(path.getFileName() + ".broken-" + LocalDateTime.now().format(STAMP));
-        LiteLightsClient.LOG.error("Couldn't read {} ({}). Moved it to {} and started from the defaults.", path, reason.toString(), aside.getFileName());
         try {
             Files.move(path, aside);
+            LiteLightsClient.LOG.error("Couldn't read {} ({}). Moved it to {} and started from the defaults.", path, reason.toString(),
+                aside.getFileName());
         } catch (IOException failure) {
-            LiteLightsClient.LOG.error("Couldn't move {} aside: {}", path, failure.toString());
+            stopSaving("it isn't valid settings (" + reason + ") and it couldn't be moved aside to " + aside.getFileName()
+                + " (" + failure + ")");
         }
+    }
+
+    /** Runs on the defaults without ever writing the file this session, since it still holds the player's settings. */
+    private void stopSaving(String why) {
+        notSaving = why;
+        LiteLightsClient.LOG.error("LiteLights is using its default settings and WON'T SAVE any changes this session, "
+            + "so your settings file isn't replaced: {} {}. Close the game, fix or free the file, and start again.", path, why);
+    }
+
+    /** Why this session doesn't save its settings, or {@code null} while it does. */
+    public synchronized String notSavingReason() {
+        return notSaving;
     }
 
     private static JsonObject objectOrNull(JsonObject parent, String key) {
@@ -151,6 +189,14 @@ public final class ConfigFile {
 
     /** Writes the file, through a temporary file so a crash mid-write never leaves half a file. */
     public synchronized void save() {
+        if (notSaving != null) {
+            if (!toldNotSaving) {
+                toldNotSaving = true;
+                LiteLightsClient.LOG.error("Not saving LiteLights' settings this session, so {} isn't replaced by the defaults: {}",
+                    path, notSaving);
+            }
+            return;
+        }
         JsonObject out = root.deepCopy();
         out.addProperty("schema", Math.max(readSchema(root), migrations.currentSchema()));
         out.add("options", registry.storedOptions());

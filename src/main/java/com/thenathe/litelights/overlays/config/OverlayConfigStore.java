@@ -38,8 +38,11 @@ public final class OverlayConfigStore {
         /** Replaces what is saved and writes it out. */
         void write(JsonObject data);
 
-        /** Keeps an unreadable saved object somewhere it won't be overwritten. */
-        void keepUnreadable(JsonObject data);
+        /** The object saved under {@code key} beside the module's own, or {@code null} if there is none. */
+        JsonObject readBeside(String key);
+
+        /** Saves an object under {@code key} beside the module's own, where nothing reads or replaces it. */
+        void writeBeside(String key, JsonObject data);
     }
 
     /** Where the settings came from on this load. */
@@ -52,7 +55,14 @@ public final class OverlayConfigStore {
         DEFAULTS
     }
 
-    public record Loaded(OverlayConfig config, Origin origin) {
+    /**
+     * @param keptAs where the saved settings went when they couldn't be read and the defaults were
+     *               loaded instead ({@code overlays_unreadable} beside the module's own), or {@code null}
+     */
+    public record Loaded(OverlayConfig config, Origin origin, String keptAs) {
+        public Loaded(OverlayConfig config, Origin origin) {
+            this(config, origin, null);
+        }
     }
 
     private OverlayConfigStore() {
@@ -67,8 +77,10 @@ public final class OverlayConfigStore {
                 }
             } catch (RuntimeException failure) {
                 // The next save would replace it, so a copy goes aside first.
-                data.keepUnreadable(data.read().deepCopy());
-                OverlaysModule.LOG.warn("The saved overlay settings couldn't be read; kept a copy and using defaults", failure);
+                String keptAs = keepUnreadable(data, data.read().deepCopy());
+                OverlaysModule.LOG.warn("The saved overlay settings couldn't be read; kept a copy under modules.{} and using defaults",
+                    keptAs, failure);
+                return new Loaded(new OverlayConfig(), Origin.DEFAULTS, keptAs);
             }
             return new Loaded(new OverlayConfig(), Origin.DEFAULTS);
         }
@@ -83,6 +95,26 @@ public final class OverlayConfigStore {
             OverlaysModule.LOG.warn("Couldn't import {}; the overlays start from their defaults", standalone);
         }
         return new Loaded(new OverlayConfig(), Origin.DEFAULTS);
+    }
+
+    /**
+     * Keeps a copy of unreadable settings beside the module's own and returns its key. A copy kept
+     * earlier is never replaced: a hierarchy typed in by hand that broke once, was replaced by the
+     * defaults and broke again in another way keeps both versions. The same unreadable settings
+     * loaded again (the next start, before anything was saved) reuse their copy.
+     */
+    static String keepUnreadable(ModuleData data, JsonObject unreadable) {
+        for (int copy = 1; ; copy++) {
+            String key = MODULE_ID + "_unreadable" + (copy == 1 ? "" : "_" + copy);
+            JsonObject kept = data.readBeside(key);
+            if (kept == null || kept.isEmpty()) {
+                data.writeBeside(key, unreadable);
+                return key;
+            }
+            if (kept.equals(unreadable)) {
+                return key;
+            }
+        }
     }
 
     /** The upgraded settings from Dynamic Overlays' file, or {@code null} if it can't be read. */

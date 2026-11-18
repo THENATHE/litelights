@@ -12,7 +12,6 @@ import com.thenathe.litelights.render.frame.FrameState;
 import java.util.Arrays;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector4f;
 import org.jspecify.annotations.Nullable;
@@ -85,6 +84,13 @@ public final class CloudLightning {
     /** Hooks into LiteLights' frame updates; called by the sky and fog feature as it registers. */
     public static void register() {
         LiteRenderEvents.FRAME_UPDATE.register(INSTANCE::onFrameUpdate);
+    }
+
+    /** The world was left: forget its bolts and its level. */
+    public void onWorldLeft() {
+        level = null;
+        Arrays.fill(boltKnown, false);
+        cloudBase = Float.NaN;
     }
 
     /** Where this frame's clouds start, from the cloud hook (also while vanilla draws them). */
@@ -165,11 +171,9 @@ public final class CloudLightning {
         }
     }
 
-    /** Lightning lights the overworld's kind of sky only, where the dimension settings let weather and sky through. */
+    /** Lightning lights only a sky with weather, where the dimension settings let weather and sky through. */
     private static boolean hasStormySky(ClientLevel level) {
-        DimensionType dimension = level.dimensionType();
-        return dimension.skybox() == DimensionType.Skybox.OVERWORLD && dimension.hasSkyLight()
-            && DimensionGate.allows(Aspect.WEATHER) && DimensionGate.allows(Aspect.SKY);
+        return DimensionGate.hasWeather(level) && DimensionGate.allows(Aspect.SKY);
     }
 
     private void fill(FrameState frame, Minecraft minecraft, ClientLevel currentLevel) {

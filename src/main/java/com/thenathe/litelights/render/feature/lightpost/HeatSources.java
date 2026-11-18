@@ -397,9 +397,11 @@ final class HeatSources implements AutoCloseable {
             int z = chunk.getPos().getMinBlockZ() + (quart >> 2) * 4 + 2;
             int surface = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x & 15, z & 15);
             Holder<Biome> biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(surface), QuartPos.fromBlock(z));
-            BiomeClimate climate = BiomeClimate.of(biome);
+            cursor.set(x, surface, z);
+            // Classified by the season's biome, as the particles do.
+            BiomeClimate climate = BiomeClimate.of(LocalClimate.seasonalBiome(currentLevel, biome, cursor));
             hotBiome[quart] = (climate == BiomeClimate.DESERT || climate == BiomeClimate.BADLANDS)
-                && LocalClimate.dryHeat(currentLevel, biome, cursor.set(x, surface, z));
+                && LocalClimate.dryHeat(currentLevel, biome, cursor);
         }
     }
 

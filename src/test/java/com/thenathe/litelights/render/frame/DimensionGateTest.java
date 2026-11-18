@@ -1,11 +1,25 @@
 package com.thenathe.litelights.render.frame;
 
 import com.thenathe.litelights.config.DimensionOptions.Aspect;
+import net.minecraft.world.level.dimension.DimensionType;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DimensionGateTest {
+    @Test
+    void weatherNeedsTheGamesWeatherUnderTheOverworldsSky() {
+        // Level#canHaveWeather: sky light, no ceiling, not the End.
+        assertTrue(DimensionGate.weatherDimension(DimensionType.Skybox.OVERWORLD, true), "the overworld");
+        assertFalse(DimensionGate.weatherDimension(DimensionType.Skybox.NONE, false), "the Nether");
+        assertFalse(DimensionGate.weatherDimension(DimensionType.Skybox.END, false), "the End");
+        // Modded dimensions: rain, its fog and puddles all agree now.
+        assertFalse(DimensionGate.weatherDimension(DimensionType.Skybox.OVERWORLD, false), "an overworld sky where the game keeps no weather");
+        assertFalse(DimensionGate.weatherDimension(DimensionType.Skybox.NONE, true), "weather with no sky of the overworld's kind");
+        assertFalse(DimensionGate.weatherDimension(DimensionType.Skybox.END, true), "the End's sky");
+    }
+
     @Test
     void everythingAllowedClearsNothing() {
         assertEquals(0, DimensionGate.gatedBits(aspect -> true));

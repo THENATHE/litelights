@@ -1,5 +1,6 @@
 package com.thenathe.litelights.overlays.generation;
 
+import com.thenathe.litelights.overlays.OverlaysModule;
 import com.thenathe.litelights.overlays.config.OverlayConfig;
 import com.thenathe.litelights.overlays.hierarchy.EligibleBlocks;
 import com.thenathe.litelights.overlays.hierarchy.OverlayPlan;
@@ -21,6 +22,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -169,8 +171,13 @@ public final class OverlayGenerator {
     private record TileSetOutput(Map<String, byte[]> files, int tiles, long texels, boolean reused) {
     }
 
-    /** Tiles from the previous build, so a reload that changes nothing for a texture reuses its PNGs. */
+    /**
+     * Tiles from the previous live build, so a reload that changes nothing for a texture reuses its
+     * PNGs. Exports read it but never replace it. The QA harness empties it by reflection, by this name.
+     */
     private static volatile Map<TileSetKey, BuiltSet> previousSets = Map.of();
+    /** Failures already logged with their stack, so a broken pack doesn't log the same one on every reload. */
+    private static final Set<String> LOGGED_FAILURES = ConcurrentHashMap.newKeySet();
 
     private OverlayGenerator() {
     }
@@ -189,8 +196,12 @@ public final class OverlayGenerator {
         Map<String, SourceTexture> textures(Set<String> ids, List<String> skipped, ExecutorService pool);
     }
 
-    /** The current packs, as the game shows them. */
-    private record PackSources(PackStack packs) implements Sources {
+    /**
+     * The current packs, as the game shows them.
+     *
+     * @param largestSize the build's size limit: larger textures are scaled down to it as they load
+     */
+    private record PackSources(PackStack packs, int largestSize) implements Sources {
         @Override
         public Map<String, FaceLayers> layers(OverlayPlan plan, Input input, List<String> skipped, ExecutorService pool) {
             return resolveLayers(packs, plan, input, skipped, pool);
@@ -209,15 +220,30 @@ public final class OverlayGenerator {
 
         @Override
         public Map<String, SourceTexture> textures(Set<String> ids, List<String> skipped, ExecutorService pool) {
-            return loadTextures(packs, ids, skipped, pool);
+            return loadTextures(packs, ids, largestSize, skipped, pool);
         }
     }
 
+    /** Builds the live pack's files, and keeps their tiles for the next reload to reuse. */
     public static GeneratedFiles generate(PackStack packs, Input input) {
-        return generate(OverlayPlan.from(input.config(), input.eligible()), new PackSources(packs), input);
+        return generate(packs, input, true);
+    }
+
+    /** Builds an export's files. The live pack's tiles are reused but kept as they were, so the next reload stays warm. */
+    public static GeneratedFiles generateExport(PackStack packs, Input input) {
+        return generate(packs, input, false);
+    }
+
+    private static GeneratedFiles generate(PackStack packs, Input input, boolean keepTiles) {
+        Sources sources = new PackSources(packs, input.config().overlaySizeLimit());
+        return generate(OverlayPlan.from(input.config(), input.eligible()), sources, input, keepTiles);
     }
 
     static GeneratedFiles generate(OverlayPlan plan, Sources sources, Input input) {
+        return generate(plan, sources, input, true);
+    }
+
+    static GeneratedFiles generate(OverlayPlan plan, Sources sources, Input input, boolean keepTiles) {
         long started = System.nanoTime();
         ExecutorService pool = Workers.pool();
         OverlayConfig config = input.config();
@@ -251,7 +277,7 @@ public final class OverlayGenerator {
         }
 
         List<String> brickNotes = Collections.synchronizedList(new ArrayList<>());
-        Map<TileSetKey, BuiltSet> builtSets = new ConcurrentHashMap<>();
+        Map<TileSetKey, CompletableFuture<BuiltSet>> builtSets = new ConcurrentHashMap<>();
         List<CompletableFuture<TileSetOutput>> outputs = new ArrayList<>();
         for (TileSetJob job : jobs) {
             SourceTexture texture = textures.get(job.layer().texture());
@@ -260,7 +286,8 @@ public final class OverlayGenerator {
             }
             SourceTexture sized = visiblePart(job, texture, textures, fit.sizeLimit());
             VarietyLayout layout = input.format() == OverlayFormat.VARIETY ? fit.variety().layout() : null;
-            outputs.add(CompletableFuture.supplyAsync(() -> build(job, sized, layout, input, builtSets, brickNotes), pool));
+            outputs.add(CompletableFuture.supplyAsync(() -> buildOrSkip(job, sized, layout, input, builtSets, brickNotes, skipped),
+                pool));
         }
 
         Map<String, byte[]> files = new LinkedHashMap<>();
@@ -280,7 +307,9 @@ public final class OverlayGenerator {
                 }
             }
         }
-        previousSets = Map.copyOf(builtSets);
+        if (keepTiles) {
+            previousSets = finishedSets(builtSets);
+        }
         notes.addAll(new TreeSet<>(brickNotes));
 
         Set<String> sourcesUsed = jobs.stream().map(job -> job.source().blockId()).collect(Collectors.toSet());
@@ -293,6 +322,27 @@ public final class OverlayGenerator {
 
     private static long elapsedMillis(long started) {
         return (System.nanoTime() - started) / 1_000_000;
+    }
+
+    /** The sets of a build that were drawn, without the ones that failed. */
+    private static Map<TileSetKey, BuiltSet> finishedSets(Map<TileSetKey, CompletableFuture<BuiltSet>> builtSets) {
+        Map<TileSetKey, BuiltSet> finished = new HashMap<>();
+        builtSets.forEach((key, set) -> {
+            if (set.isDone() && !set.isCompletedExceptionally()) {
+                finished.put(key, set.join());
+            }
+        });
+        return Map.copyOf(finished);
+    }
+
+    /**
+     * Logs a failure with its stack the first time it happens this session. A broken resource pack
+     * fails the same way on every reload, and its stack only needs to be read once.
+     */
+    static void logOnce(String what, Throwable failure) {
+        if (LOGGED_FAILURES.add(what + " " + failure)) {
+            OverlaysModule.LOG.warn("Overlays left out {}", what, failure);
+        }
     }
 
     /** Reads the models of every block taking part, in parallel. */
@@ -313,6 +363,9 @@ public final class OverlayGenerator {
                     layers.put(block, resolver.resolve(block, input.defaultStates().getOrDefault(block, Map.of())));
                 } catch (BlockFaceResolver.UnusableModelException reason) {
                     skipped.add(block + ": " + reason.getMessage());
+                    if (reason.getCause() != null) {
+                        logOnce(block + ", whose model couldn't be read", reason.getCause());
+                    }
                 }
             }, pool));
         }
@@ -625,12 +678,12 @@ public final class OverlayGenerator {
     }
 
     /** Loads each texture once, in parallel. Unusable ones are reported and left out. */
-    private static Map<String, SourceTexture> loadTextures(PackStack packs, Set<String> ids, List<String> skipped,
+    private static Map<String, SourceTexture> loadTextures(PackStack packs, Set<String> ids, int largestSize, List<String> skipped,
                                                            ExecutorService pool) {
         Map<String, Optional<SourceTexture>> loaded = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> work = new ArrayList<>();
         for (String id : ids) {
-            work.add(CompletableFuture.runAsync(() -> loaded.put(id, load(packs, id, skipped)), pool));
+            work.add(CompletableFuture.runAsync(() -> loaded.put(id, load(packs, id, largestSize, skipped)), pool));
         }
         work.forEach(CompletableFuture::join);
         Map<String, SourceTexture> textures = new HashMap<>();
@@ -638,9 +691,9 @@ public final class OverlayGenerator {
         return textures;
     }
 
-    private static Optional<SourceTexture> load(PackStack packs, String textureId, List<String> skipped) {
+    private static Optional<SourceTexture> load(PackStack packs, String textureId, int largestSize, List<String> skipped) {
         try {
-            return Optional.of(SourceTexture.load(packs, textureId));
+            return Optional.of(SourceTexture.load(packs, textureId, largestSize));
         } catch (SourceTexture.UnusableTextureException reason) {
             skipped.add(reason.getMessage());
             return Optional.empty();
@@ -684,7 +737,7 @@ public final class OverlayGenerator {
         OverlayConfig config = input.config();
         int largest = 0;
         for (SourceTexture texture : textures.values()) {
-            largest = Math.max(largest, texture.size());
+            largest = Math.max(largest, texture.loadedSize());
         }
         int sizeLimit = config.overlaySizeLimit();
         if (largest > sizeLimit) {
@@ -738,24 +791,53 @@ public final class OverlayGenerator {
         return total;
     }
 
+    /**
+     * Builds one set, or leaves it out with a line in the report if drawing it threw: one set that
+     * can't be drawn (a texture nothing else expected) must not cost every other overlay.
+     */
+    private static TileSetOutput buildOrSkip(TileSetJob job, SourceTexture texture, VarietyLayout layout, Input input,
+                                             Map<TileSetKey, CompletableFuture<BuiltSet>> builtSets, List<String> notes,
+                                             List<String> skipped) {
+        try {
+            return build(job, texture, layout, input, builtSets, notes);
+        } catch (RuntimeException failure) {
+            Throwable cause = failure instanceof CompletionException && failure.getCause() != null ? failure.getCause() : failure;
+            String set = job.source().blockId() + " (" + kind(job) + ", " + job.layer().texture() + ")";
+            skipped.add(set + ": couldn't be drawn: " + cause);
+            logOnce("the set " + set, cause);
+            return null;
+        }
+    }
+
     private static TileSetOutput build(TileSetJob job, SourceTexture texture, VarietyLayout layout, Input input,
-                                       Map<TileSetKey, BuiltSet> builtSets, List<String> notes) {
+                                       Map<TileSetKey, CompletableFuture<BuiltSet>> builtSets, List<String> notes) {
         OverlayConfig config = input.config();
         int roughness = Math.clamp(config.edgeRoughness, 0, 100);
         long seed = job.source().blockId().hashCode();
         TileSetKey key = new TileSetKey(input.format(), Arrays.hashCode(texture.pixels()), texture.size(), job.source().style(),
             config.clampedReach(), roughness, job.blend(), seed, layout, job.steps());
 
-        BuiltSet set = builtSets.get(key);
-        boolean reused = false;
-        if (set == null) {
-            set = previousSets.get(key);
-            reused = set != null;
+        // Identical sets in one build (the same texture and settings in two jobs) are drawn once: the
+        // first job to reach the key draws it, the others wait for it. The first one is always
+        // running by then, so a wait can't hold up the pool.
+        CompletableFuture<BuiltSet> mine = new CompletableFuture<>();
+        CompletableFuture<BuiltSet> first = builtSets.putIfAbsent(key, mine);
+        BuiltSet set;
+        if (first != null) {
+            set = first.join();
+        } else {
+            try {
+                set = previousSets.get(key);
+                if (set == null) {
+                    set = buildSet(job, texture, layout, input, seed);
+                }
+                mine.complete(set);
+            } catch (RuntimeException failure) {
+                mine.completeExceptionally(failure);
+                throw failure;
+            }
         }
-        if (set == null) {
-            set = buildSet(job, texture, layout, input, seed);
-        }
-        builtSets.put(key, set);
+        boolean reused = previousSets.get(key) == set;
         if (set.note() != null) {
             notes.add(set.note());
         }

@@ -1,8 +1,10 @@
 package com.thenathe.litelights.config;
 
 import com.google.gson.JsonElement;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 
@@ -27,16 +29,27 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
     private final String creditKey;
     private final String tagKey;
     private final BoolOption needs;
-    private final BooleanSupplier enabledWhen;
+    private final Condition enabledWhen;
     private final BooleanSupplier shownWhen;
     private final List<ValueListener<T>> listeners = new CopyOnWriteArrayList<>();
     private volatile T value;
     private volatile OptionRegistry registry;
+    private volatile Set<Option<?>> dependencies;
 
     /** Told the old and new value after a change. */
     @FunctionalInterface
     public interface ValueListener<T> {
         void changed(T oldValue, T newValue);
+    }
+
+    /**
+     * When a row matters, worked out from other options' values. It reads them through
+     * {@code values}, never directly, so a screen holding changes back (Sodium's, until Apply) can
+     * ask it about those.
+     */
+    @FunctionalInterface
+    public interface Condition {
+        boolean holds(OptionValues values);
     }
 
     protected Option(Builder<T, ?, ?> builder) {
@@ -120,12 +133,37 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
      * condition holds. The screen greys the row out otherwise; the value is kept either way.
      */
     public boolean active() {
-        return (needs == null || needs.on() && needs.active()) && conditionHolds();
+        return active(OptionValues.LIVE);
+    }
+
+    /** {@link #active()} with the other options' values read from {@code values}. */
+    public boolean active(OptionValues values) {
+        return (needs == null || values.on(needs) && needs.active(values)) && conditionHolds(values);
     }
 
     /** The {@code enabledWhen} condition alone, without the {@link #needs()} switch. */
     public boolean conditionHolds() {
-        return enabledWhen == null || enabledWhen.getAsBoolean();
+        return conditionHolds(OptionValues.LIVE);
+    }
+
+    public boolean conditionHolds(OptionValues values) {
+        return enabledWhen == null || enabledWhen.holds(values);
+    }
+
+    /**
+     * Every other option {@link #active(OptionValues)} reads: the {@link #needs()} switch, what that
+     * switch itself depends on, and what the condition reads. Found once, by trying the condition
+     * on those options' values ({@link OptionValues#readBy}).
+     */
+    public Set<Option<?>> dependencies() {
+        Set<Option<?>> found = dependencies;
+        if (found == null) {
+            Set<Option<?>> read = new LinkedHashSet<>(OptionValues.readBy(this::active));
+            read.remove(this);
+            found = Set.copyOf(read);
+            dependencies = found;
+        }
+        return found;
     }
 
     /** Whether the row is shown at all right now (grading sliders only show for the edited time of day). */
@@ -217,7 +255,7 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
         private String creditKey;
         private String tagKey;
         private BoolOption needs;
-        private BooleanSupplier enabledWhen;
+        private Condition enabledWhen;
         private BooleanSupplier shownWhen;
 
         protected Builder(String id, T defaultValue) {
@@ -273,7 +311,7 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
         }
 
         /** Greys the row out while the condition is false, for conditions other than one switch. */
-        public B enabledWhen(BooleanSupplier condition) {
+        public B enabledWhen(Condition condition) {
             this.enabledWhen = condition;
             return (B) this;
         }

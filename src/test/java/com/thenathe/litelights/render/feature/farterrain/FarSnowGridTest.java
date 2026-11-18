@@ -49,7 +49,7 @@ class FarSnowGridTest {
         assertTrue(grid.wantsMove(0, 0), "a ring that was never placed");
         int origin = grid.wantedOriginX(300.0);
         assertEquals(-4096, origin, "the middle snaps to whole steps");
-        grid.moveTo(origin, grid.wantedOriginZ(-300.0), unknownLines(), false);
+        grid.swapIn(grid.takeSpare(), origin, grid.wantedOriginZ(-300.0));
         assertFalse(grid.wantsMove(1000.0, -1000.0));
         assertTrue(grid.wantsMove(1024.0, 0.0));
         assertEquals(1024 - 4096, grid.wantedOriginX(1024.0));
@@ -58,7 +58,7 @@ class FarSnowGridTest {
     @Test
     void anAreaMarksTheTexelsWhoseColumnsItHolds() {
         FarSnowGrid grid = new FarSnowGrid(16, 1024);
-        grid.moveTo(0, 0, unknownLines(), false);
+        grid.swapIn(grid.takeSpare(), 0, 0);
         // Texel i is read at column 16 i + 8.
         assertEquals(new FarSnowGrid.Rect(0, 0, 0, 0), grid.texels(0, 0, 15, 15));
         assertEquals(new FarSnowGrid.Rect(1, 0, 1, 0), grid.texels(9, 0, 24, 8));
@@ -75,8 +75,8 @@ class FarSnowGridTest {
 
     @Test
     void aMapTileNeverAnimatesButASeasonChangeKeepsItsBefore() {
-        FarSnowGrid grid = new FarSnowGrid(16, 1024);
-        grid.moveTo(0, 0, filled(100), false);
+        FarSnowGrid.Columns grid = new FarSnowGrid.Columns();
+        grid.moveFrom(null, 0, 0, filled(100));
         FarSnowGrid.Rect rect = new FarSnowGrid.Rect(0, 0, 1, 1);
         grid.accept(rect, new int[] {70, 70, 70, 70});
         assertEquals(70, grid.before[0], "seen better, not changed");
@@ -94,8 +94,8 @@ class FarSnowGridTest {
 
     @Test
     void aChangeThatChangesNothingLeavesTheOneShowingAlone() {
-        FarSnowGrid grid = new FarSnowGrid(16, 1024);
-        grid.moveTo(0, 0, filled(FarSnowSource.EVERYWHERE), false);
+        FarSnowGrid.Columns grid = new FarSnowGrid.Columns();
+        grid.moveFrom(null, 0, 0, filled(FarSnowSource.EVERYWHERE));
         grid.acceptChange(FarSnowGrid.Rect.ALL, filled(FarSnowSource.NOWHERE));
         assertEquals(0, grid.countChanges(FarSnowGrid.Rect.ALL, filled(FarSnowSource.NOWHERE)));
         grid.accept(FarSnowGrid.Rect.ALL, filled(FarSnowSource.NOWHERE));
@@ -104,8 +104,7 @@ class FarSnowGridTest {
 
     @Test
     void aColumnFirstKnownInAChangeDoesntAnimate() {
-        FarSnowGrid grid = new FarSnowGrid(16, 1024);
-        grid.moveTo(0, 0, unknownLines(), false);
+        FarSnowGrid.Columns grid = new FarSnowGrid.Columns();
         assertEquals(0, grid.countChanges(FarSnowGrid.Rect.ALL, filled(80)));
         grid.acceptChange(FarSnowGrid.Rect.ALL, filled(80));
         assertEquals(80, grid.before[123]);
@@ -114,16 +113,17 @@ class FarSnowGridTest {
 
     @Test
     void movingKeepsTheChangeWhereTheRingsOverlap() {
-        FarSnowGrid grid = new FarSnowGrid(16, 1024);
-        grid.moveTo(0, 0, filled(FarSnowSource.EVERYWHERE), false);
+        FarSnowGrid.Columns grid = new FarSnowGrid.Columns();
+        grid.moveFrom(null, 0, 0, filled(FarSnowSource.EVERYWHERE));
         grid.acceptChange(FarSnowGrid.Rect.ALL, filled(FarSnowSource.NOWHERE));
-        // One step east: texel x holds what texel x + 64 held.
-        grid.moveTo(1024, 0, filled(FarSnowSource.NOWHERE), true);
-        assertEquals(FarSnowSource.EVERYWHERE, grid.before[0]);
-        assertEquals(FarSnowSource.EVERYWHERE, grid.before[SIZE - 65]);
-        assertEquals(FarSnowSource.NOWHERE, grid.before[SIZE - 64], "new land isn't animated");
-        assertEquals(FarSnowSource.NOWHERE, grid.before[SIZE - 1]);
-        grid.moveTo(2048, 0, filled(FarSnowSource.NOWHERE), false);
+        // One step east (1,024 blocks, 64 texels): texel x holds what texel x + 64 held.
+        FarSnowGrid.Columns moved = new FarSnowGrid.Columns();
+        moved.moveFrom(grid.before, 64, 0, filled(FarSnowSource.NOWHERE));
+        assertEquals(FarSnowSource.EVERYWHERE, moved.before[0]);
+        assertEquals(FarSnowSource.EVERYWHERE, moved.before[SIZE - 65]);
+        assertEquals(FarSnowSource.NOWHERE, moved.before[SIZE - 64], "new land isn't animated");
+        assertEquals(FarSnowSource.NOWHERE, moved.before[SIZE - 1]);
+        grid.moveFrom(null, 64, 0, filled(FarSnowSource.NOWHERE));
         assertEquals(0, grid.changing(), "without a change running, nothing is held");
     }
 
@@ -209,9 +209,5 @@ class FarSnowGridTest {
         int[] lines = new int[SIZE * SIZE];
         Arrays.fill(lines, line);
         return lines;
-    }
-
-    private static int[] unknownLines() {
-        return filled(FarSnowSource.UNKNOWN);
     }
 }

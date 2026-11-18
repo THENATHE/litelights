@@ -34,6 +34,8 @@ final class ParticleState {
     final byte[] kind;
     /** Live particles per {@link ParticleCategory}, by ordinal. */
     final int[] categoryCounts = new int[ParticleCategory.values().length];
+    /** The particles frames may draw, picked by the worker right after the step that wrote this state. */
+    final CullList drawable;
 
     ParticleState(int capacity) {
         this.capacity = capacity;
@@ -53,11 +55,12 @@ final class ParticleState {
         color = new int[capacity];
         light = new int[capacity];
         kind = new byte[capacity];
+        drawable = new CullList(capacity);
     }
 
     /**
-     * A state of another capacity holding this one's particles, as many as fit. For when the
-     * settings change how many may be alive; never while a step runs.
+     * A state of another capacity holding this one's particles, as many as fit, with no cull list
+     * yet. For when the settings change how many may be alive; never while a step runs.
      */
     ParticleState resized(int newCapacity) {
         ParticleState copy = new ParticleState(newCapacity);
@@ -88,6 +91,7 @@ final class ParticleState {
     void clear() {
         count = 0;
         Arrays.fill(categoryCounts, 0);
+        drawable.valid = false;
     }
 
     /** Adds a particle that has just appeared: no motion to interpolate yet. Returns its index. */

@@ -3,6 +3,7 @@ package com.thenathe.litelights.overlays.pack;
 import com.thenathe.litelights.overlays.OverlaysModule;
 import com.thenathe.litelights.overlays.generation.GeneratedFiles;
 import com.thenathe.litelights.overlays.generation.GeneratedFolders;
+import com.thenathe.litelights.overlays.ui.OverlaysPage;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackResources;
@@ -41,9 +43,15 @@ public final class GeneratedPack implements PackResources {
     public static final String ID = "litelights/overlays";
     public static final String NAMESPACE = "litelights";
     private static final long BUILD_TIMEOUT_SECONDS = 120;
+    /** Shortens the wait, for the QA run that checks a build that times out. */
+    private static final String TIMEOUT_PROPERTY = "litelights.debug.overlayBuildTimeoutSeconds";
+
+    /** Whether this reload uses its build's files. Decided once: by the build finishing, or by the wait for it running out. */
+    private enum Outcome { WAITING, TAKEN, GAVE_UP }
 
     private final PackLocationInfo location;
     private final AtomicReference<CompletableFuture<GeneratedFiles>> build = new AtomicReference<>();
+    private final AtomicReference<Outcome> outcome = new AtomicReference<>(Outcome.WAITING);
     private volatile GeneratedFolders folders = GeneratedFolders.NONE;
 
     public GeneratedPack(PackLocationInfo location) {
@@ -56,33 +64,42 @@ public final class GeneratedPack implements PackResources {
     }
 
     /**
+     * Called by the build as it finishes: true if this reload takes its files, false if the reload
+     * already stopped waiting for them. A build that finishes late must not be reported as loaded.
+     */
+    public boolean takeFinishedBuild() {
+        return outcome.compareAndSet(Outcome.WAITING, Outcome.TAKEN);
+    }
+
+    /**
      * The build's files, waiting for it if needed. A build that timed out or failed is swapped for an
-     * empty result, so the rest of the reload neither waits again nor logs again.
+     * empty result, so the rest of the reload neither waits again nor logs again. A failed build is
+     * logged and reported by {@link OverlayBuilds}; a timeout here, with Retry on the Overlays page.
      */
     private GeneratedFiles files() {
         CompletableFuture<GeneratedFiles> current = build.get();
         if (current == null) {
             return GeneratedFiles.EMPTY;
         }
+        long timeout = Long.getLong(TIMEOUT_PROPERTY, BUILD_TIMEOUT_SECONDS);
         try {
-            return current.get(BUILD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return current.get(timeout, TimeUnit.SECONDS);
         } catch (TimeoutException slow) {
-            if (giveUpOn(current)) {
-                OverlaysModule.LOG.error("Overlay build took over {} s; this reload goes without overlays", BUILD_TIMEOUT_SECONDS);
+            if (outcome.compareAndSet(Outcome.WAITING, Outcome.GAVE_UP)) {
+                build.set(CompletableFuture.completedFuture(GeneratedFiles.EMPTY));
+                OverlaysModule.LOG.error("Overlay build took over {} s; this reload goes without overlays", timeout);
+                OverlaysPage.FEATURE.markFailed("litelights.overlays.failed.timeout",
+                    () -> Minecraft.getInstance().reloadResourcePacks());
+            } else if (outcome.get() == Outcome.TAKEN) {
+                // It finished just as the wait ran out, and this reload has taken it.
+                return current.join();
             }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         } catch (Exception failure) {
-            if (giveUpOn(current)) {
-                OverlaysModule.LOG.error("Overlay build failed; this reload goes without overlays", failure);
-            }
+            build.compareAndSet(current, CompletableFuture.completedFuture(GeneratedFiles.EMPTY));
         }
         return GeneratedFiles.EMPTY;
-    }
-
-    /** Replaces a build with an empty result; true for the one caller that made the swap. */
-    private boolean giveUpOn(CompletableFuture<GeneratedFiles> failed) {
-        return build.compareAndSet(failed, CompletableFuture.completedFuture(GeneratedFiles.EMPTY));
     }
 
     @Override

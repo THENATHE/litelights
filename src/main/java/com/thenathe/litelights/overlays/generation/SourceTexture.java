@@ -11,10 +11,19 @@ import net.minecraft.resources.Identifier;
  * <p>Any square size works, power of two or not. An animated texture (a strip of square frames
  * taller than it is wide) contributes its first frame, so its overlay is a still image. A texture
  * that is neither square nor such a strip is reported and left out.
+ *
+ * <p>A texture larger than the build will ever draw is scaled down as it loads (see
+ * {@link #load}), so a 4096x pack doesn't hold 64 MiB per texture for the whole build.
+ *
+ * @param loadedSize the size the pack's texture had before any scaling on load
  */
-public record SourceTexture(String id, int size, int[] pixels, boolean animated) {
+public record SourceTexture(String id, int size, int[] pixels, boolean animated, int loadedSize) {
     /** Below this an edge has no room for a shape. */
     public static final int SMALLEST_SIZE = 4;
+
+    public SourceTexture(String id, int size, int[] pixels, boolean animated) {
+        this(id, size, pixels, animated, size);
+    }
 
     /** Thrown when a texture can't be used; the message is shown to the player. */
     public static final class UnusableTextureException extends Exception {
@@ -23,12 +32,17 @@ public record SourceTexture(String id, int size, int[] pixels, boolean animated)
         }
     }
 
-    public static SourceTexture load(PackStack packs, String textureId) throws UnusableTextureException {
-        Identifier texture = Identifier.parse(textureId);
+    /**
+     * Reads a texture's first frame. One larger than {@code largestSize} (a "huge" texture: past the
+     * build's Largest overlay size, at most 512x) comes back scaled down to it right away, exactly as
+     * the build would have scaled it before drawing; textures at or under it are left as they are.
+     */
+    public static SourceTexture load(PackStack packs, String textureId, int largestSize) throws UnusableTextureException {
         byte[] bytes;
         try {
+            Identifier texture = Identifier.parse(textureId);
             bytes = packs.read(texture.withPath(path -> "textures/" + path + ".png"));
-        } catch (IOException failure) {
+        } catch (IOException | RuntimeException failure) {
             throw new UnusableTextureException("couldn't read " + textureId);
         }
         if (bytes == null) {
@@ -50,7 +64,8 @@ public record SourceTexture(String id, int size, int[] pixels, boolean animated)
                     pixels[y * width + x] = image.getPixel(x, y);
                 }
             }
-            return new SourceTexture(textureId, width, pixels, height > width);
+            SourceTexture loaded = new SourceTexture(textureId, width, pixels, height > width);
+            return width > largestSize ? loaded.scaledTo(largestSize) : loaded;
         } catch (IOException | RuntimeException failure) {
             throw new UnusableTextureException("couldn't decode " + textureId);
         }
@@ -74,7 +89,7 @@ public record SourceTexture(String id, int size, int[] pixels, boolean animated)
                 scaled[y * target + x] = average(fromX, toX, fromY, toY);
             }
         }
-        return new SourceTexture(id, target, scaled, animated);
+        return new SourceTexture(id, target, scaled, animated, loadedSize);
     }
 
     /**
@@ -92,7 +107,7 @@ public record SourceTexture(String id, int size, int[] pixels, boolean animated)
                 }
             }
         }
-        return new SourceTexture(id, size, visible, animated);
+        return new SourceTexture(id, size, visible, animated, loadedSize);
     }
 
     private int average(int fromX, int toX, int fromY, int toY) {

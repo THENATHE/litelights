@@ -30,6 +30,7 @@ import com.thenathe.litelights.render.shadow.TerrainCasterRenderer;
 import com.thenathe.litelights.render.startup.StartupTrace;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -68,6 +69,11 @@ public final class LiteLightsRenderer {
      * must match pixel for pixel between builds; below 0, the clock runs.
      */
     private static final float FROZEN_SHADER_SECONDS = Float.parseFloat(System.getProperty("litelights.debug.shaderSeconds", "-1"));
+    /**
+     * Shadows switched off for this long give their video memory back (the sun map, the caster
+     * meshes, the mob map: up to about 600 MiB at Ultra). A quick off and on in the settings keeps it.
+     */
+    private static final long RELEASE_AFTER_NANOS = TimeUnit.SECONDS.toNanos(5);
 
     private final FrameState frame = new FrameState();
     private final CelestialLight celestial = new CelestialLight();
@@ -97,6 +103,8 @@ public final class LiteLightsRenderer {
     private boolean rowsMarkedReady;
     private long lastRedrawNanos;
     private boolean mobShadowsActive;
+    private final OffTimer shadowsOff = new OffTimer();
+    private final OffTimer mobShadowsOff = new OffTimer();
     // Diagnostics (QA harness and settings footer).
     private int redrawCount;
     private int nearChangeRedrawCount;
@@ -268,6 +276,9 @@ public final class LiteLightsRenderer {
         shadowsActive = hasSun && settings.shadows().enabled() && (!cameraUnderwater || settings.shadows().inWater())
             && RenderFeatureStatus.mayRun(RenderFeature.SHADOWS) && DimensionGate.allows(DimensionOptions.Aspect.SHADOWS);
         mobShadowsActive = shadowsActive && settings.shadows().entityShadows() && RenderFeatureStatus.mayRun(RenderFeature.MOB_SHADOWS);
+        // Switched off by a setting, or no sun here; not only paused under water or by a retry delay.
+        boolean shadowsWanted = hasSun && settings.shadows().enabled() && DimensionGate.allows(DimensionOptions.Aspect.SHADOWS);
+        releaseShadowMemoryWhenOff(shadowsWanted, shadowsWanted && settings.shadows().entityShadows());
 
         updateSunShadows(minecraft);
         updateMobShadowPlacement();
@@ -341,6 +352,57 @@ public final class LiteLightsRenderer {
     }
 
     /**
+     * Frees the shadow maps and caster meshes once shadows have been off for {@link #RELEASE_AFTER_NANOS},
+     * and the mob map once Creature shadows have. Turning them back on makes the maps again and
+     * rebuilds the casters, nearest first, as after joining a world.
+     */
+    private void releaseShadowMemoryWhenOff(boolean shadowsWanted, boolean mobShadowsWanted) {
+        long now = System.nanoTime();
+        if (shadowsOff.releaseDue(shadowsWanted, now)) {
+            long sunBytes = sunMap == null ? 0L : sunMapBytes(sunMap.size());
+            long casterBytes = casters.memory().reservedBytes();
+            closeShadowMaps();
+            casters.releaseMeshes();
+            if (sunBytes + casterBytes > 0) {
+                LiteLightsClient.LOG.info("Shadows are off: freed {} MiB of video memory (sun map {} MiB, caster meshes {} MiB)",
+                    (sunBytes + casterBytes) >> 20, sunBytes >> 20, casterBytes >> 20);
+            }
+        }
+        if (mobShadowsOff.releaseDue(mobShadowsWanted, now) && mobMap != null) {
+            mobMap.close();
+            mobMap = null;
+        }
+    }
+
+    private static long sunMapBytes(int size) {
+        return 2L * size * size * Float.BYTES;
+    }
+
+    /** Measures how long something has been unwanted, and says once per such stretch when to free it. */
+    private static final class OffTimer {
+        private long offSinceNanos;
+        private boolean off;
+        private boolean released;
+
+        boolean releaseDue(boolean wanted, long now) {
+            if (wanted) {
+                off = false;
+                released = false;
+                return false;
+            }
+            if (!off) {
+                off = true;
+                offSinceNanos = now;
+            }
+            if (!released && now - offSinceNanos >= RELEASE_AFTER_NANOS) {
+                released = true;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    /**
      * Makes the sun map at the chosen detail, or at the largest smaller one the device can hold: a
      * size the device can't make at all is skipped straight away, and if allocating the textures
      * fails the next tier down is tried. The Shadows row says when a smaller tier is in use, with a
@@ -410,8 +472,16 @@ public final class LiteLightsRenderer {
         if (mobMap == null || mobMap.size() != size) {
             if (mobMap != null) {
                 mobMap.close();
+                mobMap = null;
             }
-            mobMap = new MobShadowMap(size);
+            try {
+                mobMap = new MobShadowMap(size);
+            } catch (RuntimeException error) {
+                // As with the sun map: the Creature shadows row says why, and it is tried again later.
+                RenderFeatureStatus.failed(RenderFeature.MOB_SHADOWS, error);
+                mobShadowsActive = false;
+                return;
+            }
         }
         // Mob shadows use the same light direction as the cached map, so both maps agree.
         var light = sunMap != null && sunMap.hasMap() ? sunMap.frontSpace().lightDirection() : celestial.shadowLightDirection();

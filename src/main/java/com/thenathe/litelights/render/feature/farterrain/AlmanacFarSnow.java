@@ -9,9 +9,10 @@ import net.minecraft.client.multiplayer.ClientLevel;
 
 /**
  * Almanac's far-terrain lookups (0.1.2 on; Almanac's docs/FAR-SNOW.md). With render.feature.climate's
- * AlmanacClimate, the only classes that name Almanac; loaded only when Almanac is installed. An
- * older Almanac without these lookups fails in {@link #create}, and far terrain keeps its captured snow.
- * 0.1.3's change tick is only asked of 0.1.3 or later (AlmanacVersion).
+ * AlmanacClimate, the only classes that name Almanac; loaded only when Almanac is installed.
+ * fabric.mod.json refuses an Almanac older than 0.1.2, so the lookups are always there; FarSnow
+ * still catches a LinkageError from {@link #listen}, the first call that needs them, and keeps the
+ * far mods' captured snow. 0.1.3's change tick is only asked of 0.1.3 or later (AlmanacVersion).
  */
 final class AlmanacFarSnow implements FarSnowSource {
     private static final Climate[] CLIMATES = {Climate.HOT, Climate.TEMPERATE, Climate.COLD};
@@ -22,14 +23,7 @@ final class AlmanacFarSnow implements FarSnowSource {
     private AlmanacFarSnow() {
     }
 
-    /**
-     * Throws a LinkageError (NoSuchFieldError) if this Almanac has no far-terrain lookups: the event
-     * came with them in 0.1.2, and {@link #listen} is called right after.
-     */
     static FarSnowSource create() {
-        if (AlmanacEvents.FAR_CLIMATE_CHANGED == null) {
-            throw new IllegalStateException("Almanac's far-terrain event isn't there");
-        }
         return new AlmanacFarSnow();
     }
 

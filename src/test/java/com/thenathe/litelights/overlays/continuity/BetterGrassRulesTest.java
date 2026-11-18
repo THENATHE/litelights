@@ -187,6 +187,39 @@ class BetterGrassRulesTest {
         }
     }
 
+    /**
+     * R4: a pack's LambdaBetterGrass file of the wrong shape is skipped, as LambdaBetterGrass skips
+     * it, and the others still count; before, one such file switched edge variety off.
+     */
+    @Test
+    void aBadFileIsSkippedAndTheRestStillCount(@TempDir Path pack) throws IOException {
+        write(pack, "assets/minecraft/bettergrass/states/grass_block.json",
+            "{\"type\":\"grass\",\"variants\":{\"snowy=false\":{\"data\":\"minecraft:bettergrass/data/grass_block\"},"
+                + "\"snowy=true\":{\"data\":\"minecraft:bettergrass/data/snowy_grass_block\"}}}");
+        write(pack, "assets/minecraft/bettergrass/states/podzol.json", "{\"type\":{\"not\":\"a name\"}}");
+        write(pack, "assets/minecraft/bettergrass/states/fern.json", "{\"type\":\"layer\",\"variants\":[\"not\",\"an object\"]}");
+        write(pack, "assets/minecraft/bettergrass/states/mycelium.json", "[\"not an object\"]");
+        write(pack, "assets/minecraft/bettergrass/states/short_grass.json", "{\"type\":\"layer\",\"data\":\"minecraft:bettergrass/data/short_grass\"}");
+        write(pack, "assets/minecraft/bettergrass/data/short_grass.json", "{\"snow\":{\"layer\":\"maybe\"}}");
+        write(pack, "assets/minecraft/bettergrass/states/tall_grass.json", "{\"type\":\"layer\",\"data\":\"minecraft:bettergrass/data/tall_grass\"}");
+        write(pack, "assets/minecraft/bettergrass/data/tall_grass.json", "{}");
+        write(pack, "assets/lambdabettergrass/bettergrass/layer_types/snow.json", "{\"match\":\"#minecraft:Not_A_Tag\"}");
+        PackLocationInfo info = new PackLocationInfo("test", Component.literal("test"), PackSource.BUILT_IN, Optional.empty());
+        try (MultiPackResourceManager resources = new MultiPackResourceManager(PackType.CLIENT_RESOURCES,
+            List.of(new PathPackResources(info, pack)))) {
+            BetterGrassRules loaded = BetterGrassRules.load(resources);
+            assertTrue(loaded.redraws(Blocks.GRASS_BLOCK), "the good file still counts");
+            assertFalse(loaded.redraws(Blocks.PODZOL), "a type that isn't a name is skipped");
+            assertFalse(loaded.redraws(Blocks.MYCELIUM), "a file that isn't an object is skipped");
+
+            // The snow layer type can't be read, so nothing is drawn snowy; asking still works.
+            Level level = new Level().put(AT, grass).put(AT.above(), Blocks.TALL_GRASS.defaultBlockState())
+                .put(AT.above().east(), Blocks.SNOW.defaultBlockState()).put(AT.above().west(), Blocks.SNOW.defaultBlockState());
+            assertFalse(loaded.drawnSnowy(level.view(), AT, grass, FANCY));
+            assertEquals(Side.VANILLA, loaded.side(level.view(), AT, grass, Direction.SOUTH, FANCY));
+        }
+    }
+
     private static void write(Path root, String path, String text) throws IOException {
         Path file = root.resolve(path);
         Files.createDirectories(file.getParent());

@@ -1,8 +1,10 @@
 package com.thenathe.litelights;
 
 import com.thenathe.litelights.gui.SettingsClient;
+import com.thenathe.litelights.gui.TerrainStallOffer;
 import com.thenathe.litelights.overlays.OverlaysModule;
 import com.thenathe.litelights.render.LiteLightsRenderer;
+import com.thenathe.litelights.render.feature.lightning.CloudLightning;
 import com.thenathe.litelights.render.feature.lightpost.LightPost;
 import com.thenathe.litelights.render.feature.particles.ParticleSystem;
 import com.thenathe.litelights.render.feature.climate.LocalClimate;
@@ -14,6 +16,7 @@ import com.thenathe.litelights.render.feature.weather.GlassWeather;
 import com.thenathe.litelights.render.feature.weather.Puddles;
 import com.thenathe.litelights.render.feature.weather.SnowyLeaves;
 import com.thenathe.litelights.render.frame.DimensionGate;
+import com.thenathe.litelights.render.frame.FrameClock;
 import com.thenathe.litelights.render.post.LitePostChain;
 import com.thenathe.litelights.render.pipeline.ReloadDefines;
 import com.thenathe.litelights.render.pipeline.ShaderLoopCaps;
@@ -49,6 +52,7 @@ public final class LiteLightsClient implements ClientModInitializer {
         SettingsClient.initialize();
         ShaderLoopCaps.register();
         TerrainParts.register();
+        TerrainStallOffer.register();
         ReloadDefines.registerEvents();
         LitePostChain.install();
         LightPost.get().register();
@@ -75,8 +79,14 @@ public final class LiteLightsClient implements ClientModInitializer {
         StartupTrace.stopWatching();
         try {
             DimensionGate.onWorldLeft();
+            FrameClock.onWorldLeft();
             SkyFogFeature.get().onWorldLeft();
+            CloudLightning.get().onWorldLeft();
             WaterRenderer.get().onWorldLeft();
+            GlassWeather.get().onWorldLeft();
+            Puddles.get().onWorldLeft();
+            SnowyLeaves.get().onWorldLeft();
+            LightPost.get().onWorldLeft();
             FarTerrain.get().onWorldLeft();
             ParticleSystem.get().onWorldLeft();
             LiteLightsRenderer.get().onWorldLeft();

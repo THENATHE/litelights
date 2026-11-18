@@ -39,10 +39,11 @@ public final class VanillaSkyPreview {
         if (!timePreview && !weatherPreview || state.skybox != DimensionType.Skybox.OVERWORLD || !DimensionGate.allows(Aspect.SKY)) {
             return;
         }
-        float worldRain = level.getRainLevel(1.0f);
-        float worldThunder = level.getThunderLevel(1.0f);
-        float rain = WeatherPreview.rain(worldRain);
-        float thunder = WeatherPreview.thunder(worldThunder);
+        // The rain and thunder vanilla's colours already carry: the player's share of them with Almanac.
+        float shownRain = level.getRainLevel(1.0f);
+        float shownThunder = level.getThunderLevel(1.0f);
+        float rain = WeatherPreview.rain(shownRain);
+        float thunder = WeatherPreview.thunder(shownThunder);
         // Vanilla dims the sun, moon and stars by this; the previewed rain dims them the same way.
         state.rainBrightness = 1.0f - rain;
 
@@ -51,7 +52,7 @@ public final class VanillaSkyPreview {
             // part of the previewed weather beyond it is added.
             if (state.skyColor != null) {
                 state.skyColor = SKY.set(state.skyColor);
-                greyForWeather(SKY, Math.max(0.0f, rain - worldRain), Math.max(0.0f, thunder - worldThunder));
+                greyForWeather(SKY, Math.max(0.0f, rain - shownRain), Math.max(0.0f, thunder - shownThunder));
             }
             return;
         }

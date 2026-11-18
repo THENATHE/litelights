@@ -104,10 +104,11 @@ public final class LiteClouds {
         if (level == null || !settings.hasPreview() && !WeatherPreview.active()) {
             return vanilla;
         }
-        float worldRain = level.getRainLevel(1.0f);
-        float worldThunder = level.getThunderLevel(1.0f);
-        float rain = WeatherPreview.rain(worldRain);
-        float thunder = WeatherPreview.thunder(worldThunder);
+        // The rain and thunder vanilla's colours already carry: the player's share of them with Almanac.
+        float shownRain = level.getRainLevel(1.0f);
+        float shownThunder = level.getThunderLevel(1.0f);
+        float rain = WeatherPreview.rain(shownRain);
+        float thunder = WeatherPreview.thunder(shownThunder);
         float red = ARGB.redFloat(vanilla);
         float green = ARGB.greenFloat(vanilla);
         float blue = ARGB.blueFloat(vanilla);
@@ -123,13 +124,13 @@ public final class LiteClouds {
             green *= brightness * 0.9f + 0.1f;
             blue *= brightness * 0.85f + 0.15f;
         } else {
-            // Vanilla's colour already carries the world's weather; add only what the preview brings beyond it.
-            float extraRain = Math.max(0.0f, rain - worldRain);
+            // Vanilla's colour already carries the weather shown here; add only what the preview brings beyond it.
+            float extraRain = Math.max(0.0f, rain - shownRain);
             float grey = SkyFogMath.luminance(red, green, blue) * 0.6f;
             red = LiteMath.lerp(red, grey, extraRain * 0.95f);
             green = LiteMath.lerp(green, grey, extraRain * 0.95f);
             blue = LiteMath.lerp(blue, grey, extraRain * 0.95f);
-            thunder = Math.max(0.0f, thunder - worldThunder);
+            thunder = Math.max(0.0f, thunder - shownThunder);
         }
         float storm = SkyFogMath.luminance(red, green, blue) * 0.2f;
         red = LiteMath.lerp(red, storm, thunder * 0.95f);

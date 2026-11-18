@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.0.0+26.3
+
+### Added
+- **A safety net for the Mac freeze:** if the game ever stops responding for over 10 seconds while it draws the world's blocks (which happens on some Macs), the next launch asks on the title screen whether to use Minecraft's own block shading for that session. Everything else in LiteLights stays on, and your saved settings don't change; the launch after that starts as usual. To keep it, turn on Use vanilla terrain shading (General page, Mac troubleshooting).
+
+### Changed
+- **Turning shadows off gives their video memory back:** after Shadows (or Creature shadows) have been off for a few seconds, the shadow maps and shadow shapes are freed: about 200 MB at Sharpest and 590 MB at Ultra. Turning them back on fills the shadows in again over a moment. Shadows paused under water keep theirs.
+- **Sodium's pages grey rows at once:** in Sodium's Video Settings, a row that depends on another setting now greys the moment you change that setting, as on LiteLights' own screen, instead of after Apply. Turning particles off greys Enhanced fire, its rows and every storm's cloud particles; turning Enhanced fire off greys Ember veins and Burn marks.
+- **Overlay exports keep the next reload quick:** exporting an overlay pack no longer throws away the overlays already built, so the next resource reload reuses them (about 35 ms at 256x instead of about 3 s).
+- **Overlay builds use less memory with very large packs:** textures larger than your Largest overlay size are scaled down as they load instead of being held at full size for the whole build, and identical overlay sets in one build are drawn once. The overlays look the same.
+- **Weather particles take much less of each frame.** LiteLights now works out ahead of time, between ticks, which particles could be on screen, and builds the rest of each frame's particles on one or two helper threads while the game draws the world, instead of all on the main thread. In a blizzard at the highest particle settings the main thread's share drops from about 8 ms a frame to about 2, and at the defaults from about 0.7 ms to about 0.3; a thunderstorm at the highest settings from about 5 ms to under 1.5. Nothing looks different: the same particles are drawn in the same order, also while you fly fast and turn quickly. Uses two helper threads on CPUs with 8 or more threads, one with 6 or 7, none on smaller CPUs.
+- **The particles no longer make a hitch worse.** After a hitch (loading chunks, joining a world), and on slower CPUs at the highest settings, the game used to wait for the particle thread on every catch-up tick; now the particles skip that tick instead (they pause for a moment) and the game carries on.
+- **Snow costs less to spawn:** in a blizzard at the highest settings the main thread spends about a third of what it did placing new flakes, with the same number of flakes.
+- **Hanging lanterns swing in blizzards and sandstorms** as hard as the wind there blows, not only in rain and thunderstorms.
+- **Snowy leaves follow the world's snow with Almanac:** standing in mild land next to a snowing taiga, the taiga's canopies now frost while it snows there, as Almanac's own snow does, instead of starting from nothing when you walk in.
+- **Smoother far snow when the season turns:** the far-terrain snow's work on a change of season now runs in the background; the game no longer pauses for a few milliseconds (up to about ten on a busy computer) each time the season changes or you travel a kilometre. While a world's far map arrives, the far grass and leaf colours are worked out at most four times a second instead of for every piece of the map.
+- **Weather in modded dimensions:** rain and snow, their fog and storms, puddles, weather on glass, snowy leaves and lightning in the clouds now all agree on whether a dimension has weather (where the game has weather, under an overworld-style sky). The overworld, the Nether and the End are unchanged.
+
+### Fixed
+- **The material texture now really retries after a failed build:** the log said "retrying in 5 s" but nothing did, so water, ice, glint, ores, puddles, sway and weather on glass could stay without their materials until the next resource reload or world change.
+- **Creature shadows that can't get their video memory now switch off with a note and a Retry on their row,** instead of stopping the game.
+- **A stray shadow after changing dimension:** a shadow shape built for the dimension you just left could, rarely, land in the new one.
+- **Translucent blocks are always drawn,** even if one of LiteLights' steps before them fails.
+- **One broken block model in a resource pack no longer turns every overlay off.** A model the game can't load either (an upper-case name, a face without a texture, a value of the wrong kind) leaves out only that block's overlays, which the Overlays page lists under Left out; the game draws that block with the missing texture as before. The log shows the problem once, with the details.
+- **One broken LambdaBetterGrass file in a resource pack no longer turns edge variety off for the session:** that file is skipped, as LambdaBetterGrass itself skips it.
+- **An overlay build that takes too long now says so:** the Overlays page shows it failed, with Retry, instead of claiming overlays that weren't loaded, and a build that finishes after the reload stopped waiting isn't reported as built.
+- **A failed overlay export is logged** and leaves no half-written `.zip.part` file in your resource pack folder.
+- **Your settings file is never replaced by the defaults after a failed read.** If `litelights.json` can't be read (locked by a virus scanner or a sync tool, say), or is broken and can't be moved aside, LiteLights runs on its defaults for that session without saving, and the log says why, so the file keeps your settings for the next start.
+- **Unreadable overlay settings are never lost:** if your overlay settings can't be read (a typo in a hand edit), the defaults are used, the Overlays page now says so and where the unreadable copy is kept in `litelights.json`, and a second unreadable load keeps its copy beside the first instead of replacing it.
+- A failed overlay build is logged once instead of twice.
+- **Far depth colour on Voxy** (Water page, Experimental): far water now looks like a deeper version of the same water, darkening toward the same deep blue as LiteLights' water nearby, instead of turning a dull grey with the sea floor showing through. It grows in gradually past the edge of the loaded land, so the stepped band that followed the loaded chunks at grazing angles is gone.
+- **Far caustics on Voxy:** the rippling light on shallow far water no longer breaks up into scattered bright pixels far away; it softens and fades out before it gets smaller than a pixel.
+- **Far edge foam on Voxy:** foam no longer outlines trees, trunks and banks that stand in front of the water or above it on screen, especially when looking across water at a low angle; it only draws where far land meets the water at the waterline. It no longer draws a thin line along the edge of the loaded land over the sea either.
+- **The world you left no longer stays in memory:** leaving a world for the title screen kept parts of it (its chunks, entities and biomes) in memory until the next world was drawn, and far snow kept the overworld while you were in the Nether. All of it is now let go at once, and the particle helper threads stop at the title screen.
+- **A change of season could pop on far terrain** instead of melting or snowing in in patches, when it came while far snow was still filling in the map.
+- **Weather before Almanac's first season sync:** while Almanac had nothing to say yet (just after joining, outside the overworld, or with Almanac only on your game), LiteLights asked the wrong place and could get the weather wrong at biome borders and at the edge of the loaded land, and could keep that answer for hours. It now uses each biome's own weather until Almanac answers, and picks Almanac's answer up as soon as it comes.
+- **Snowy leaves far away** could get a faint speckle of snow the moment snow started to settle, and didn't fade out fully where the snowy leaves end about 128 blocks away: snow now comes in smoothly from none at every distance.
+- **Weather on glass and the desert heat shimmer with Almanac** now tell the kind of place by the season's version of the biome, like the rain and snow do.
+- Far snow no longer runs in modded dimensions, where Almanac has no map.
+
 ## 0.9.10+26.3
 
 ### Added

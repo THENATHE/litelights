@@ -98,6 +98,30 @@ final class ParticleSprites {
         return true;
     }
 
+    /**
+     * For tests, which have no atlas: every frame of every kind covers the atlas from 0 to 1 in
+     * steps, and trimmed kinds are trimmed to three quarters, so both billboard paths are drawn.
+     */
+    void useStandInsForTests() {
+        for (ParticleKind kind : ParticleKind.all()) {
+            normal[kind.id] = standIns(kind.sprites.size(), trimmed(kind));
+            hd[kind.id] = standIns(Math.max(1, kind.hdSprites.size()), trimmed(kind));
+        }
+        for (Decal decal : Decal.values()) {
+            decals[decal.ordinal()] = standIns(decal.frames, false);
+        }
+        ready = true;
+    }
+
+    private static float[][] standIns(int count, boolean trim) {
+        float[][] frames = new float[count][];
+        float share = trim ? 0.75f : 1.0f;
+        for (int i = 0; i < count; i++) {
+            frames[i] = new float[] {i / (float) count, (i + 1) / (float) count, 0.0f, 1.0f, share, share};
+        }
+        return frames;
+    }
+
     /** Soft billboards are the large see-through puffs worth trimming; everything else is drawn whole. */
     static boolean trimmed(ParticleKind kind) {
         return kind.layer == ParticleKind.Layer.SOFT && kind.shape == ParticleKind.Shape.BILLBOARD;

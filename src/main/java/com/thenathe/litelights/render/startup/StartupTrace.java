@@ -25,7 +25,9 @@ import org.slf4j.Logger;
  *
  * <p>A watch thread runs from the first frame until 30 s after the first world frame. If no new
  * frame starts for 10 s it writes one warning naming the step the game was in and where the render
- * thread is. That is the one line a frozen game still writes.
+ * thread is. That is the one line a frozen game still writes. If the render thread is inside a
+ * terrain draw then, it also leaves {@link TerrainStallMarker} for the next launch; a launch that
+ * reaches the end of the watch without a stall removes it.
  */
 public final class StartupTrace {
     static final long SLOW_NANOS = TimeUnit.SECONDS.toNanos(10);
@@ -205,6 +207,9 @@ public final class StartupTrace {
             step = "the first frames after the world appeared";
         } else if (now - firstFrameDoneNanos > WATCH_AFTER_FIRST_FRAME_NANOS) {
             finished = true;
+            if (!stallReported) {
+                TerrainStallMarker.get().launchWentWell();
+            }
         }
     }
 
@@ -394,7 +399,12 @@ public final class StartupTrace {
             where.setStackTrace(thread.getStackTrace());
         }
         stallReported = true;
-        LOG.warn("LiteLights: slow start-up step: {} has taken over 10 s; the render thread is here:", step, where);
+        String stalledStep = step;
+        LOG.warn("LiteLights: slow start-up step: {} has taken over 10 s; the render thread is here:", stalledStep, where);
+        if (TerrainStallMarker.inTerrainDraw(where.getStackTrace())) {
+            TerrainStallMarker.get().stalledInTerrainDraw(stalledStep);
+            LOG.warn("LiteLights: the game is stuck drawing the world's blocks; the next launch will offer vanilla terrain shading for that session");
+        }
     }
 
     /** Carries the render thread's stack into the log; not an error of its own. */

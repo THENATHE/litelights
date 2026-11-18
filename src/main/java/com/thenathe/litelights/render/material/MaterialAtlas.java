@@ -52,10 +52,15 @@ import org.lwjgl.system.MemoryUtil;
  * on a background thread; uploaded on the render thread.
  */
 public final class MaterialAtlas implements AutoCloseable {
-    private record SpriteArea(int x, int y, int width, int height) {
+    record SpriteArea(int x, int y, int width, int height) {
     }
 
-    private record Built(int width, int height, int gridShift, byte[] ids, float[] oreRocks) {
+    record Built(int width, int height, int gridShift, byte[] ids, float[] oreRocks) {
+    }
+
+    /** Starts a build on a background thread; the tests hand in one that fails. */
+    interface Builder {
+        CompletableFuture<Built> start(Map<Identifier, SpriteArea> sprites, int atlasWidth, int atlasHeight);
     }
 
     /** The textures each rock's profile is taken from, in {@link OreRocks}' order. */
@@ -65,6 +70,7 @@ public final class MaterialAtlas implements AutoCloseable {
         Identifier.withDefaultNamespace("block/netherrack")
     };
 
+    private final Builder builder;
     private Map<Identifier, SpriteArea> sprites = Map.of();
     private int atlasWidth;
     private int atlasHeight;
@@ -74,6 +80,17 @@ public final class MaterialAtlas implements AutoCloseable {
     private @Nullable GpuTextureView view;
     private int gridShift;
     private float[] oreRocks = OreRocks.uniforms(new OreRocks.Profile[0]);
+
+    public MaterialAtlas() {
+        this((spriteSnapshot, width, height) -> {
+            BlockStateModelSet models = Minecraft.getInstance().getModelManager().getBlockStateModelSet();
+            return CompletableFuture.supplyAsync(() -> build(spriteSnapshot, width, height, models), Util.backgroundExecutor());
+        });
+    }
+
+    MaterialAtlas(Builder builder) {
+        this.builder = builder;
+    }
 
     /** Called when the block atlas is (re)stitched. */
     public synchronized void onAtlasUploaded(int width, int height, Map<Identifier, TextureAtlasSprite> regions) {
@@ -104,17 +121,20 @@ public final class MaterialAtlas implements AutoCloseable {
                 RenderFeatureStatus.succeeded(RenderFeature.MATERIALS);
             } catch (Exception error) {
                 RenderFeatureStatus.failed(RenderFeature.MATERIALS, error);
+                // Build again once the failure's retry delay has passed.
+                dirty = true;
             }
             building = null;
         }
         if (dirty && levelPresent && building == null && atlasWidth > 0 && RenderFeatureStatus.mayRun(RenderFeature.MATERIALS)) {
             dirty = false;
-            Map<Identifier, SpriteArea> spriteSnapshot = sprites;
-            int width = atlasWidth;
-            int height = atlasHeight;
-            BlockStateModelSet models = Minecraft.getInstance().getModelManager().getBlockStateModelSet();
-            building = CompletableFuture.supplyAsync(() -> build(spriteSnapshot, width, height, models), Util.backgroundExecutor());
+            building = builder.start(sprites, atlasWidth, atlasHeight);
         }
+    }
+
+    /** Whether a build is running, for the tests. */
+    synchronized boolean isBuilding() {
+        return building != null;
     }
 
     public @Nullable GpuTextureView view() {
