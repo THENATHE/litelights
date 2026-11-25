@@ -1,86 +1,99 @@
-plugins { id 'net.fabricmc.fabric-loom' version '1.17.20' }
+// LiteLights is one mod in one jar, built from modules (docs/ARCHITECTURE.md, "Modules"):
+//   api         the internal API: interfaces and plain data, no behaviour
+//   core        everything that isn't a module yet; implements api and builds the jar
+//   farterrain  far terrain; compiles against api only
+//   clouds      the new clouds' field, mesher and weather pace: plain Java, no game classes
+// core merges them into build/libs/litelights-<version>.jar, with the one mod id litelights.
+plugins {
+    id 'base'
+    id 'net.fabricmc.fabric-loom' version '1.17.20' apply false
+}
 
-version = project.mod_version
-group = 'com.thenathe'
-base { archivesName = 'litelights' }
+// Almanac's builds, one folder per version (Builds/Minecraft/Almanac/Main Plugin/<version>/almanac-<version>.jar):
+// -Palmanac.builds=DIR, or the first such folder above the project, or null.
+def findAlmanacBuilds() {
+    def configured = findProperty('almanac.builds')
+    if (configured) {
+        return file(configured)
+    }
+    for (def dir = rootDir.parentFile; dir != null; dir = dir.parentFile) {
+        def builds = new File(dir, 'Builds/Minecraft/Almanac/Main Plugin')
+        if (builds.isDirectory()) {
+            return builds
+        }
+    }
+    return null
+}
 
-repositories {
-    mavenCentral()
-    maven { url = 'https://maven.terraformersmc.com/releases/' }
-    maven { url = 'https://api.modrinth.com/maven' }
-    // Almanac is on no Maven, so its jar comes straight from its GitHub release.
-    ivy {
-        url = 'https://github.com/THENATHE/almanac/releases/download/'
-        patternLayout { artifact 'v[revision]/[module]-[revision].[ext]' }
-        metadataSources { artifact() }
-        content { includeModule('com.thenathe', 'almanac') }
+// The game-side subprojects. :clouds is plain Java and is set up on its own below, so the build
+// keeps the game's classes out of it.
+configure(subprojects.findAll { it.name != 'clouds' }) {
+    apply plugin: 'net.fabricmc.fabric-loom'
+
+    version = rootProject.property('mod_version')
+    group = 'com.thenathe'
+
+    repositories {
+        mavenCentral()
+        maven { url = 'https://maven.terraformersmc.com/releases/' }
+        maven { url = 'https://api.modrinth.com/maven' }
+        // Almanac is on no Maven. Its jar comes from the workspace's Builds folder when there is one
+        // (an Almanac built but not yet released), else straight from its GitHub release.
+        def almanacBuilds = findAlmanacBuilds()
+        if (almanacBuilds != null) {
+            ivy {
+                name = 'almanacBuilds'
+                url = almanacBuilds.toURI()
+                patternLayout { artifact '[revision]/[module]-[revision].[ext]' }
+                metadataSources { artifact() }
+                content { includeModule('com.thenathe', 'almanac') }
+            }
+        }
+        ivy {
+            url = 'https://github.com/THENATHE/almanac/releases/download/'
+            patternLayout { artifact 'v[revision]/[module]-[revision].[ext]' }
+            metadataSources { artifact() }
+            content { includeModule('com.thenathe', 'almanac') }
+        }
+    }
+
+    dependencies {
+        minecraft 'com.mojang:minecraft:26.3'
+        // Compiled against the oldest Loader and Fabric API that fabric.mod.json accepts (0.19.3 is the
+        // oldest Loader that Fabric API for 26.3 runs on; 0.160.5 is the first Fabric API for the 26.3
+        // release), so nothing newer can be used by mistake. QA runs with newer copies (docs/DEPENDENCIES.md).
+        implementation 'net.fabricmc:fabric-loader:0.19.3'
+        implementation 'net.fabricmc.fabric-api:fabric-api:0.160.5+26.3'
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 25
+    }
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
     }
 }
 
-dependencies {
-    minecraft 'com.mojang:minecraft:26.3'
-    // Compiled against the oldest Loader and Fabric API that fabric.mod.json accepts (0.19.3 is the
-    // oldest Loader that Fabric API for 26.3 runs on; 0.160.5 is the first Fabric API for the 26.3
-    // release), so nothing newer can be used by mistake. QA runs with newer copies (docs/DEPENDENCIES.md).
-    implementation 'net.fabricmc:fabric-loader:0.19.3'
-    implementation 'net.fabricmc.fabric-api:fabric-api:0.160.5+26.3'
-    // Optional at runtime: Mod Menu's config button only appears when it is installed.
-    compileOnly 'com.terraformersmc:modmenu:21.0.0'
-    // Optional at runtime: Sodium's public config API, for LiteLights' pages in Sodium's Video Settings.
-    // The API is the same in 0.9.2 (bAZQdGpg) and 0.9.3-beta.5 (v7Lw0h1m); compiled against the stable one.
-    compileOnly 'maven.modrinth:sodium:bAZQdGpg'
-    // Continuity's public API (CtmLoaderRegistry and friends), for the overlays module's own drawing
-    // method. Pinned to the Modrinth version id of 3.0.1+26.3; the module checks the API at runtime
-    // and falls back to plain overlay files if it changes.
-    compileOnly 'maven.modrinth:continuity:Jt2sCWTQ'
-    // Optional at runtime: Distant Horizons' public API (com.seibel.distanthorizons.api only), for
-    // LiteLights' haze, light and shadows on its far terrain. Pinned to 3.3.4-26.3 (TGgEbP9A, API
-    // 7.2.0); the hook is only loaded when Distant Horizons is installed and turns itself off with
-    // a reason on the Far terrain row if the API has changed.
-    compileOnly 'maven.modrinth:distanthorizons:TGgEbP9A'
-    // Optional at runtime: Almanac's public API (com.thenathe.almanac.api, a stable contract from
-    // 0.1.1), so the weather follows its seasons and far terrain its snow (0.1.2's far-terrain
-    // lookups, 0.1.3's precipitationOf and farSnowChangedTick, used only when 0.1.3 or later is
-    // installed). Taken from Almanac's public GitHub release (the ivy repository above). Only
-    // AlmanacClimate and AlmanacFarSnow name it, and they are loaded only when Almanac is installed.
-    compileOnly 'com.thenathe:almanac:0.1.3+26.3'
+project(':clouds') {
+    apply plugin: 'java-library'
 
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-}
+    version = rootProject.property('mod_version')
+    group = 'com.thenathe'
 
-test {
-    useJUnitPlatform()
-    systemProperty 'java.awt.headless', 'true'
-    // Overlay style previews (StylePreview in src/test) are drawn only when asked for.
-    systemProperty 'litelights.overlays.preview.textures', findProperty('litelights.overlays.preview.textures') ?: ''
-    systemProperty 'litelights.overlays.preview.bricks', findProperty('litelights.overlays.preview.bricks') ?: ''
-    // The wakes' offline prototype (WakePreview in src/test) draws its frames only when asked for.
-    systemProperty 'litelights.wakes.preview', findProperty('litelights.wakes.preview') ?: ''
-    // Where a generation's time and memory go (GenerationCostProbe), only when asked for.
-    systemProperty 'litelights.overlays.probe', findProperty('litelights.overlays.probe') ?: 'false'
-    // The particle step's and cull list's times (SimulationStepProbe), only when asked for.
-    systemProperty 'litelights.particles.probe', findProperty('litelights.particles.probe') ?: 'false'
-    testLogging { showStandardStreams = findProperty('litelights.overlays.probe') == 'true' }
-}
+    repositories {
+        mavenCentral()
+    }
 
-processResources {
-    inputs.property 'version', project.version
-    filesMatching('fabric.mod.json') { expand(version: project.version) }
-}
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 25
+    }
 
-jar {
-    // The credits and licences travel with the mod.
-    from('CREDITS.md') { into 'META-INF' }
-    from('LICENSE') { into 'META-INF' }
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-    options.release = 25
-}
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    java {
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
+    }
 }

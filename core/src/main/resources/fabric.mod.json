@@ -1,0 +1,62 @@
+{
+    "schemaVersion": 1,
+    "id": "litelights",
+    "version": "${version}",
+    "name": "LiteLights",
+    "description": "Shadows, water, sky, fog and ambient effects that keep the vanilla look and stay fast. Credits: rendering ideas (cached shadow map, forward-shaded effects, biome atmosphere): idea by Shinyflvres (ImmersiveVFX), whose atmosphere effects were in turn inspired by Oreville Studios' Realistic Biomes. Large water textures: idea by Tec (Big Water). Vanilla-style water and lava textures by Tec, from Big Water, CC0-1.0. Jump splash: idea by Chai (Particular). Storm atmosphere (sandstorm fog, blizzards, swamp and pale garden fog, ambient wind, dark pale-garden rain): ideas by TheDeathlyCow (Immersive Storms). Weather on glass: glass weather idea by duffopuffo (Weather Glass). Rain drips and wall streaks: drip and streak ideas by pigcart (Particle Rain). Dynamic clouds: idea by nonamecrackers2 (Simple Clouds). The clouds and the weather shown in step: idea by ProtoManly (ProtoManly's Weather). No rain over the clouds' tops and drifting cloud shadows: ideas by LockBoss (Create: Sky). Far terrain: follows the idea of Voxy (MCRcortex) and Distant Horizons (the Distant Horizons team); seed generation: idea by Möbius (Voxy SeedGen). Every credit is on LiteLights' Credits page and in CREDITS.md. Overlays module: draws through Continuity (Pepper_Bell). Recommended: LambDynamicLights and LambdaBetterGrass by LambdAurora, Visuality by PinkGoosik, Subtle Effects by MincraftEinstein.",
+    "authors": [
+        "THENATHE"
+    ],
+    "license": "MIT",
+    "icon": {
+        "128": "assets/litelights/icon-128.png",
+        "512": "assets/litelights/icon.png"
+    },
+    "environment": "*",
+    "entrypoints": {
+        "client": [
+            "com.thenathe.litelights.LiteLightsClient"
+        ],
+        "server": [
+            "com.thenathe.litelights.seedhelper.SeedHelperServer"
+        ],
+        "modmenu": [
+            "com.thenathe.litelights.gui.LiteLightsModMenu"
+        ],
+        "sodium:config_api_user": [
+            "com.thenathe.litelights.gui.sodium.SodiumOptions"
+        ],
+        "litelights:module": [
+            "com.thenathe.litelights.render.feature.farterrain.FarTerrainModule"
+        ]
+    },
+    "mixins": [
+        "litelights-render.mixins.json",
+        "litelights-overlays.mixins.json",
+        "litelights-particles.mixins.json",
+        "litelights-vegetation.mixins.json",
+        "litelights-lightpost.mixins.json",
+        "litelights-water.mixins.json",
+        "litelights-skyfog.mixins.json",
+        "litelights-farterrain.mixins.json",
+        "litelights-overlays-sodium.mixins.json"
+    ],
+    "depends": {
+        "fabricloader": ">=0.19.3",
+        "fabric-api": ">=0.160.5",
+        "minecraft": ">=26.3 <26.4",
+        "java": ">=25"
+    },
+    "breaks": {
+        "iris": "*"
+    },
+    "suggests": {
+        "modmenu": "*",
+        "lambdynlights": "*",
+        "lambdabettergrass": "*",
+        "visuality": "*",
+        "subtle_effects": "*",
+        "sodium": "*",
+        "continuity": ">=3.0.1"
+    }
+}

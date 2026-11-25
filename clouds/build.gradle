@@ -1,0 +1,24 @@
+// The new clouds' pure side (docs/CLOUDS-FIELD.md, docs/CLOUDS.md): the cloud field, the mesher,
+// the face format and the weather's pace. Plain Java with no game classes, so its tests need no
+// game; :core draws it. Never shipped alone: :core merges it into the one jar.
+base { archivesName = 'litelights-clouds' }
+
+dependencies {
+    compileOnly 'org.jspecify:jspecify:1.0.0'
+    testCompileOnly 'org.jspecify:jspecify:1.0.0'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    systemProperty 'java.awt.headless', 'true'
+    // The cloud field's pictures (CloudFieldPictures in src/test) are drawn only when asked for.
+    systemProperty 'litelights.clouds.preview', findProperty('litelights.clouds.preview') ?: ''
+    // The mesher's face counts while rain sets in (MeshFaceProbe), only when asked for.
+    systemProperty 'litelights.clouds.probe', findProperty('litelights.clouds.probe') ?: 'false'
+    // The near radii the layout probe (CloudLayoutProbe) lays a build out with.
+    systemProperty 'litelights.clouds.layoutNear', findProperty('litelights.clouds.layoutNear') ?: '512,1024,2048'
+    testLogging { showStandardStreams = findProperty('litelights.clouds.probe') == 'true' }
+}

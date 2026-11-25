@@ -1,0 +1,25 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.thenathe.litelights.mixin.skyfog",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "CloudFarPlaneMixin",
+        "CloudHooksMixin",
+        "CloudInsideFogMixin",
+        "CloudOptionsMixin",
+        "FogRainMixin",
+        "LightningBoltAccessor",
+        "LightningBoltDistanceMixin",
+        "LightningBoltRenderStateMixin",
+        "LightningBoltRendererMixin",
+        "RainEffectsMixin",
+        "SkyRainMixin",
+        "SkyRendererSkyFogMixin",
+        "WeatherAccessMixin",
+        "WeatherSheetsMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

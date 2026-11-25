@@ -1,0 +1,211 @@
+package com.thenathe.litelights.config;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.thenathe.litelights.config.LiteLightsOptions.StormClouds;
+import com.thenathe.litelights.config.LiteLightsOptions.StormFog;
+import com.thenathe.litelights.config.LiteLightsOptions.StormType;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * The Weather page as regrouped in 0.1.7 (storms17): its sections and rows in order, each storm
+ * type's two rows, and a 0.1.6 file that loads into the new layout without losing anything.
+ */
+class WeatherPageTest {
+    @TempDir
+    static Path configFolder;
+
+    @TempDir
+    Path folder;
+
+    @BeforeAll
+    static void loadOptions() {
+        if (!LiteLightsConfig.loaded()) {
+            LiteLightsConfig.useFile(configFolder.resolve("litelights.json"));
+        }
+        LiteLightsConfig.init();
+    }
+
+    @Test
+    void theSectionsComeInTheApprovedOrder() {
+        Map<String, List<String>> sections = new LinkedHashMap<>();
+        for (Option<?> option : LiteLightsConfig.registry().onPage(Pages.WEATHER)) {
+            sections.computeIfAbsent(Pages.parentSection(option.section()), key -> new ArrayList<>()).add(option.id());
+        }
+        assertEquals(List.of("rain_snow", "storms", "details", "visual_snow", "glass", "events"), List.copyOf(sections.keySet()));
+        assertEquals(List.of("weather.precipitation", "weather.density", "weather.distance", "weather.distance_fill", "weather.rain_mist",
+            "weather.mist_style", "weather.mist_distance", "weather.mist_layers"),
+            sections.get("rain_snow"));
+        List<String> storms = new ArrayList<>(List.of("weather.storm_atmosphere", "weather.cloud_lightning", "weather.branching_lightning"));
+        for (String type : new String[] {"rain", "thunderstorm", "snow", "blizzard", "sandstorm", "haboob"}) {
+            storms.add("weather.storms." + type + ".fog");
+            storms.add("weather.storms." + type + ".clouds");
+        }
+        assertEquals(storms, sections.get("storms"));
+        assertEquals(List.of("weather.rain_drips", "weather.wall_streaks", "weather.puddles", "weather.snowy_leaves", "weather.drifting_sand",
+            "weather.sandstorms"),
+            sections.get("details"));
+        assertEquals(List.of("weather.visual_snow", "weather.visual_snow.blocks", "weather.visual_snow.drips",
+            "weather.visual_snow.under_trees", "weather.visual_snow.under_overhangs", "weather.visual_snow.leaves",
+            "weather.visual_snow.grass", "weather.visual_snow.more_flakes", "weather.visual_snow.far"), sections.get("visual_snow"));
+        assertTrue(sections.get("glass").contains("weather.glass"));
+        assertEquals(List.of("weather.polar_lights", "weather.meteor_nights", "weather.rainbows", "weather.far_fireworks"), sections.get("events"));
+    }
+
+    @Test
+    void eachStormTypeHasItsOwnSubsectionAndDefaults() {
+        for (StormType type : StormType.values()) {
+            LiteLightsOptions.StormRows rows = LiteLightsOptions.storm(type);
+            String name = EnumOption.storedName(type);
+            assertEquals("storms/" + name, rows.fog().section());
+            assertEquals("storms/" + name, rows.clouds().section());
+            assertEquals(stormFogDefault(type), rows.fog().defaultValue());
+            assertEquals(StormClouds.FOLLOW_DENSITY, rows.clouds().defaultValue());
+            assertEquals(List.of(StormFog.LIGHT, StormFog.NORMAL, StormFog.DENSE, StormFog.VERY_DENSE), rows.fog().choices());
+        }
+        assertEquals(LiteLightsOptions.RAIN_MIST, LiteLightsOptions.storm(StormType.BLIZZARD).clouds().needs(),
+            "rain and snow mist rows need Mist in rain and snow");
+        assertEquals(null, LiteLightsOptions.storm(StormType.HABOOB).clouds().needs(), "dust clouds need Sandstorms instead");
+    }
+
+    @Test
+    void theNewNamesShowWhileTheKeysStay() throws IOException {
+        JsonObject english;
+        try (var stream = getClass().getResourceAsStream("/assets/litelights/lang/en_us.json")) {
+            english = JsonParser.parseReader(new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject();
+        }
+        assertEquals("weather.polar_lights", LiteLightsOptions.POLAR_LIGHTS.id());
+        assertEquals("Aurora borealis", english.get("litelights.option.weather.polar_lights").getAsString());
+        assertEquals("Aurora borealis", english.get("litelights.preview.event.aurora").getAsString());
+        assertEquals(PreviewWeather.Weather.THUNDER_SANDSTORM, PreviewWeather.Weather.valueOf("THUNDER_SANDSTORM"));
+        assertEquals("Haboob", english.get("litelights.preview.weather.thunder_sandstorm").getAsString());
+        assertEquals("Haboob", english.get("litelights.section.storms.haboob").getAsString());
+        String aside = "Arizona's word for a towering dust storm.";
+        assertEquals(aside, english.get("litelights.section.storms.haboob.tooltip").getAsString());
+        assertEquals(aside, english.get("litelights.preview.weather.thunder_sandstorm.tooltip").getAsString());
+        for (Map.Entry<String, com.google.gson.JsonElement> entry : english.entrySet()) {
+            String text = entry.getValue().getAsString();
+            assertFalse(text.contains("Polar lights") || text.contains("Thunder sandstorm"), entry.getKey() + " still has the old name");
+        }
+    }
+
+    @Test
+    void aFileFrom016KeepsEveryWeatherValue() throws IOException {
+        Path path = folder.resolve("litelights.json");
+        // 0.1.6+26.3 as a player who changed every Weather row left it.
+        Files.writeString(path, """
+                {
+                  "schema": 2,
+                  "options": {
+                    "weather.precipitation": "vanilla_plus",
+                    "weather.density": "dense",
+                    "weather.rain_mist": false,
+                    "weather.storm_atmosphere": false,
+                    "weather.rain_drips": false,
+                    "weather.wall_streaks": false,
+                    "weather.drifting_sand": false,
+                    "weather.sandstorms": false,
+                    "weather.glass": false,
+                    "weather.glass_detail": "texels_32",
+                    "weather.glass_frost": false,
+                    "weather.glass_dust": false,
+                    "weather.polar_lights": false,
+                    "weather.meteor_nights": false,
+                    "weather.far_fireworks": false,
+                    "weather.distance": "very_far",
+                    "weather.distance_fill": "fill"
+                  }
+                }""");
+        OptionRegistry registry = LiteLightsConfig.registry();
+        try {
+            ConfigFile file = new ConfigFile(path, registry, ConfigMigrations.standard());
+            file.load();
+            assertEquals(LiteLightsOptions.PrecipitationLook.VANILLA_PLUS, LiteLightsOptions.PRECIPITATION.get());
+            assertEquals(LiteLightsOptions.WeatherDensity.DENSE, LiteLightsOptions.WEATHER_DENSITY.get());
+            assertFalse(LiteLightsOptions.RAIN_MIST.on());
+            assertFalse(LiteLightsOptions.STORM_ATMOSPHERE.on());
+            assertFalse(LiteLightsOptions.RAIN_DRIPS.on());
+            assertFalse(LiteLightsOptions.WALL_STREAKS.on());
+            assertFalse(LiteLightsOptions.DRIFTING_SAND.on());
+            assertFalse(LiteLightsOptions.SANDSTORMS.on());
+            assertFalse(LiteLightsOptions.GLASS_WEATHER.on());
+            assertFalse(LiteLightsOptions.POLAR_LIGHTS.on());
+            assertFalse(LiteLightsOptions.METEOR_NIGHTS.on());
+            assertFalse(LiteLightsOptions.FAR_FIREWORKS.on());
+            assertEquals(LiteLightsOptions.SpawnDistance.VERY_FAR, LiteLightsOptions.WEATHER_DISTANCE.get());
+            assertEquals(LiteLightsOptions.DistanceFill.FILL, LiteLightsOptions.WEATHER_DISTANCE_FILL.get());
+            assertEquals(LiteLightsOptions.MistStyle.FIELD, LiteLightsOptions.MIST_STYLE.get(), "Mist style (0.9.7) starts at Mist field");
+            assertTrue(LiteLightsOptions.CLOUD_LIGHTNING.on() && LiteLightsOptions.BRANCHING_LIGHTNING.on(), "the lightning rows (0.9.9) start on");
+            for (StormType type : StormType.values()) {
+                assertEquals(stormFogDefault(type), LiteLightsOptions.storm(type).fog().get(), "new rows start at their defaults");
+                assertEquals(StormClouds.FOLLOW_DENSITY, LiteLightsOptions.storm(type).clouds().get());
+            }
+
+            file.save();
+            JsonObject saved = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+            JsonObject options = saved.getAsJsonObject("options");
+            assertFalse(options.get("weather.rain_mist").getAsBoolean(), "Mist in rain and snow is kept as it was");
+            assertEquals("dense", options.get("weather.density").getAsString());
+            assertEquals("very_far", options.get("weather.distance").getAsString());
+            assertFalse(options.get("weather.polar_lights").getAsBoolean());
+            assertEquals("normal", options.get("weather.storms.haboob.fog").getAsString());
+            assertEquals("light", options.get("weather.storms.rain.fog").getAsString());
+            assertEquals("follow_density", options.get("weather.storms.rain.clouds").getAsString());
+            assertEquals("field", options.get("weather.mist_style").getAsString());
+            assertFalse(saved.has("unreadable") && saved.getAsJsonObject("unreadable").size() > 0, "nothing was unreadable");
+            // Schema 2 files go through 0.9.7's glint step, which has nothing to move in this one.
+            assertTrue(Files.exists(folder.resolve("litelights.json.schema2.bak")), "the file was backed up before the glint step");
+        } finally {
+            registry.resetAll();
+        }
+    }
+
+    @Test
+    void mistStyleKeepsItsChoiceThroughASave() throws IOException {
+        Path path = folder.resolve("litelights.json");
+        Files.writeString(path, """
+                {
+                  "schema": 2,
+                  "options": {
+                    "weather.mist_style": "puffs",
+                    "weather.rain_mist": false
+                  }
+                }""");
+        OptionRegistry registry = LiteLightsConfig.registry();
+        try {
+            ConfigFile file = new ConfigFile(path, registry, ConfigMigrations.standard());
+            file.load();
+            assertEquals(LiteLightsOptions.MistStyle.PUFFS, LiteLightsOptions.MIST_STYLE.get());
+            assertEquals(List.of(LiteLightsOptions.MistStyle.PUFFS, LiteLightsOptions.MistStyle.FIELD, LiteLightsOptions.MistStyle.BILLBOARDS),
+                LiteLightsOptions.MIST_STYLE.choices());
+            file.save();
+            JsonObject options = JsonParser.parseString(Files.readString(path)).getAsJsonObject().getAsJsonObject("options");
+            assertEquals("puffs", options.get("weather.mist_style").getAsString());
+            assertFalse(options.get("weather.rain_mist").getAsBoolean());
+        } finally {
+            registry.resetAll();
+        }
+    }
+
+    /** Light fog for rain, snow and sandstorms; Normal for their thunder variants (defaults098). */
+    private static StormFog stormFogDefault(StormType type) {
+        return switch (type) {
+            case RAIN, SNOW, SANDSTORM -> StormFog.LIGHT;
+            case THUNDERSTORM, BLIZZARD, HABOOB -> StormFog.NORMAL;
+        };
+    }
+}

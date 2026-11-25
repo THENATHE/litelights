@@ -1,0 +1,13 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.thenathe.litelights.mixin.farterrain",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "CameraFarPlaneMixin",
+        "FogRendererFarLandMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

@@ -6,3 +6,5 @@ pluginManagement {
     }
 }
 rootProject.name = 'litelights'
+
+include 'api', 'core', 'farterrain', 'clouds'

@@ -8,7 +8,7 @@ their edges, with every other pixel fully clear. The game adds the sprite's colo
 (times the vein's warm tint and its pulse), so dark pixels glow less. A fixed seed keeps the output
 the same on every run.
 
-Writes src/main/resources/assets/litelights/textures/particle/ember_vein_<n>.png (the particle
+Writes core/src/main/resources/assets/litelights/textures/particle/ember_vein_<n>.png (the particle
 atlas loads every texture there). With --preview it also writes the sprites at 8x, alone and over a
 plank-like face, on a dark background.
 """
@@ -18,7 +18,7 @@ import random
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-OUTPUT = ROOT / "src" / "main" / "resources" / "assets" / "litelights" / "textures" / "particle"
+OUTPUT = ROOT / "core" / "src" / "main" / "resources" / "assets" / "litelights" / "textures" / "particle"
 SEED = 4417
 SIZE = 16
 VARIANTS = 4

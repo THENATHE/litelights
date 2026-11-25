@@ -15,7 +15,7 @@ How it matches the game:
   block next to a corner counts 0.2, open air 1.0, averaged over the four blocks around it).
 - A depth buffer decides what is in front for every pixel, so no face shows through the wrong way.
 
-Writes src/main/resources/assets/litelights/icon.png (512 px) and icon-128.png. With --preview it
+Writes core/src/main/resources/assets/litelights/icon.png (512 px) and icon-128.png. With --preview it
 also writes the icon at 512, 128, 64 and 32 px side by side on a dark and a light background.
 """
 from pathlib import Path
@@ -25,7 +25,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 TEXTURES = ROOT / "tools" / "textures"
-OUTPUT = ROOT / "src" / "main" / "resources" / "assets" / "litelights"
+OUTPUT = ROOT / "core" / "src" / "main" / "resources" / "assets" / "litelights"
 DEFAULT_JAR = Path.home() / ".local/share/ModrinthApp/meta/versions/26.3/26.3.jar"
 NEEDED = ["oak_log.png", "oak_log_top.png", "oak_leaves.png"]
 

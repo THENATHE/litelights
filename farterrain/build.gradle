@@ -1,0 +1,32 @@
+// The far terrain module (docs/ARCHITECTURE.md, "Far terrain"). It compiles against LiteLights'
+// internal API and never against :core, so the build refuses a reach past the API. Never shipped
+// alone: :core merges it into the one jar.
+base { archivesName = 'litelights-farterrain' }
+
+dependencies {
+    implementation project(':api')
+    // Almanac's public API, for far snow's data side (the far-terrain lookups, the bare lines and the
+    // snow by place; the same Almanac as core, 1.0.0, LiteLights' one minimum). Only AlmanacFarSnow names it.
+    compileOnly 'com.thenathe:almanac:1.0.0+26.3'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+def shaders = 'src/main/resources/assets/litelights/shaders'
+
+test {
+    useJUnitPlatform()
+    systemProperty 'java.awt.headless', 'true'
+    // ShaderIncludesTest: the module's shaders include only their own files and the API's list.
+    inputs.file(rootProject.file('api/shader-includes.txt'))
+    inputs.dir(shaders)
+    inputs.dir(project(':core').file(shaders))
+    systemProperty 'litelights.module', project.name
+    systemProperty 'litelights.shaderIncludeList', rootProject.file('api/shader-includes.txt').absolutePath
+    systemProperty 'litelights.moduleShaders', file(shaders).absolutePath
+    systemProperty 'litelights.coreShaders', project(':core').file(shaders).absolutePath
+    // Seed generation's cost per level (TerrainSamplerTest.probeCostPerLevel), only when asked for.
+    systemProperty 'litelights.farterrain.probe', findProperty('litelights.farterrain.probe') ?: 'false'
+    testLogging { showStandardStreams = findProperty('litelights.farterrain.probe') == 'true' }
+}

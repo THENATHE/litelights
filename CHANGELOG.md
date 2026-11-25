@@ -1,5 +1,284 @@
 # Changelog
 
+## 1.1.0+26.3
+
+The first public release since 1.0.0. It brings together everything built since then (the local builds 1.0.2 to 1.0.15, each listed below) and goes out with **Almanac 1.0.0**. If you last played 1.0.0, this is what's different.
+
+### Added
+- **Far terrain of LiteLights' own** (Far Terrain page; Experimental, off by default): the land you have visited, drawn far past the render distance (1 to 16 km, 4 km by default) with the game's own block textures and biome colours, in LiteLights' light, haze and fog, with far shadows on it. Out to 512 blocks (at Detail Medium) slabs, stairs, fences, walls, panes, doors, torches, lanterns and chests keep their shapes, and grass, ferns and flowers stand as crossed cards out to 256 blocks. It is made from the chunks your game has already received, so nothing is generated and nothing is asked of the server, and it works in single player and on any server. It is kept inside the world's save in single player (`<world>/litelights/far/`) and under the game folder's `litelights/servers/` on a server, a few kilobytes a chunk. With it off nothing runs, nothing is stored and nothing is drawn.
+  - **Far water:** **Full**, the default, carries the near water on past the render distance (the same colour and depth, the land and sky reflected, the sun's glint); **Plain** is a flat colour by depth, a little cheaper.
+  - **Far lights:** at night villages, lava, lit caves and other strong lights far away glow as soft points.
+- **Seed generation** (Far Terrain page; Experimental, off by default): far terrain also shows land you haven't visited yet, worked out on your computer from the world's seed with the game's own terrain maths: hills, seas, rivers and lakes, each biome's ground and colours, snow and ice, and stand-in trees. Land you visit always replaces it, and if what you visit turns out different (a wrong seed, other terrain mods), LiteLights stops predicting there and says so. In single player it uses the world's own seed; on a server, enter the seed on the page or run `/seed` if the server lets you.
+- **The seed helper:** the same LiteLights jar in a dedicated Fabric server's `mods` folder (beside Fabric API) only sends players whose LiteLights asks the world's seed and what makes the server's terrain, so their seed generation works and can tell whether it matches. None of LiteLights' graphics loads on the server. Narrow it to operators or named players, or switch it off, in `config/litelights-seed-helper.json`.
+- **Dynamic clouds** (Sky, Clouds, a new choice; Experimental; Fancy stays the default): big clouds of real height built from LiteLights' own cloud field: fair-weather cumulus, towering congestus, layers, a rain deck in rain and thunderheads in storms. They grow, shrink and drift smoothly, reach 8 km by default (Cloud reach, 384 to 16,384 blocks), sort against far terrain, and every LiteLights player on a server sees the same sky. The weather eases in with them: the sky closes over before the first drops, and flying over the clouds leaves the rain below them.
+- **Cloud shadows** (Sky, Clouds; on with the Dynamic clouds): the clouds' shadows drift over the land, near and far.
+- **Visual snow** (Weather page, a new section; off by default): snow LiteLights draws on the land as it lies, without placing a block. Snow on stairs, slabs, walls, fences, panes and trapdoors, with plants standing in it; snow over block edges; even snow under trees and snow under overhangs; snowy leaves whole or on top only; white grass in snow; more snow in snowstorms; and snow on far terrain. With Almanac it builds up to a second and third layer and thaws with Almanac's own snow; without it, vanilla's one layer.
+- **With Almanac 1.0.0's regional weather, storms you can see coming:** the Dynamic clouds draw Almanac's storms where they are, each a dark rain deck growing, travelling with the wind and shrinking away, a thunderstorm towering through it. A storm's cloud arrives before its rain, the rain falls under it and nowhere else, and the sky clears behind it. The rain, snow and thunder you see and hear under them are Almanac's where you stand. With Fancy clouds the weather where you stand follows Almanac's storms too.
+- **Far snow by place:** with Almanac's regional weather, far land shows the snow each place has (Almanac's layer rules, up to three layers by default), so a storm's snowfall shows where it fell, not wherever you happen to stand. Close to you far land still takes the snow where you stand, as the near snow does, so the two meet without a line.
+- **Mist distance and Mist layers** (Weather, Rain and snow; for Mist style: Mist field): how far the rolling mist reaches (32 to 256 blocks) and up to four layers of it.
+- **Cloud height and Cloud distance** on the Sky page (Cloud height is Sodium Extra's when that mod is installed).
+- **A Far Terrain page** with every far terrain setting in one place.
+
+### Changed
+- **Needs Almanac 1.0.0 or newer for the shared features** (the weather following Almanac's seasons, the visual snow's layers, far snow and the storms). Beside an older Almanac the game starts, those parts are off, and the log and the chat say why. Without Almanac everything else works as before.
+- **Snowy leaves whiten the whole block** nearby, and plants standing in snow turn white.
+- **Far shadows** stay, on LiteLights' own land past the shadow distance.
+- **The Mac troubleshooting switches are gone** from General > Compatibility; every terrain part is always in. Use vanilla terrain shading and the offer after a frozen launch stay.
+- The mod is now built from modules (an internal API, the core, far terrain and the clouds), all in the one jar. Nothing you see changes.
+
+### Removed
+- **Voxy and Distant Horizons support was dropped in 1.0.8.** LiteLights has far terrain of its own now. With either installed, LiteLights leaves their terrain exactly as they draw it, keeps Far shadows off, and says so on the Far Terrain page, the Far shadows row and the About page. The rows that only acted on their terrain are gone; their saved values stay in the settings file.
+
+### Fixed
+- **Rain cutting holes in the mist** (Rain and snow: Enhanced), and **smoke cutting holes in the clouds**.
+- **A square shadow under you when flying high** over the clouds in daylight.
+- **The whole Mist field brightening and dimming** with the light where you stand, and **haze and ground mist dimming** under a tree or an overhang.
+- **Puddles on slopes and edges:** a puddle only forms where none of the columns around it is lower.
+- **An older Almanac no longer stops the game.**
+
+### Experimental and off by default
+Far terrain, seed generation and the Dynamic clouds are Experimental. Far terrain off, seed generation off, Fancy clouds and Visual snow off stay the defaults, so a game that doesn't turn them on looks and runs as before.
+
+### Known gaps
+- **Far terrain, found just before release and not fixed yet:** the coarsest, furthest level can show holes, with the land there drawn as separate flat planes; and with seed generation on, the coarsest level's predicted land can be drawn over land that is loaded right now.
+- **Far terrain:** a thin pale straight line can lie on far sea some hundreds of blocks out; near water has fine grain and the floor of deep water under it where far water is smoother; far plants past the Detail distance are left out; far lights are faint at a few hundred blocks; far ice has no reflections; lakes away from sea level can sit up to a voxel off where two levels meet; no cloud shadows on near or far water.
+- **Seed generation:** no ravines, no features other than trees (ice spikes, boulders, flowers), no structures (villages appear when visited); trees are stand-ins placed where LiteLights chooses and move when the real chunks arrive; coasts are the least accurate, and filling all 4 km to full detail takes several minutes.
+- **The Dynamic clouds:** voxel steps on the heads seen at a low angle; bands on a thunderstorm's tower; a rain deck seen from just over its top at noon is a bright field of steps; cloud shadows darken what is already in shade.
+- **Almanac's storms in the Dynamic clouds:** a storm seen from outside is a grey slab with white towers more than a dark mass; no rain curtains under a distant storm; a thunderstorm's anvil is a ragged star rather than a smooth shelf; LiteLights' fair-weather layers aren't thinned near storms; between Almanac's storm top and the drawn cloud's top you are inside cloud with nothing falling.
+- **Visual snow:** on snowy ground the snow on blocks can't be told from the snow behind it; far snow has no height (it is a look on the far land), and far stairs and slabs whiten flat; far snow by place is worked out every 512 blocks, so its edges are soft.
+
+### Upgrading from 1.0.0
+Every saved setting carries over. Far terrain and its store are new; a far terrain store saved by one of the local builds (1.0.11 to 1.0.15) is read as it is.
+
+## 1.0.15+26.3
+
+A local build on top of 1.0.14, for the author's own testing. It goes with Almanac 0.4.0, now the oldest Almanac it works with.
+
+### Added
+- **The Dynamic clouds draw Almanac's storms** (with Almanac 0.4.0's regional weather on, its default): each storm is a dark rain deck where Almanac says it is, growing, travelling with the wind and shrinking away with it, and a thunderstorm towers through it with its anvil spreading on top. You can see a storm coming from kilometres off, its cloud arrives before its rain or snow, the rain falls under it and nowhere else, and the sky clears behind it as it goes. Between the storms are LiteLights' own fair-weather clouds, and everyone on the server sees the same sky: the same storms in the same places. The clouds ride Almanac's wind and stand still when its weather does. A storm an operator places with `/weather` closes in over half a minute, and one cleared away breaks up, instead of popping.
+
+### Changed
+- **Under Almanac's storms, the rain, snow and thunder you see and hear are Almanac's where you stand**, under clouds that are really there, so they begin when the storm's rain reaches you and stop when it has passed, with no waiting for a deck to close.
+- **Needs Almanac 0.4.0** for everything the two share (0.4.1 recommended: with the weather standing still, a storm placed with `/weather` gets its clouds only from 0.4.1); beside an older Almanac those parts are off and the log and chat say so. With Almanac's regional weather off, on a server without Almanac, or without Almanac, the clouds are as in 1.0.14.
+
+Experimental: far terrain with seed generation, and the Dynamic clouds. Fancy clouds, far terrain off and Visual snow off stay the defaults. With Fancy clouds the weather where you stand follows Almanac's storms as before.
+
+## 1.0.14+26.3
+
+A local build on top of 1.0.13, for the author's own testing. It goes with Almanac 0.3.0, now the oldest Almanac it works with.
+
+### Added
+- **Seed generation** (Far Terrain page, a section of its own under the switch; Experimental, off by default): far terrain shows land you haven't visited yet, worked out on your computer from the world's seed with the game's own terrain maths: hills, seas, rivers and lakes, each biome's ground and colours, snow and ice where it is cold, and stand-in trees. No chunk is generated and nothing is asked of the server beyond the seed. Land you visit always replaces it, and if what you visit turns out different (a wrong seed, other terrain mods) LiteLights stops predicting there and says so in the chat. In single player it uses the world's own seed and slows down by itself whenever the game's own server is busy. Not shown yet: ravines, features other than trees (ice spikes, boulders, flowers) and structures; the trees are stand-ins placed where LiteLights chooses. Its rows: the switch, Predicted here, Seed, Server seed and Clear predicted land.
+- **The seed helper:** the same LiteLights jar in a dedicated Fabric server's `mods` folder (beside Fabric API) does only one thing there: it sends players whose LiteLights asks the world's seed and a list of what makes the server's terrain, so their seed generation works and can tell whether it matches. None of LiteLights' graphics loads on the server. Sharing the seed is the server owner's choice: narrow it to operators or named players, or switch it off, in `config/litelights-seed-helper.json`; offline-mode servers don't share it unless allowed. On a server without it, enter the seed on the Far Terrain page or run `/seed` if the server lets you; before generating, a notice says what can't be checked or doesn't match.
+- **Far water** (Far Terrain page, a new row): **Full**, the default, is the near water carried on as before; **Plain** is a flat colour by depth with the sky's sheen, easing in from the near water over 96 blocks past the render distance. Plain costs a little less (15 to 20 % of far water's own share); both follow the Water page's colours and reflections.
+- **Visual snow** (Weather page, a new section; off by default): snow LiteLights draws on the land as it lies, without placing a block, with a row for each part.
+  - **Snow on blocks:** stairs, bottom slabs, walls, fences, panes and closed trapdoors carry snow on top, lying on each step and along each top; flowers, grass, bushes, saplings, fences and the like stand in it. As deep as the snow around them, and on as many of them as the snow covers of the ground around. With Almanac it builds up to a second and third layer and thaws with Almanac's own snow; without it, vanilla's one layer. Idea by LambdAurora (LambdaBetterGrass); with its better snow on, the blocks it covers keep its snow.
+  - **Snow over edges:** snow weeps a little way down the side of a block under any snow's edge, in a ragged line with short drips. Idea by Snownee (Snow! Real Magic).
+  - **Even snow under trees** and **Snow under overhangs:** the dusting fades evenly inward from the snow around a tree, and snow blows a little way in under roofs and eaves, never through walls or doors.
+  - **Snowy leaves:** whole block (as before) or tops only, near and far. **White grass in snow:** grass and ferns standing in snow turn white; flowers keep their colours above it.
+  - **More snow in snowstorms:** more flakes at every Weather density, most in a blizzard.
+  - **Snow on far terrain:** with Almanac, far land, visited or predicted, shows the season's snow as it lies now, in the same layers as the snow near you, and clears with the thaw. It is a look on the far land, without height.
+
+### Changed
+- **Needs Almanac 0.3.0** for everything the two share (the visual snow follows its snow layers); beside an older Almanac those parts are off and the log and chat say so.
+- **The Dynamic clouds' fields** thin out a little more toward a formation's edge.
+- **Credits:** the Credits page, the Clouds and Cloud shadows rows and the Far Terrain page credit the ideas behind the Dynamic clouds (Simple Clouds, ProtoManly's Weather, Create: Sky), far terrain (Voxy, Distant Horizons) and seed generation (Voxy SeedGen).
+
+### Fixed
+- **Far water under near water:** from just over the sea a line, and patches from the air, where far water showed under the near water at the render distance; and a brighter band of near water all round the render distance. Far water now steps aside wherever the near renderer really draws water, by vanilla's or Sodium's own rule, and hands over to it without a step.
+- **Far water over deep sea** no longer shows the sky or distant land through it where the near water has its dark floor, and the land's reflection in it fades out past the render distance instead of stopping at 256 blocks.
+- **Far land read its blocks' materials from the wrong place** (since far terrain came in 1.0.11): every far block counted as plain ground, so far ice took the season's snow and far leaves ignored the Snowy leaves choice. Far ice now stays clear of snow, far leaves whiten whole or on top as chosen, and far land is lit by each block's own material as near land is.
+
+Experimental: far terrain with seed generation, and the Dynamic clouds. Fancy clouds, far terrain off and Visual snow off stay the defaults.
+
+## 1.0.13+26.3
+
+A local build on top of 1.0.12, for the author's own testing. It goes with Almanac 0.2.0.
+
+### Added
+- **Cloud shadows** (Sky, Clouds, a new row; on with the Dynamic clouds): the clouds' shadows drift over the land, near and far. Not on water yet: lakes and seas stay sunlit under a cloud, with only the floor of shallow water darkening.
+
+### Changed
+- **The Dynamic clouds** (still Experimental; Fancy stays the default) look like clouds rather than stacks of blocks: billowing heads on their tops, rounded sides that curve under at the base, smooth shading over the cubes' steps, and in rain a deck with heads on its top and an uneven underside. Storm anvils are grey underneath rather than black, and night clouds are moonlit blue-grey.
+- **They reach 8 km by default**, in wider cubes further out, so from a mountain or a plane the sky goes on to the horizon, over far terrain too, and they sort against far land by depth both ways. Cloud reach now goes from 384 to 16,384 blocks. A Cloud reach of 1,024 saved by 1.0.10 to 1.0.12 is kept as it is; set it higher on the Sky page to see the full sky.
+- **Flying over the clouds you leave the rain below them:** no rain or snow falls over the top of the cloud it falls from.
+- **Inside a cloud with vanilla's fog** (Fog look set to vanilla's) the view whites out as it does with LiteLights' fog.
+- **Thunderheads catch up with real lightning:** a bolt seen while the towers are still building makes them build faster.
+
+## 1.0.12+26.3
+
+A local build on top of 1.0.11, for the author's own testing. It goes with Almanac 0.2.0.
+
+### Added
+- **Far water** is LiteLights' near water carried on past the render distance: the same colour, darkening with depth, the sea floor showing through where it is shallow, the sky and the land around reflected, the sun's glint. It used to be an opaque, purple surface drawn over the near water.
+- **Blocks in their own shapes far away:** out to 512 blocks at Detail Medium, slabs, stairs, paths, farmland, fences, walls, panes, doors, trapdoors, torches, lanterns and chests keep their own shapes, and grass, ferns, flowers, saplings and bushes stand as crossed cards out to 256 blocks. Past those distances slabs and stairs are whole blocks again and thin blocks and plants are left out.
+- **Far lights** (Far Terrain page, on): at night, villages, lava, lit caves and other strong lights far away glow as soft points, hazed by the air. Off, far lights show only as the light on the blocks around them.
+- **Stored here** and **Video memory in use** on the Far Terrain page, kept up to date while the page is open.
+
+### Changed
+- **The edge of visited land** carries its wall of rock on down past any lit cave, so lava-lit caves no longer show under it from outside.
+- **Far terrain fills in faster:** after a jump or on joining a world the land round you is at full detail first, coarse stand-ins elsewhere; a world opened again is complete in about 4.5 seconds, and chunks the game sends again unchanged are no longer stored and meshed again.
+- **Clear far terrain for this world** is now **Clear far terrain** (its description says it is for this world and dimension); with no world's far terrain open it does nothing.
+
+### Fixed
+- **Far land was black on Vulkan from about y 700 up.** The haze's height formula overflowed looking far down from high up; it is now written so nothing overflows, and gives the same haze everywhere else.
+- **Coarse far tiles no longer flash for a frame** over far and near land while chunks round you are stored.
+- **The page's status after Clear** showed the old numbers until the page was opened again.
+- **Far water over open sea** was drawn over the near water out to the coast; the near water now reaches the render distance and far water starts past it.
+- On OpenGL with an AMD card the game could stop a few seconds into a far view with far water and lights (`command stream overflowed`).
+
+## 1.0.11+26.3
+
+A local build on top of 1.0.10, for the author's own testing. It goes with Almanac 0.2.0.
+
+### Added
+- **Far terrain** (Far Terrain page; Experimental, off by default). LiteLights' own far terrain: the land you have visited, drawn far past the render distance with the game's own block textures and biome colours, in LiteLights' light, haze and fog, with far shadows on it. It is made from the chunks the game has already received, so nothing is generated and nothing is asked of the server; it works in single player and on any server, and fills in as you travel. Land visited while it is off isn't recorded. Snow layers and carpets show on the block under them, and glowing blocks glow.
+- **Its rows:** Distance (1 to 16 km, 4 km), Detail (Low to Ultra, Medium), Video memory (Auto or a fixed amount), Background threads (Auto or a number), a status line with what is stored for the world, and **Clear far terrain for this world**. In single player it is kept inside the world's save (`<world>/litelights/far/`), so it goes with the world's backups; on a server, under the game folder's `litelights/servers/`. A few kilobytes a chunk.
+- **Not there yet:** plants, fences, torches, panes and other thin blocks far away (slabs and stairs are whole blocks, so far forests are leaf blobs on bare ground); far water is an opaque surface, not see-through; far lights glow on their blocks but aren't points of light. Those are the next rounds.
+
+### Changed
+- With far terrain off nothing runs, nothing is stored and nothing is drawn: the game looks and runs as in 1.0.10.
+
+## 1.0.10+26.3
+
+A local build on top of 1.0.9, for the author's own testing. It goes with Almanac 0.2.0.
+
+### Added
+- **Dynamic clouds** (Sky, Clouds, a new choice; Experimental). Big clouds of real height, built from LiteLights' own cloud field: fair-weather cumulus of every size, towering congestus, layers, and in rain a deck closing over the whole sky, with thunderheads in storms. They grow, shrink and drift smoothly, rising and widening out of the cloud already there instead of popping in, and every LiteLights player on a server sees the same sky. No cloud comes lower than vanilla's cloud height. Fancy stays the default.
+- **The weather eases in with the Dynamic clouds:** while they are chosen, the rain, snow and thunder LiteLights shows and plays ease in and out with their clouds, and so do sandstorms, haboobs and the snow gathering on leaves: the sky closes over in about half a minute, the first drops fall under a darkening sky, and in single player the clouds gather before the rain. With Almanac they gather only once the rain has begun, as on a server, because Almanac's rain reaches some climates and not others: where it doesn't reach you, the sky stays clear. The server's weather is untouched, so with Almanac the server can lay snow on the ground a few seconds before the first flake LiteLights draws. With any other cloud choice the weather is shown exactly as in 1.0.9.
+- **Cloud reach** (Sky, Clouds): how far the Dynamic clouds reach, 384 to 1,024 blocks.
+
+### Changed
+- Cloud layers is greyed out with the Dynamic clouds, which have no layers.
+
+## 1.0.9+26.3
+
+A local build on top of 1.0.8, for the author's own testing. It goes with Almanac 0.2.0.
+
+### Changed
+- **Works with Almanac 0.2.0, and needs it:** Almanac 0.2.0 replaced its seasonal biome copies with a climate table, and LiteLights now reads the season's climate from it. Rain and snow by season, snowy land in winter, the aurora over cold land, dry places and their sandstorms, and weather on glass follow Almanac's seasons again. Almanac 0.2.0 is the oldest LiteLights works with.
+- **An older Almanac no longer stops the game:** beside one, LiteLights' weather goes by each biome's own climate, as without a seasons mod. The chat says so once when you join a world, and the log as the game starts. Update Almanac to turn the seasons back on.
+
+### Removed
+- Support for Almanac before 0.2.0, including far snow's timed thaw and forming (nothing has drawn far snow since 1.0.8).
+
+### For developers
+- An interleaved A/B timing tool (`-Dlitelights.ab=…`). It flips one option every few frames in the same scene and reports frame time and the GPU timers for each side. Off, it costs nothing.
+
+## 1.0.8+26.3
+
+A local build on top of 1.0.7, for the author's own testing.
+
+### Removed
+- **Voxy and Distant Horizons support was dropped in 1.0.8.** LiteLights is getting far terrain of its own, and keeping up two other far terrain mods beside it would cost every later change. The code is in LiteLights' history up to 1.0.7, so either could come back later. With Voxy or Distant Horizons installed, LiteLights now leaves their terrain exactly as they draw it (their own fog and light), keeps Far shadows off, and says so on the Far Terrain page, the Far shadows row and the About page. If you used either for far land, it is unshaded by LiteLights until LiteLights' own far terrain arrives.
+- The rows that only acted on their terrain: Far terrain and Seasonal snow on far terrain (Fog), Water on far terrain, Far caustics, Far depth colour and Far edge foam (Water), and Calculate distance (Shadows). Saved settings load as before; the values of the removed rows stay in the file.
+
+### Changed
+- **Far shadows** (Shadows and Far Terrain pages) stay, on LiteLights' own land past the shadow distance, unchanged.
+- The mod is now built from modules (an internal API, the core and a far terrain module), all in the one jar. Nothing you see changes.
+
+## 1.0.7+26.3
+
+A local patch on top of 1.0.6, for the author's own testing. It goes with Almanac 0.1.6.
+
+### Added
+- **Mist distance and Mist layers** (Weather, Rain and snow; for Mist style: Mist field). Mist distance sets how far the rolling mist reaches over the ground, 32 to 256 blocks (112 as before). Mist layers stacks up to four layers of it, the first always on the ground, each further one on the one below and a little thinner.
+- **Plants standing in snow turn white** (part of Snowy leaves and ground): grass, ferns and flowers with snow layers on two or more sides, as snowy grass, whether LambdaBetterGrass draws its snow through them or not.
+
+### Changed
+- **Snowy leaves whiten the whole block** nearby: sides and underside with the top, where the snow used to creep down from the top edge. Leaf blocks one to three under the top of a canopy take more of it than before.
+- **Far snow takes leaves and plants whole:** where snow lies on a far column, the sides of its leaf blocks, and of grass and flowers standing in it, turn white with their tops.
+- **Far snow melts as it forms, by Almanac's cover (with Almanac 0.1.6):** it shows the season's snow between Almanac's bare lines and its snow lines on the share of columns the cover says, scattered column by column, and animates nothing of its own. The thaw is no longer a timed change in patches, so far land, loaded land and land that loads lose their snow together. With an older Almanac nothing changes.
+
+### Fixed
+- **Snow on far land under water** (Voxy): no snow is painted where Voxy's water lies over the land, or anywhere below the sea's surface.
+- **Far lamps turning green in rain:** with Almanac, far ground lit by a lamp was read as brightly orange in the dim light of rain (and tinted like a leaf, green in most seasons), because its colour was taken against the sky's light alone. It is now taken against the light the far mod lit it with, block light included.
+- **The whole Mist field brightening and dimming with the light where you stand:** it was lit by the light level at the camera, so a torch or a tree overhead changed all of it at once. Its light now comes from the open sky around the camera and eases over a few seconds.
+- **Haze and ground mist dimming under a tree or an overhang:** how much sky the camera sees is now the most found at the camera and a few blocks around and above it, so only a cave or a closed room darkens them.
+
+## 1.0.6+26.3
+
+A local patch on top of 1.0.5 for far snow, for the author's own testing. It goes with Almanac 0.1.5.
+
+### Changed
+- **Far snow forms on scattered columns, the way vanilla's snowfall lays it,** instead of in spreading blobs. Each column has an evenly spread threshold of its own, so the share of white columns is Almanac's snow cover, the same share the land near the player holds (with Almanac 0.1.5). Further out than a column can be told apart, the land whitens evenly by that share. The thaw still goes in patches.
+- The far snow's progress moves smoothly between the sixteenths of a layer Almanac sends, instead of in steps.
+
+### Fixed
+- **Far snow starting again just as it finished.** When a snowfall covered its ground, the cover stopped counting as part way and the far snow fell back to a timed guess (about 40 %), then filled in a second time. It now goes to full cover and stays.
+
+## 1.0.5+26.3
+
+A one-fix local patch on top of 1.0.4, for the author's own testing.
+
+### Fixed
+- **Rain cutting holes in the mist (Rain and snow: Enhanced):** LiteLights' own rain, splashes, drips, smoke and other plain particles were drawn in vanilla's translucent particle layer, which writes depth, so the mist behind each raindrop was cut out round it, as smoke used to do to the clouds. They now have a layer of their own with vanilla's look and no depth writes, and blend over whatever is behind them.
+
+## 1.0.4+26.3
+
+A third local patch for the author's own testing: unit tests, the offline shader compile, and a look at the game (far lamps and far depth colour on Voxy and Distant Horizons, the settings screens). It includes 1.0.2 and 1.0.3.
+
+### Added
+- **A Far Terrain page:** every far terrain setting in one place, under headings named after the pages they live on (Fog, Shadows, Water). They are the same settings: a change on either page shows on the other. LiteLights' own screen only; Sodium's Video Settings keeps them on their pages.
+- **Cloud height and Cloud distance** on the Sky page. Cloud distance is Minecraft's own setting (the one Sodium's Video Settings shows). Cloud height is Sodium Extra's when that mod is installed, read and written in place, and otherwise LiteLights' own (64 to 512 blocks, 192 by default).
+- **Far snow follows Almanac 0.1.4's cover:** with Almanac 0.1.4, far snow that is forming shows on the share of the land the snowfall has reached, the same share as near land, and stays there while the snowfall pauses or after rejoining, instead of running on a clock.
+
+### Fixed
+- **Far lava, glowstone and lanterns looked dull and blue at night:** blocks that give off light are left out of shadows and the night tone nearby, glow hotter and bloom. Far ones were shaded and night-toned like the ground around them. With the far mods' own data (1.0.3), a far block at light level 15 is now treated the same way, and on Voxy it gets bloom.
+- **Far depth colour on Voxy was full of streaks and blotches:** Voxy draws water without depth, so its surface was guessed from the shore around it. Voxy's water pass now records its surface's distance, and far water is found and measured from that. It also replaces the before-and-after colour comparison that found the water.
+- **Smoke cutting holes in the clouds:** vanilla draws clouds after particles, which have already written their depth, so a puff of smoke in front of a cloud cut its whole square out of it. LiteLights' clouds are now drawn before the particles (classic transparency only).
+- **Puddles on slopes and edges:** a puddle only forms where none of the eight columns around it is lower.
+
+### Changed
+- **The Mac troubleshooting switches are gone from General > Compatibility.** They are hidden on both screens and no longer read, so every terrain part is always in. Saved values stay in the file. The safety net that offers vanilla terrain shading after a frozen launch still works.
+
+### Not found
+- **Voxy's far grass colour differing with Far terrain on:** not reproduced in the test scene (no Almanac there). With Almanac, far grass is tinted toward the season's colour by a rule that guesses grass from a pixel's colour, which is the likely cause.
+- **Lamp-lit far ground** is a little bluer at night with Far terrain on than as the far mod draws it. That is the night tone, by the same rule as near ground at the same light levels; only the light-giving blocks themselves were treated differently.
+
+## 1.0.3+26.3
+
+A second local far terrain patch for the author's own testing: unit tests, the offline shader compile and a look at the game on the Voxy and Distant Horizons stacks, no full test matrix. It includes everything in 1.0.2.
+
+### Added
+- **Voxy's and Distant Horizons' own face and light for each far pixel:** LiteLights now changes the text of both mods' terrain shaders as they load them, so each opaque far pixel also says which way its face looks and how much block light it had when the far mod saw it. Voxy writes them into a texture of LiteLights' beside its colours (with its sky light too); Distant Horizons carries them in the alpha of its opaque colours, which LiteLights puts back to 1 before Distant Horizons uses them. Far terrain is then lit with a real face, where LiteLights used to work one out from the depths around the pixel, and with its real block light, so torch-lit and lava-lit far land keeps its light under the sky's shadows and the night tone. Far snow lands on real top faces.
+- Each change looks for the exact shader line it replaces. With another Voxy or Distant Horizons version whose shaders differ, nothing is changed and far terrain is lit as in 1.0.2. `-Dlitelights.farData.voxy=false` and `-Dlitelights.farData.dh=false` switch each off.
+
+### Fixed
+- **Far shadows marched from the sea floor:** before translucent terrain the depth under water is the floor's, so far shadows for water at sea level were worked out from down there. They are now worked out from the water's surface.
+
+### Known, not fixed here
+- With Voxy, LiteLights' own water turns see-through toward the edge of the loaded land (to meet Voxy's water), so the sea floor and the shadows on it show through there, most with a low sun.
+- Distant Horizons has room for the face and the block light only; its sky light is still taken as full. With LiteLights' fog set to Vanilla, Distant Horizons' own fog blends into that alpha and the data isn't read.
+- Everything listed under 1.0.2 still stands.
+
+## 1.0.2+26.3
+
+A local patch for far terrain, built for the author's own testing: unit tests, the offline shader compile and smoke runs only, no full test matrix.
+
+### Fixed
+- **Far water flickering as you move (Voxy and Distant Horizons):** with Water on far terrain on, the whole far water surface could flicker while walking or looking around. Far water is now a calm mirror: its waves, which are smaller than a pixel out there, fade out between 96 and 256 blocks, the sun's glint widens with distance, and far shadows no longer shade the reflection. Land is no longer reflected in Voxy's far water (the trace that found it flickered); the sky and the sun still are.
+- **Dark patches under Voxy's water with Far terrain on:** Voxy draws its water without depth, so its water was lit with the sea floor's slopes and the sea floor's far shadows, which showed through as patches that looked half drawn, or like cloud shadows on the sea. Water is now found first and lit as flat water under the open sky.
+- **Bloom showing through blocks with Distant Horizons:** Distant Horizons' fade pass clears the picture's alpha to 0 wherever its own clouds lie, even behind blocks, and LiteLights read 0 as its brightest glow mark. Glow marks no longer use 0, and 0 is never read as a glow.
+- **Distant Horizons' clouds casting far shadows:** its own clouds are drawn into the textures LiteLights shades, so they were lit, fogged and marched as land. Everything above the top of the world now casts no far shadow and gets none, and is never taken for snow or water; it keeps LiteLights' light and haze.
+- **A pale ring where the sun's shadows hand over to far shadows:** over the last tenth of Reach the sun map's shadows thin out while far shadows fade in, and the two were multiplied, so halfway through the band a shadow was lighter than on either side of it. The far shadow now only adds what the thinned-out map left out.
+- **Natural and Enhanced water against Voxy's water:** near the border of the loaded land, LiteLights' water colour now hands over to vanilla's (the texture times the biome's tint), which is what Voxy draws beyond it, as its depth look already did.
+
+### Added
+- **Lights on far terrain keep their light at night:** Voxy and Distant Horizons keep each block's light from when they saw it, so torches, lava and lit windows are already in their terrain. LiteLights used to shade and night-tone all far terrain as if only the sky lit it, which dimmed them. Whatever is brighter than the sky alone could make it is now left as the far mod drew it.
+
+### Known, not fixed here
+- Far shadows on Voxy's and Distant Horizons' terrain still come from what is on screen, so they fade at the screen's edges while turning, in Advanced too, and trees and buildings out there cast none. That needs the far terrain's own geometry.
+- With Distant Horizons, its fade pass also sets alpha to 1 on nearby ground, which may take the glow off torches and lava there. Not checked.
+
+## 1.0.1+26.3
+
+### Changed
+- **Far snow forms as fast as the snow near you, with Almanac 0.1.3.2:** when a snowfall whitens the land, the far terrain now takes Almanac's own snow-forming time (about ten minutes at the default random tick speed, and quicker or slower with the `randomTickSpeed` game rule), less the minute or two of snowfall before the far land starts to change, so near and far land finish whitening together. Before, far land took Almanac's whole thaw time to whiten (two in-game days by default) and lagged far behind. Melting still takes the thaw time. With an Almanac 0.1.3 or 0.1.3.1 server, far snow forms over Almanac's suggested 12,000 ticks; with 0.1.2 nothing changes. Almanac 0.1.2 and later all still work.
+
+### Fixed
+- **A square shadow under you when flying high:** flying over the clouds in daylight, a large dark square could lie on the land below, off toward where your shadow would fall, and follow you around. It came from Creature shadows, whose shadow map covers 48 blocks round you and reaches only so far below: land deeper than that, from about 70 blocks under you early in the morning to about 190 at noon, was counted as in shadow. That land is now lit unless a creature in the map really shades it. It showed most with a long render distance or Voxy and Distant Horizons, where the land that far down is in view.
+
 ## 1.0.0+26.3
 
 ### Added

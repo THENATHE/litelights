@@ -16,6 +16,13 @@ LiteLights is written from scratch. Where an idea came from another project, it 
 - **Snowy leaves and ground** (leaves whitening while it snows, a dusting under trees): idea by IMB11 (Snow, formerly Snow Under Trees). Written from scratch from its public description; no code, shaders or textures used.
 - **Swaying lanterns** (hanging lanterns, their chains and hanging signs swinging in the wind): idea by Rilith (Swinging Lanterns). Written from scratch from its public description; no code used.
 - **Heat shimmer** (the air wavering over lava, fire and hot ground): idea by stepqq (Lava Particles | More), from its heat waves over lava geysers.
+- **Snow on blocks** (visual snow: snow on stairs, slabs, walls and fences, and plants and fences standing in snow): idea by LambdAurora (LambdaBetterGrass), whose better snow draws snow on blocks that can't hold it. Written from scratch from what it draws in game; no code, models, textures or block lists used (LiteLights finds the blocks by the game's own classes and shapes).
+- **Snow over edges** (visual snow: snow weeping down the sides of blocks under any snow's edge): idea by Snownee (Snow! Real Magic). Written from scratch from its public description; no code, shaders, models or textures used (the drips are LiteLights' own geometry with the game's snow texture).
+- **Dynamic clouds** (big voxel clouds of real height, in formations that grow and shrink, with wider cubes far away): idea by nonamecrackers2 (Simple Clouds), the mod the cloud idea came from. Simple Clouds was studied for the idea. LiteLights' clouds and their cloud field are its own; the layout of cube sizes by distance (8-block cubes that double in rings, the near ring's radius and the cloud shadow map's size) has the same values as Simple Clouds', which LiteLights then checked against its own measurements. No code, shaders, data or wording were copied.
+- **The sky's clouds and weather in step** (the drawn clouds, and the rain and thunder shown under them, worked out from one shared description of the sky that every player's game works out alike): idea by ProtoManly (ProtoManly's Weather). No code, shaders, data or wording used.
+- **No rain over the clouds' tops, and cloud shadows drifting over the land:** ideas by LockBoss (Create: Sky). No code, shaders, data or wording used.
+- **Far terrain** (the land drawn far past the render distance): follows the idea of far terrain in Voxy by MCRcortex and Distant Horizons by the Distant Horizons team. LiteLights' far terrain is written from scratch; no code, shaders, data or wording of either was used.
+- **Seed generation** (far land not visited yet, predicted from the world's seed): idea by Möbius (Voxy SeedGen). Written from the game's own classes and the author's own earlier seed-generation projects (`voxy-seedgen-companion`, whose lessons are the author's own work); nothing of Voxy SeedGen's code, data or wording, or of its port, was used.
 - **Overlays module:** draws through Continuity (Pepper_Bell).
 - **Recommended:** LambDynamicLights and LambdaBetterGrass by LambdAurora, Visuality by PinkGoosik, and Subtle Effects by MincraftEinstein.
 
@@ -38,9 +45,16 @@ LiteLights is written from scratch. Where an idea came from another project, it 
 | Snow | IMB11 | Idea (snowy leaves, snow under trees) | https://modrinth.com/mod/snow |
 | Swinging Lanterns | Rilith | Idea (swinging lanterns and chains) | https://modrinth.com/mod/swinging-lanterns |
 | Lava Particles \| More | stepqq | Idea (heat shimmer) | https://www.curseforge.com/minecraft/mc-mods/lava-particles-more |
+| Snow! Real Magic | Snownee | Idea (snow over edges) | https://modrinth.com/mod/snow-real-magic |
+| Simple Clouds | nonamecrackers2 | Idea (the Dynamic clouds) | https://www.curseforge.com/minecraft/mc-mods/simple-clouds |
+| ProtoManly's Weather | ProtoManly | Idea (the clouds and the weather shown in step) | https://modrinth.com/mod/protomanlys-weather |
+| Create: Sky | LockBoss | Ideas (no rain over the clouds' tops, drifting cloud shadows) | https://www.curseforge.com/minecraft/mc-mods/create-sky |
+| Voxy | MCRcortex | Idea (far terrain) | https://modrinth.com/mod/voxy |
+| Distant Horizons | the Distant Horizons team | Idea (far terrain) | https://modrinth.com/mod/distanthorizons |
+| Voxy SeedGen | Möbius | Idea (far terrain predicted from the seed) | https://www.curseforge.com/minecraft/mc-mods/voxy-seedgen |
 | Continuity | Pepper_Bell | Draws the overlays | https://modrinth.com/mod/continuity |
 | LambDynamicLights | LambdAurora | Recommended companion | https://modrinth.com/mod/lambdynamiclights |
-| LambdaBetterGrass | LambdAurora | Recommended companion | https://modrinth.com/mod/lambdabettergrass |
+| LambdaBetterGrass | LambdAurora | Idea (snow on blocks); recommended companion | https://modrinth.com/mod/lambdabettergrass |
 | Visuality | PinkGoosik | Recommended companion | https://modrinth.com/mod/visuality |
 | Subtle Effects | MincraftEinstein | Recommended companion | https://modrinth.com/mod/subtle-effects |
 

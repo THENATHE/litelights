@@ -1,0 +1,26 @@
+# The shader include files a module's shaders may use from LiteLights' include library
+# (core/src/main/resources/assets/litelights/shaders/include/), one path per line as written
+# after "litelights:" in an #include. A module may also include its own files under
+# include/<module>/, and any other namespace's (minecraft:, sodium:). The far terrain module's
+# ShaderIncludesTest fails the build on anything else.
+#
+# What each one gives: docs/ARCHITECTURE.md, "The include library" and "Modules".
+
+# Frame values, the post passes' helpers and the main target's alpha
+frame.glsl
+post_common.glsl
+emissive.glsl
+# The light model and shadows
+lighting.glsl
+shadow.glsl
+light_post/surface_light.glsl
+# Materials
+material.glsl
+# The surface hooks near terrain calls, for far terrain's forward shading (light post, the air)
+surface.glsl
+hooks/light_post.glsl
+hooks/sky_fog.glsl
+# Air and haze
+skyfog/atmosphere.glsl
+# Water look
+water/surface.glsl

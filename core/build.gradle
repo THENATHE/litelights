@@ -1,0 +1,85 @@
+// The core module: everything in LiteLights that isn't a module of its own yet. It implements the
+// internal API (:api) and builds the one jar LiteLights ships, merging :api, :farterrain and
+// :clouds into it.
+evaluationDependsOn(':api')
+evaluationDependsOn(':farterrain')
+evaluationDependsOn(':clouds')
+
+base { archivesName = 'litelights' }
+
+dependencies {
+    implementation project(':api')
+    // Far terrain starts through the litelights:module entrypoint and is reached only through the
+    // API, so core never compiles against it; it is on the runtime classpath for tests and dev runs.
+    runtimeOnly project(':farterrain')
+    // The new clouds' field, mesher and pace: plain Java that core draws, so core compiles against it.
+    // Its classes rather than the project: Loom asks a project dependency for a classpath of its own
+    // making, which a plain Java project has none of.
+    implementation files(rootProject.project(':clouds').sourceSets.main.output)
+    // Optional at runtime: Mod Menu's config button only appears when it is installed.
+    compileOnly 'com.terraformersmc:modmenu:21.0.0'
+    // Optional at runtime: Sodium's public config API, for LiteLights' pages in Sodium's Video Settings.
+    // The API is the same in 0.9.2 (bAZQdGpg) and 0.9.3-beta.5 (v7Lw0h1m); compiled against the stable one.
+    compileOnly 'maven.modrinth:sodium:bAZQdGpg'
+    // Continuity's public API (CtmLoaderRegistry and friends), for the overlays module's own drawing
+    // method. Pinned to the Modrinth version id of 3.0.1+26.3; the module checks the API at runtime
+    // and falls back to plain overlay files if it changes.
+    compileOnly 'maven.modrinth:continuity:Jt2sCWTQ'
+    // Optional at runtime: Almanac's public API (com.thenathe.almanac.api), so the weather follows
+    // its seasons. 1.0.0 is the oldest Almanac LiteLights works with (its regional weather, whose
+    // storms the Dynamic clouds draw; its snow in layers, snowLayers, which the visual snow follows;
+    // and its season's climate); beside an older one the two share nothing (AlmanacVersion). Taken from the ivy repositories in the root build file. In core only
+    // AlmanacClimate, AlmanacSnow and the clouds' AlmanacStorms name it, and they are loaded only
+    // when a new enough Almanac is installed; far snow's AlmanacFarSnow is in the far terrain module.
+    // The clouds' storm mapping is tested against Almanac's own Storm record (AlmanacStormsTest).
+    compileOnly 'com.thenathe:almanac:1.0.0+26.3'
+    // The visual snow's layer rule is checked against Almanac's own (SnowLayers is plain Java).
+    testImplementation 'com.thenathe:almanac:1.0.0+26.3'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    systemProperty 'java.awt.headless', 'true'
+    // Overlay style previews (StylePreview in src/test) are drawn only when asked for.
+    systemProperty 'litelights.overlays.preview.textures', findProperty('litelights.overlays.preview.textures') ?: ''
+    systemProperty 'litelights.overlays.preview.bricks', findProperty('litelights.overlays.preview.bricks') ?: ''
+    // The wakes' offline prototype (WakePreview in src/test) draws its frames only when asked for.
+    systemProperty 'litelights.wakes.preview', findProperty('litelights.wakes.preview') ?: ''
+    // Where a generation's time and memory go (GenerationCostProbe), only when asked for.
+    systemProperty 'litelights.overlays.probe', findProperty('litelights.overlays.probe') ?: 'false'
+    // The particle step's and cull list's times (SimulationStepProbe), only when asked for.
+    systemProperty 'litelights.particles.probe', findProperty('litelights.particles.probe') ?: 'false'
+    testLogging { showStandardStreams = findProperty('litelights.overlays.probe') == 'true' }
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand(version: project.version) }
+}
+
+// The one jar: core, the API and every module, with one fabric.mod.json (core's). Two modules
+// shipping the same file is a mistake, so a duplicate fails the build.
+jar {
+    from(project(':api').sourceSets.main.output)
+    from(project(':farterrain').sourceSets.main.output)
+    from(project(':clouds').sourceSets.main.output)
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    // The credits and licences travel with the mod.
+    from(rootProject.file('CREDITS.md')) { into 'META-INF' }
+    from(rootProject.file('LICENSE')) { into 'META-INF' }
+    destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
+}
+
+// Dev runs load the three modules' classes and resources as the one mod.
+loom {
+    mods {
+        litelights {
+            sourceSet sourceSets.main
+            sourceSet 'main', ':api'
+            sourceSet 'main', ':farterrain'
+        }
+    }
+}

@@ -8,7 +8,7 @@ for every two pixels of reach), the rising splash 48 x 48 (a frame per height, s
 bottom row). Water-blue with white edges.
 
 Usage: python3 -I tools/draw_water_particles.py
-Writes into src/main/resources/assets/litelights/textures/particle/. Deterministic: the same
+Writes into core/src/main/resources/assets/litelights/textures/particle/. Deterministic: the same
 files come out every run."""
 from pathlib import Path
 import math
@@ -16,7 +16,7 @@ import random
 
 from PIL import Image
 
-OUT = Path(__file__).resolve().parent.parent / "src/main/resources/assets/litelights/textures/particle"
+OUT = Path(__file__).resolve().parent.parent / "core/src/main/resources/assets/litelights/textures/particle"
 
 FOAM = (240, 247, 255, 255)
 LIGHT = (208, 228, 244, 255)

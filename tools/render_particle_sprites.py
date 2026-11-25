@@ -8,7 +8,7 @@ ones (mist, smoke, dust clouds) are built from a few hard alpha steps and an ord
 so they stay crisp pixel art instead of smooth gradients. A fixed seed keeps the output the same
 on every run.
 
-Writes src/main/resources/assets/litelights/textures/particle/<name>.png. The particle atlas loads
+Writes core/src/main/resources/assets/litelights/textures/particle/<name>.png. The particle atlas loads
 every texture under textures/particle/, so no atlas file is needed. With --preview it also writes
 a sheet of every sprite at 8x on a dark background.
 """
@@ -19,7 +19,7 @@ import random
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-OUTPUT = ROOT / "src" / "main" / "resources" / "assets" / "litelights" / "textures" / "particle"
+OUTPUT = ROOT / "core" / "src" / "main" / "resources" / "assets" / "litelights" / "textures" / "particle"
 SEED = 2611
 
 # Character maps: '.' is transparent, digits are alpha steps (9 is opaque), letters are greys at

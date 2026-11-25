@@ -1,0 +1,4 @@
+// LiteLights' internal API: the interfaces and plain data a module reaches the rest of LiteLights
+// through, implemented by :core. Nothing here does any work of its own. Never shipped alone: :core
+// merges it into the one jar.
+base { archivesName = 'litelights-api' }
