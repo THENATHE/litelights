@@ -9,6 +9,7 @@ import com.thenathe.litelights.config.Pages;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -71,6 +72,12 @@ public final class PageModel implements PageContent {
             this.startsFolded = startsFolded;
         }
 
+        /** The same section with only {@code entries}, as it shows now. */
+        private Section(Section section, List<Entry> entries) {
+            this(section.key, section.caption, section.startsFolded);
+            this.entries.addAll(entries);
+        }
+
         public String key() {
             return key;
         }
@@ -105,6 +112,7 @@ public final class PageModel implements PageContent {
     }
 
     private static final Map<String, Glyphs> SUBHEADING_ICONS = new ConcurrentHashMap<>();
+    private static final Map<String, String> PAGE_CREDITS = new ConcurrentHashMap<>();
 
     private final String page;
     private final Map<String, Section> sections = new LinkedHashMap<>();
@@ -158,6 +166,25 @@ public final class PageModel implements PageContent {
     }
 
     /**
+     * A credit for a whole page rather than one row (the Overlays page's Continuity, the far
+     * terrain ideas): its heart goes beside the page's first caption.
+     */
+    static void pageCredit(String page, String translationKey) {
+        PAGE_CREDITS.put(page, translationKey);
+    }
+
+    /** The translation key of a page's own credit, or null for none. */
+    static String pageCreditKey(String page) {
+        return PAGE_CREDITS.get(page);
+    }
+
+    /** The page's own credit, or null for none. */
+    public Component credit() {
+        String key = pageCreditKey(page);
+        return key == null ? null : Component.translatable(key);
+    }
+
+    /**
      * Starts a sub-section's run of rows under its heading, unless the section's last heading is
      * already this one. The hover text comes from {@code <caption key>.tooltip} when it exists.
      */
@@ -179,6 +206,89 @@ public final class PageModel implements PageContent {
 
     public List<Section> sections() {
         return sections.values().stream().filter(section -> !section.entries.isEmpty()).toList();
+    }
+
+    /**
+     * Whether a setting row is on its page now: shown, and not locked by another setting. A locked
+     * row (Cloud reach while the clouds aren't Dynamic) is left off the page until the setting that
+     * locks it changes; its value is kept, and search still finds it.
+     */
+    public static boolean onPage(RowValue value) {
+        return value.shown() && value.lockedTag() == null;
+    }
+
+    /**
+     * The page as it shows now: the rows not on the page left out, a sub-heading with none of its
+     * rows left dropped, and a section whose rows are all gone dropped with its caption. Worked out
+     * each time the list is laid out, since the settings that lock rows can change while it is open.
+     */
+    public List<Section> shownSections() {
+        List<Section> shown = new ArrayList<>();
+        for (Section section : sections()) {
+            List<Entry> kept = new ArrayList<>();
+            Subheading heading = null;
+            boolean hadSettings = false;
+            boolean keptSettings = false;
+            for (Entry entry : section.entries) {
+                if (entry instanceof Subheading subheading) {
+                    heading = subheading;
+                    continue;
+                }
+                if (entry instanceof Setting setting) {
+                    hadSettings = true;
+                    if (!onPage(setting.value())) {
+                        continue;
+                    }
+                    keptSettings = true;
+                }
+                if (heading != null) {
+                    kept.add(heading);
+                    heading = null;
+                }
+                kept.add(entry);
+            }
+            if (!kept.isEmpty() && (keptSettings || !hadSettings)) {
+                shown.add(new Section(section, kept));
+            }
+        }
+        return shown;
+    }
+
+    /**
+     * The rows whose name, section caption or sub-heading contains {@code needle} (in lower case),
+     * each sub-heading kept above its rows. Rows locked off the page are found too, so the result
+     * can say why they aren't on it.
+     */
+    public List<Entry> matches(String needle) {
+        List<Entry> matches = new ArrayList<>();
+        for (Section section : sections()) {
+            String caption = section.caption() == null ? "" : section.caption().getString().toLowerCase(Locale.ROOT);
+            Subheading heading = null;
+            for (Entry entry : section.entries()) {
+                if (entry instanceof Subheading subheading) {
+                    heading = subheading;
+                    continue;
+                }
+                String label = searchableLabel(entry);
+                String headingText = heading == null ? "" : heading.caption().getString().toLowerCase(Locale.ROOT);
+                if (label != null && (label.contains(needle) || caption.contains(needle) || headingText.contains(needle))) {
+                    // Rows under a sub-heading share their labels ("Fog density"): keep the heading above them.
+                    if (heading != null && !matches.contains(heading)) {
+                        matches.add(heading);
+                    }
+                    matches.add(entry);
+                }
+            }
+        }
+        return matches;
+    }
+
+    private static String searchableLabel(Entry entry) {
+        return switch (entry) {
+            case Setting setting -> setting.value().shown() ? setting.value().label().getString().toLowerCase(Locale.ROOT) : null;
+            case Action action -> action.label().getString().toLowerCase(Locale.ROOT);
+            default -> null;
+        };
     }
 
     public List<RowValue> settings() {

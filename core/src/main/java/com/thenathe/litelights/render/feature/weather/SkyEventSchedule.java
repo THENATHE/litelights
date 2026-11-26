@@ -56,12 +56,12 @@ public final class SkyEventSchedule {
 
     /**
      * What one night brings. Azimuths are radians from north (toward -z) turning east (toward +x).
-     * {@code auroraBearing} is where the aurora's curtains face (north on a real night),
-     * {@code fireworksLift} raises the bursts above their usual place low over the horizon, and
-     * {@code pace} shortens the fireworks' beats (1 on a real night).
+     * {@code fireworksAzimuth} and {@code fireworksDistance} say where the show is from the player
+     * (the town, {@link FireworksShow}), {@code auroraBearing} where the aurora's curtains face
+     * (north on a real night), and {@code pace} shortens the fireworks' beats (1 on a real night).
      */
     public record Night(long index, float auroraStrength, boolean meteorShower, boolean fireworks, float fireworksAzimuth,
-                        float auroraBearing, float fireworksLift, float pace) {
+                        float fireworksDistance, float auroraBearing, float pace) {
     }
 
     public static Night night(long seed, long nightIndex) {
@@ -71,20 +71,21 @@ public final class SkyEventSchedule {
         boolean meteors = unit(mix(hash, 1)) < METEOR_SHOWER_CHANCE;
         boolean fireworks = unit(mix(hash, 2)) < FIREWORKS_CHANCE;
         float fireworksAzimuth = (float) (unit(mix(hash, 5)) * Math.PI * 2.0);
-        return new Night(nightIndex, auroraStrength, meteors, fireworks, fireworksAzimuth, 0.0f, 0.0f, 1.0f);
+        float fireworksDistance = (float) (FireworksShow.NEAREST + (FireworksShow.FARTHEST - FireworksShow.NEAREST) * unit(mix(hash, 6)));
+        return new Night(nightIndex, auroraStrength, meteors, fireworks, fireworksAzimuth, fireworksDistance, 0.0f, 1.0f);
     }
 
     /**
      * The settings screen's preview of one event: tonight's timings, but only that event,
-     * busier, and placed where the player is looking ({@code bearing}, {@code elevation} in radians)
-     * so it shows at once in front of them, whichever way they face.
+     * busier, and placed the way the player is looking ({@code bearing} in radians) so it shows at
+     * once in front of them, whichever way they face. A previewed show is nearer than most real
+     * ones, at the near end of their distances.
      */
-    public static Night preview(long nightIndex, PreviewEvent.Event kind, float bearing, float elevation) {
-        float fireworksLift = (float) Math.clamp(elevation, 0.0, Math.toRadians(18.0));
+    public static Night preview(long nightIndex, PreviewEvent.Event kind, float bearing) {
         return new Night(nightIndex,
             kind == PreviewEvent.Event.AURORA ? PREVIEW_AURORA : 0.0f,
             kind == PreviewEvent.Event.METEOR_SHOWER,
-            kind == PreviewEvent.Event.FIREWORKS, bearing, bearing, fireworksLift, PREVIEW_PACE);
+            kind == PreviewEvent.Event.FIREWORKS, bearing, FireworksShow.PREVIEW_DISTANCE, bearing, PREVIEW_PACE);
     }
 
     /** Whether a fireworks night's show is on at this time of day. */
@@ -125,17 +126,19 @@ public final class SkyEventSchedule {
     }
 
     /**
-     * One burst of a beat's volley: fills {@code out} with its azimuth and elevation (radians), its
-     * size (radians), a colour index (0 to 5) and its spark pattern seed.
+     * One burst of a beat's volley: fills {@code out} (six values) with where in the town it goes
+     * up across the line of sight (-1 to 1 of the show's spread), how high it bursts (0 to 1 of the
+     * room it has, {@link FireworksShow#burst}), its radius in blocks, a colour index (0 to 5), its
+     * spark pattern seed, and where it goes up along the line of sight (-1 to 1).
      */
     public static void firework(long seed, Night night, long beat, int burst, float[] out) {
         long hash = mix(volleyHash(seed, night, beat) ^ 0x62757273L, burst);
-        // Low over the horizon in one direction, as if a town far away were celebrating.
-        out[0] = (float) (night.fireworksAzimuth() + (unit(mix(hash, 1)) - 0.5) * 0.7);
-        out[1] = (float) Math.toRadians(7.0 + 14.0 * unit(mix(hash, 2))) + night.fireworksLift();
-        out[2] = (float) Math.toRadians(3.6 + 3.0 * unit(mix(hash, 3)));
+        out[0] = (float) (unit(mix(hash, 1)) * 2.0 - 1.0);
+        out[1] = (float) unit(mix(hash, 2));
+        out[2] = (float) (FireworksShow.SMALLEST_RADIUS + (FireworksShow.LARGEST_RADIUS - FireworksShow.SMALLEST_RADIUS) * unit(mix(hash, 3)));
         out[3] = (float) Math.floor(unit(mix(hash, 4)) * 6.0);
         out[4] = (float) (mix(hash, 5) & 0xFFFF);
+        out[5] = (float) (unit(mix(hash, 6)) * 2.0 - 1.0);
     }
 
     /**

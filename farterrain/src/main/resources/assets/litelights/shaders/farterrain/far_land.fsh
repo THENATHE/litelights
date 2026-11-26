@@ -250,7 +250,10 @@ void lite_far_plain_only(vec3 normal) {
 #ifdef LITE_FAR_LIGHTS
 // A light's glow: soft from its centre out, as strong as its lights together, only in the dark,
 // and hazed by the air between as the land is (the air's own colour taken back out, since the
-// glow is added to what is already there).
+// glow is what it brings to the scene). The falloff, (1 - r^2)^3, is close to a bell curve: no flat
+// bright middle and no edge, fading out over the whole disc. Points blend by their maximum
+// (FarLandPass.LIGHTS), so many lights close together glow as brightly as the brightest of them,
+// never adding up to a white blotch.
 void lite_far_light() {
     float spread = dot(blockUv, blockUv);
     if (spread >= 1.0) {
@@ -258,7 +261,8 @@ void lite_far_light() {
     }
     bool skyless = LiteCameraBlock.w == LITE_DIMENSION_NETHER || LiteCameraBlock.w == LITE_DIMENSION_END;
     float dark = skyless ? 1.0 : 1.0 - LiteSunColor.a;
-    float falloff = (1.0 - spread) * (1.0 - spread);
+    float inside = 1.0 - spread;
+    float falloff = inside * inside * inside * LITE_FAR_LIGHT_PEAK;
     vec4 glow = vec4(tint.rgb * falloff * tint.a * dark, 1.0);
     vec4 none = vec4(0.0, 0.0, 0.0, 1.0);
     LiteSurface surface;

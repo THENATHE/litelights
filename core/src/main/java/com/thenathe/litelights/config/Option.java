@@ -28,6 +28,7 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
     private final String descriptionKey;
     private final String creditKey;
     private final String tagKey;
+    private final String lockedTagKey;
     private final BoolOption needs;
     private final Condition enabledWhen;
     private final BooleanSupplier shownWhen;
@@ -62,6 +63,7 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
         this.descriptionKey = builder.descriptionKey != null ? builder.descriptionKey : labelKey + ".description";
         this.creditKey = builder.creditKey;
         this.tagKey = builder.tagKey;
+        this.lockedTagKey = builder.lockedTagKey;
         this.needs = builder.needs;
         this.enabledWhen = builder.enabledWhen;
         this.shownWhen = builder.shownWhen;
@@ -113,7 +115,7 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
         return descriptionKey;
     }
 
-    /** The translation key of the one-line credit under the row, or null for none. */
+    /** The translation key of the row's credit, shown by the heart beside its name, or null for none. */
     public String creditKey() {
         return creditKey;
     }
@@ -121,6 +123,11 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
     /** The translation key of a small tag shown on the row, such as "Experimental", or null for none. */
     public String tagKey() {
         return tagKey;
+    }
+
+    /** The tag shown instead while the row is greyed out, saying why (such as "Dynamic clouds only"), or null. */
+    public String lockedTagKey() {
+        return lockedTagKey;
     }
 
     /** A switch that must be on for this option to matter (bloom intensity needs bloom), or null. */
@@ -254,6 +261,7 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
         private String descriptionKey;
         private String creditKey;
         private String tagKey;
+        private String lockedTagKey;
         private BoolOption needs;
         private Condition enabledWhen;
         private BooleanSupplier shownWhen;
@@ -288,7 +296,7 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
             return (B) this;
         }
 
-        /** Adds a one-line credit under the row, read from {@code <label key>.credit}. */
+        /** Gives the row a credit heart, its tooltip read from {@code <label key>.credit}. */
         public B credit() {
             this.creditKey = (labelKey != null ? labelKey : "litelights.option." + id) + ".credit";
             return (B) this;
@@ -302,6 +310,12 @@ public abstract sealed class Option<T> permits BoolOption, EnumOption, IntOption
         /** Shows a small tag on the row, such as {@code litelights.tag.experimental}. */
         public B tag(String translationKey) {
             this.tagKey = translationKey;
+            return (B) this;
+        }
+
+        /** While the row is greyed out, a small tag saying why, such as {@code litelights.tag.dynamic_clouds_only}. */
+        public B lockedTag(String translationKey) {
+            this.lockedTagKey = translationKey;
             return (B) this;
         }
 

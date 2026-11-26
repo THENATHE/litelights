@@ -14,8 +14,9 @@ import org.jspecify.annotations.Nullable;
  * time, gets a few formations from a hash of the seed, the cell and the slot, each with its own
  * birth tick, place, size, life and path. Three lattices make the weather:
  * <ul>
- *   <li><b>fair weather</b>, always there: cumulus fields, congestus, stratocumulus, altocumulus,
- *       cirrus and now and then a stratus layer, in a wide spread of sizes, with clear sky between;</li>
+ *   <li><b>fair weather</b>, always there: a random mix of cumulus fields, congestus, stratocumulus,
+ *       the alto and cirro clouds and now and then a stratus layer, in a wide spread of sizes, with
+ *       clear sky between;</li>
  *   <li><b>rain cores</b>, wide areas of heavier nimbostratus that show only as it rains;</li>
  *   <li><b>thunderstorms</b>, cumulonimbus towers that show only as it thunders.</li>
  * </ul>
@@ -28,19 +29,30 @@ public final class VanillaWeatherSky {
     private static final double TURNING_WIND = 0.02;
     private static final double WIND_TURN_TICKS = 120_000.0;
 
-    private static final Lattice FAIR = new Lattice(1, 4_096.0, 24_000.0, 1.0, 0.008, List.of(
-        new Recipe(CloudType.CUMULUS, 0.5).radius(600, 4_500).stretch(2.0f).life(24_000, 72_000)
-            .coverage(0.3f, 0.75f).sizeScale(0.6f, 2.0f).strength(0.0f, 0.12f),
-        new Recipe(CloudType.CONGESTUS, 0.16).radius(500, 2_500).stretch(1.8f).life(12_000, 36_000).grow(0.25f, 0.3f)
-            .coverage(0.3f, 0.7f).sizeScale(0.7f, 1.5f).strength(0.1f, 0.3f),
-        new Recipe(CloudType.STRATOCUMULUS, 0.08).radius(1_000, 4_500).stretch(2.2f).life(24_000, 96_000)
-            .coverage(0.5f, 0.85f).sizeScale(0.7f, 1.6f).strength(0.05f, 0.2f),
-        new Recipe(CloudType.ALTOCUMULUS, 0.12).radius(1_000, 5_000).stretch(2.5f).life(18_000, 60_000)
-            .coverage(0.4f, 0.85f).sizeScale(0.7f, 1.6f).strength(0.0f, 0.05f),
-        new Recipe(CloudType.CIRRUS, 0.1).radius(1_500, 6_000).stretch(3.5f).life(24_000, 96_000)
-            .coverage(0.2f, 0.6f).sizeScale(0.7f, 1.5f),
-        new Recipe(CloudType.STRATUS, 0.04).radius(1_500, 5_000).stretch(2.0f).life(24_000, 72_000)
-            .coverage(0.75f, 1.0f).sizeScale(0.8f, 1.4f).strength(0.1f, 0.25f)
+    /*
+     * More formations, smaller, thinner and overlapping, than until 1.1.0 (cells of 4,096 blocks,
+     * one formation a cell and slot, radii up to 6 km): there 42 % of the 2 km stretches of sky
+     * held no cloud at all, here 5 % (CloudSpreadTest), and the cover is about a third.
+     */
+    private static final Lattice FAIR = new Lattice(1, 3_072.0, 24_000.0, 2.6, 0.008, List.of(
+        new Recipe(CloudType.CUMULUS, 0.36).radius(700, 2_800).stretch(2.0f).life(24_000, 72_000)
+            .coverage(0.15f, 0.35f).sizeScale(0.7f, 1.6f).strength(0.0f, 0.12f),
+        new Recipe(CloudType.CONGESTUS, 0.12).radius(600, 2_000).stretch(1.8f).life(12_000, 36_000).grow(0.25f, 0.3f)
+            .coverage(0.15f, 0.3f).sizeScale(0.8f, 1.4f).strength(0.1f, 0.3f),
+        new Recipe(CloudType.STRATOCUMULUS, 0.1).radius(900, 3_200).stretch(2.2f).life(24_000, 96_000)
+            .coverage(0.2f, 0.4f).sizeScale(0.7f, 1.5f).strength(0.05f, 0.2f),
+        new Recipe(CloudType.ALTOCUMULUS, 0.1).radius(900, 3_600).stretch(2.5f).life(18_000, 60_000)
+            .coverage(0.2f, 0.45f).sizeScale(0.7f, 1.6f).strength(0.0f, 0.05f),
+        new Recipe(CloudType.ALTOSTRATUS, 0.06).radius(1_200, 4_000).stretch(2.5f).life(24_000, 72_000)
+            .coverage(0.25f, 0.45f).sizeScale(0.8f, 1.4f).strength(0.05f, 0.15f),
+        new Recipe(CloudType.CIRRUS, 0.1).radius(1_200, 4_500).stretch(3.5f).life(24_000, 96_000)
+            .coverage(0.2f, 0.5f).sizeScale(0.7f, 1.5f),
+        new Recipe(CloudType.CIRROCUMULUS, 0.06).radius(800, 3_000).stretch(2.5f).life(18_000, 60_000)
+            .coverage(0.2f, 0.4f).sizeScale(0.7f, 1.4f),
+        new Recipe(CloudType.CIRROSTRATUS, 0.05).radius(1_500, 5_000).stretch(3.0f).life(24_000, 96_000)
+            .coverage(0.4f, 0.7f).sizeScale(0.8f, 1.4f),
+        new Recipe(CloudType.STRATUS, 0.05).radius(1_000, 3_500).stretch(2.0f).life(24_000, 72_000)
+            .coverage(0.35f, 0.6f).sizeScale(0.8f, 1.4f).strength(0.1f, 0.25f)
     ));
     private static final Lattice RAIN_CORES = new Lattice(2, 8_192.0, 48_000.0, 1.2, 0.015, List.of(
         new Recipe(CloudType.NIMBOSTRATUS, 1.0).radius(2_000, 7_000).stretch(3.0f).life(24_000, 72_000).grow(0.15f, 0.15f)
@@ -71,7 +83,7 @@ public final class VanillaWeatherSky {
         float lowFairPresence = (float) (1.0 - FieldMath.smoothstep(0.15, 0.75, rain));
         float highFairPresence = (float) (1.0 - 0.6 * FieldMath.smoothstep(0.3, 1.0, rain));
         FAIR.collect(skySeed, wind, baseHeight, tick, centreX, centreZ, reach, formations,
-            type -> type == CloudType.ALTOCUMULUS || type == CloudType.CIRRUS ? highFairPresence : lowFairPresence);
+            type -> type.lowestLevel() >= 3 ? highFairPresence : lowFairPresence);
         RAIN_CORES.collect(skySeed, wind, baseHeight, tick, centreX, centreZ, reach, formations, type -> rain);
         THUNDERSTORMS.collect(skySeed, wind, baseHeight, tick, centreX, centreZ, reach, formations, type -> thunder);
         if (rain > 0.0f) {

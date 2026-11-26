@@ -1,5 +1,6 @@
 package com.thenathe.litelights.clouds.field;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -37,7 +38,8 @@ class CloudShapeTest {
         System.out.println(String.format(Locale.ROOT,
             "cloud sizes, clear sky, 10 km square: %d heaped clouds; diameters 10th percentile %.0f, median %.0f, 90th %.0f, 99th %.0f, largest %.0f blocks",
             diameters.length, smallDecile, median, largeDecile, percentile(diameters, 0.99), largest));
-        assertTrue(diameters.length >= 150, "only " + diameters.length + " clouds");
+        // Fewer than 1.1.0's 246 (they are larger and taller now, and more of them join), but still many.
+        assertTrue(diameters.length >= 50, "only " + diameters.length + " clouds");
         assertTrue(largeDecile >= 3.0 * smallDecile, "the 90th percentile should be three times the 10th");
         assertTrue(largest >= 10.0 * smallDecile, "the largest cloud should be ten times the 10th percentile");
     }
@@ -61,6 +63,32 @@ class CloudShapeTest {
             assertTrue(measured.lowest >= lowestAllowed, type + " reached down to " + measured.lowest + ", below " + lowestAllowed);
             assertTrue(measured.highest <= highestAllowed, type + " reached up to " + measured.highest + ", above " + highestAllowed);
         }
+    }
+
+    /**
+     * The user's levels (2026-11-25), as how far up each type reaches: cumulonimbus through all four,
+     * nimbostratus from the first through the third, cumulus and stratus low, stratocumulus in the
+     * second, the alto clouds in the third and the cirro clouds in the fourth. A cloud's billows may
+     * rise a little over its level's top, as real tops do; its body stays within its levels.
+     */
+    @Test
+    void eachTypeReachesItsLevels() {
+        for (CloudType type : CloudType.values()) {
+            Heights measured = measure(TestSkies.single(type, 1_500.0, 0.7f, 1.0f, 0.6f), type);
+            float lowestLevel = CloudType.levelBottom(type.lowestLevel());
+            float highestLevel = CloudType.levelTop(type.highestLevel());
+            float overshoot = 0.15f * (CloudType.levelTop(type.highestLevel()) - CloudType.levelBottom(type.highestLevel()));
+            // The lowest base: a thunderstorm's solid spans are mostly its anvil's.
+            float bottom = measured.lowest - TestSkies.BASE;
+            float highest = measured.highest - TestSkies.BASE;
+            assertTrue(bottom >= lowestLevel - overshoot && bottom < CloudType.levelTop(type.lowestLevel()),
+                type + "'s base, " + bottom + " over the floor, is not in level " + type.lowestLevel());
+            assertTrue(highest <= highestLevel + overshoot, type + " reaches up to " + highest + ", over level " + type.highestLevel());
+            assertTrue(highest > CloudType.levelBottom(type.highestLevel()), type + " reaches only " + highest + ", short of level "
+                + type.highestLevel());
+        }
+        assertEquals(4, CloudType.CUMULONIMBUS.highestLevel() - CloudType.CUMULONIMBUS.lowestLevel() + 1, "a thunderstorm spans every level");
+        assertEquals(3, CloudType.NIMBOSTRATUS.highestLevel());
     }
 
     @Test

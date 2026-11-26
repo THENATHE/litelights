@@ -2,11 +2,16 @@ package com.thenathe.litelights.render.feature.weather.snow;
 
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.BlockAndLightGetter;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 
 /**
  * How many layers of fake snow a block gets: the rule both the chunk meshes ({@link SnowGeometry})
@@ -19,9 +24,22 @@ import net.minecraft.world.level.block.state.BlockState;
  * snow around it, by the same shares and the same 90 % rule. Where the season has no snow on that
  * area's open ground at all, yet real snow lies on two or more sides (snow that lies whatever the
  * season, or a world's own generated snow), the spot follows its shallowest neighbour instead.
+ *
+ * <p><b>Only the top of a column</b> (far-snow-115, the owner): fake snow goes only where snow would
+ * really settle, on the highest block of its column that stops snow (as the game's weather counts
+ * it: a block that blocks movement, or a fluid) with nothing over it, so in a stack of fences, walls,
+ * panes, slabs or stairs only the top one is snowed ({@link #topOfColumn}). Snow at a block's base
+ * lies on the ground under it, so it needs a full top there, and snow falls past the thin blocks
+ * of a stack to reach it ({@link #groundOpen}, visual-snow-117).
  */
 public final class FakeSnow {
     private static final int FULL_SKY = 15;
+    /**
+     * How many blocks over a spot are looked through for something that stops the snow. A chunk
+     * mesh's region reaches at least this far above any of its blocks; anything that blocks the sky's
+     * light higher up already rules the spot out by its light.
+     */
+    static final int COLUMN_REACH = 15;
 
     private FakeSnow() {
     }
@@ -72,7 +90,50 @@ public final class FakeSnow {
         if (RealSnow.layersAt(world, pos, state, snow.betterSnow()) > 0) {
             return 0;
         }
+        if (!groundOpen(world, pos, state) || !world.getBlockState(pos.below()).isFaceSturdy(world, pos.below(), Direction.UP)) {
+            return 0;
+        }
         return layers(snow, world, biome, pos, pos, record);
+    }
+
+    /**
+     * Whether nothing over a block stops the snow falling onto it: in the {@link #COLUMN_REACH}
+     * blocks above, no block the game's weather heightmap counts (its blocks-motion tag, or a solid
+     * block while the tags aren't bound) and no fluid, the upper half of the block itself (a door, a
+     * tall plant) aside.
+     */
+    static boolean topOfColumn(BlockGetter world, BlockPos pos, BlockState state) {
+        return nothingStops(world, pos, state, false);
+    }
+
+    /**
+     * Whether snow reaches the ground at a thin block's foot (visual-snow-117, the owner): as
+     * {@link #topOfColumn}, but snow falls past thin blocks standing over it (fences, walls, panes,
+     * bars, gates, doors, lanterns, plants: the blocks that take snow at their base), so the ground
+     * at the foot of a stack of posts is snowed like the ground beside it, while only the stack's top
+     * takes snow on its own surfaces. A block that covers the column (stone, a slab) still keeps it off.
+     */
+    static boolean groundOpen(BlockGetter world, BlockPos pos, BlockState state) {
+        return nothingStops(world, pos, state, true);
+    }
+
+    private static boolean nothingStops(BlockGetter world, BlockPos pos, BlockState state, boolean pastThinBlocks) {
+        BlockPos.MutableBlockPos above = pos.mutable();
+        for (int step = 1; step <= COLUMN_REACH; step++) {
+            above.move(Direction.UP);
+            BlockState over = world.getBlockState(above);
+            if (step == 1 && over.is(state.getBlock())
+                && over.getValueOrElse(BlockStateProperties.DOUBLE_BLOCK_HALF, DoubleBlockHalf.LOWER) == DoubleBlockHalf.UPPER) {
+                continue;
+            }
+            if (pastThinBlocks && SnowHosts.cached(over).base()) {
+                continue;
+            }
+            if (over.is(BlockTags.BLOCKS_MOTION_IN_HEIGHTMAP) || over.isSolid() || !over.getFluidState().isEmpty()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Layers of fake snow on the upward surfaces of a block real snow can't lie on, or 0. */
@@ -80,6 +141,9 @@ public final class FakeSnow {
         BlockPos above = pos.above();
         BlockState over = world.getBlockState(above);
         if (!over.getFluidState().isEmpty() || RealSnow.vanillaLayers(over) > 0 || over.isSolidRender()) {
+            return 0;
+        }
+        if (!topOfColumn(world, pos, world.getBlockState(pos))) {
             return 0;
         }
         return layers(snow, world, biome, pos, above, record);

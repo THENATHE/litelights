@@ -94,7 +94,7 @@ final class SnowGeometry {
         if (snow.blocks() && !host.tops().isEmpty()) {
             int layers = FakeSnow.onTop(snow, region, biome, pos, true);
             if (layers > 0) {
-                tops(snow, emitter, region, pos, host.tops(), layers);
+                tops(snow, emitter, region, pos, host.tops(), layers, snow.drips() && SnowHosts.takesDrips(state));
             }
         }
     }
@@ -110,9 +110,12 @@ final class SnowGeometry {
         model.emitQuads(emitter, region, pos, snowState, random, cullTest);
     }
 
-    /** Snow on each upward surface of the shape, {@code layers} eighths of a block deep, with its sides. */
+    /**
+     * Snow on each upward surface of the shape, {@code layers} eighths of a block deep, with its sides,
+     * and with {@code drips} the overlay down the shape's own faces.
+     */
     private static void tops(SnowState snow, QuadEmitter emitter, BlockAndTintGetter region, BlockPos pos,
-                             SnowSurfaces surfaces, int layers) {
+                             SnowSurfaces surfaces, int layers, boolean drips) {
         TextureAtlasSprite sprite = snow.sprite();
         int depth = layers * 2;
         int aboveLight = light(region, pos.above());
@@ -123,7 +126,7 @@ final class SnowGeometry {
             int topLight = outside ? aboveLight : -1;
             topQuad(emitter, sprite, top.minX(), top.minZ(), top.maxX(), top.maxZ(), roof, topLight);
             for (Direction side : Direction.Plane.HORIZONTAL) {
-                edge(snow, emitter, region, pos, surfaces, top, side, base, roof, topLight);
+                edge(snow, emitter, region, pos, surfaces, top, side, base, roof, topLight, drips);
             }
         }
     }
@@ -134,7 +137,8 @@ final class SnowGeometry {
      * down the shape's own face where the shape steps down beside the surface.
      */
     private static void edge(SnowState snow, QuadEmitter emitter, BlockAndTintGetter region, BlockPos pos,
-                             SnowSurfaces surfaces, SnowSurfaces.Top top, Direction side, int base, int roof, int topLight) {
+                             SnowSurfaces surfaces, SnowSurfaces.Top top, Direction side, int base, int roof, int topLight,
+                             boolean drips) {
         boolean alongX = side.getAxis() == Direction.Axis.Z;
         int from = alongX ? top.minX() : top.minZ();
         int to = alongX ? top.maxX() : top.maxZ();
@@ -160,7 +164,7 @@ final class SnowGeometry {
                 int light = roof > SnowSurfaces.GRID ? topLight : outsideLight;
                 sideQuad(emitter, snow.sprite(), side, plane, start, end, Math.max(base, beside), roof, light, roof - base);
             }
-            if (snow.drips() && beside < base) {
+            if (drips && beside < base) {
                 SnowDrips.along(emitter, snow.sprite(), side, plane, start, end, base, beside, roof - base,
                     pos.getX(), pos.getY(), pos.getZ(), atBlockSide ? outsideLight : -1);
             }
@@ -180,11 +184,15 @@ final class SnowGeometry {
 
     /**
      * Drips under a snow layer of {@code layers} at {@code pos}: down the four sides of the block it
-     * lies on, where that block's face shows to open air.
+     * lies on, where that block's face shows to open air, unless that block keeps its own look for snow
+     * ({@link SnowHosts#takesDrips}).
      */
     static void dripsBelow(SnowState snow, QuadEmitter emitter, BlockAndTintGetter region, BlockPos pos, int layers) {
         BlockPos below = pos.below();
         BlockState ground = region.getBlockState(below);
+        if (!SnowHosts.takesDrips(ground)) {
+            return;
+        }
         BlockPos.MutableBlockPos beside = new BlockPos.MutableBlockPos();
         for (Direction side : Direction.Plane.HORIZONTAL) {
             if (!ground.isFaceSturdy(region, below, side)) {

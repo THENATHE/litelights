@@ -80,7 +80,8 @@ class RegionalSkyTest {
             CloudField field = fieldOf(storm);
             for (double tick : new double[] {12_000.0, 25_000.0, 39_000.0}) {
                 for (double heading = 0.0; heading < 2.0 * Math.PI; heading += Math.PI / 8.0) {
-                    double[] point = at(storm, tick, 1.25, heading);
+                    // The outline wanders in lobes out to about 1.5 radii (Footprint, clouds-look-118); never past 1.6.
+                    double[] point = at(storm, tick, 1.6, heading);
                     CloudColumn column = TestSkies.column(field, tick, point[0], point[1], 8.0);
                     // A thunderstorm's anvil spreads past its edge high up, as real ones do; nothing lower does.
                     assertTrue(column.isClear() || thunder && column.lowestBottom() > ANVIL_HEIGHT,
@@ -107,10 +108,11 @@ class RegionalSkyTest {
                 highest = Math.max(highest, column.highestTop());
             }
             assertTrue(highest > storm.cloudTop(), "top " + highest + " under the storm's " + storm.cloudTop());
+            // A rain deck reaches up through the third level, a thunderstorm into the fourth.
             if (thunder) {
-                assertTrue(highest > FLOOR + 700.0f, "a thunderstorm's towers reach only " + highest);
+                assertTrue(highest > FLOOR + CloudType.levelBottom(4), "a thunderstorm's towers reach only " + highest);
             } else {
-                assertTrue(highest < FLOOR + 400.0f, "a rain deck towers to " + highest);
+                assertTrue(highest < FLOOR + CloudType.levelTop(3) + 100.0f, "a rain deck towers to " + highest);
             }
         }
     }

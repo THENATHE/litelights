@@ -80,6 +80,11 @@ final class CloudLayer implements AutoCloseable {
         this.info = new MappableRingBuffer(() -> "LiteLights clouds (" + name + ") info", GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_MAP_WRITE, UNIFORM_SIZE);
     }
 
+    /** How tall the layer's cells are with Fancy clouds, in blocks. */
+    float thickness() {
+        return thickness;
+    }
+
     /** Height of the layer's middle above the camera (negative when the camera is above it). */
     float middleAboveCamera() {
         return relativeBottom + thickness * 0.5f;

@@ -25,8 +25,11 @@ public final class LiteLightsOptions {
 
     public enum SkyPalette { VANILLA_COLOURS, COMPUTED }
 
-    /** Dynamic is the new clouds (render.feature.clouds.DynamicClouds): big voxel clouds of real height that follow the weather. */
+    /** Dynamic is the new clouds (render.feature.clouds.DynamicClouds): soft volumetric clouds of real height that follow the weather. */
     public enum Clouds { OFF, FLAT, FANCY, DYNAMIC }
+
+    /** How finely the Dynamic clouds are drawn: the march's resolution, steps and light samples (render.feature.clouds.CloudVolume). */
+    public enum CloudQuality { LOW, MEDIUM, HIGH, ULTRA }
 
     public enum FogLook { VANILLA, HAZE, OFF }
 
@@ -152,19 +155,31 @@ public final class LiteLightsOptions {
             .cost(Cost.MEDIUM).credit().register();
     /** Flat and Fancy only: the Dynamic clouds have no layers. */
     public static final IntOption CLOUD_LAYERS = IntOption.builder("sky.cloud_layers", 2, 1, 2, 1)
-            .at(Pages.SKY, "clouds").feature("clouds").cost(Cost.LOW)
+            .at(Pages.SKY, "clouds").feature("clouds").cost(Cost.LOW).lockedTag("litelights.tag.flat_fancy_clouds_only")
             .enabledWhen(values -> values.get(LiteLightsOptions.CLOUDS) == Clouds.FLAT || values.get(LiteLightsOptions.CLOUDS) == Clouds.FANCY)
             .register();
     /**
-     * How far the Dynamic clouds reach, in blocks: 8-block cubes to 1,024, then rings of wider cubes
-     * (clouds.mesh.CloudRings). Steps of 64 as before, so every saved reach is still a step.
+     * How far the Dynamic clouds reach, in blocks: the near column map's 8-block columns to about
+     * 1.5 km, the far map's wider ones beyond (render.feature.clouds.CloudBuilder). Steps of 64 as
+     * before, so every saved reach is still a step.
      */
     public static final IntOption CLOUD_REACH = IntOption.builder("sky.cloud_reach", 8192, 384, 16384, 64)
             .at(Pages.SKY, "clouds").format(ValueFormat.BLOCKS).feature("dynamic_clouds").cost(Cost.LOW)
+            .lockedTag("litelights.tag.dynamic_clouds_only")
             .enabledWhen(values -> values.get(LiteLightsOptions.CLOUDS) == Clouds.DYNAMIC).register();
-    /** The Dynamic clouds' shadows on the land, near and far (render.feature.clouds.CloudShadows). */
+    /**
+     * The Dynamic clouds' shadows on the land, near and far (render.feature.clouds.CloudShadows).
+     * Only the shadows they cast: their shading of themselves doesn't depend on it.
+     */
     public static final BoolOption CLOUD_SHADOWS = BoolOption.builder("sky.cloud_shadows", true)
             .at(Pages.SKY, "clouds").feature("dynamic_clouds").cost(Cost.LOW).credit()
+            .lockedTag("litelights.tag.dynamic_clouds_only")
+            .enabledWhen(values -> values.get(LiteLightsOptions.CLOUDS) == Clouds.DYNAMIC).register();
+    /** How finely the Dynamic clouds are drawn (1.1.1); a settings file without it loads Medium. */
+    public static final EnumOption<CloudQuality> CLOUD_QUALITY = EnumOption.builder("sky.cloud_quality", CloudQuality.class, CloudQuality.MEDIUM)
+            .at(Pages.SKY, "clouds").feature("dynamic_clouds").cost(Cost.MEDIUM)
+            .choiceCost(CloudQuality.LOW, Cost.LOW).choiceCost(CloudQuality.HIGH, Cost.HIGH).choiceCost(CloudQuality.ULTRA, Cost.HIGH)
+            .lockedTag("litelights.tag.dynamic_clouds_only")
             .enabledWhen(values -> values.get(LiteLightsOptions.CLOUDS) == Clouds.DYNAMIC).register();
     /**
      * How high the clouds float, as vanilla's 192 moved up or down: the dimension's own height shifts
@@ -172,7 +187,8 @@ public final class LiteLightsOptions {
      * then sets instead (gui.CloudRows).
      */
     public static final IntOption CLOUD_HEIGHT = IntOption.builder("sky.cloud_height", 192, 64, 512, 4)
-            .at(Pages.SKY, "clouds").format(ValueFormat.BLOCKS)
+            .at(Pages.SKY, "clouds").format(ValueFormat.BLOCKS).lockedTag("litelights.tag.clouds_off")
+            .enabledWhen(values -> values.get(LiteLightsOptions.CLOUDS) != Clouds.OFF)
             .shownWhen(() -> !com.thenathe.litelights.gui.CloudRows.sodiumExtraOwnsHeight()).register();
 
     // Fog
@@ -440,27 +456,29 @@ public final class LiteLightsOptions {
     // New in the snow round (visual snowlogging): one master switch, off by default so the picture and
     // the cost stay as they were, and a row per item, each on once the master is. None of it places
     // a block; the snow depth itself is Almanac's setting.
+    // A page of its own since far-snow-115 (the owner: "make all of the visual snow options its own
+    // section"), under the same saved names; More snow in snowstorms, falling snow, stays on the Weather page.
     public static final BoolOption VISUAL_SNOW = BoolOption.builder("weather.visual_snow", false)
-            .at(Pages.WEATHER, "visual_snow").feature("visual_snow").cost(Cost.MEDIUM).register();
+            .at(Pages.VISUAL_SNOW, "visual_snow").feature("visual_snow").cost(Cost.MEDIUM).register();
     public static final BoolOption SNOW_ON_BLOCKS = BoolOption.builder("weather.visual_snow.blocks", true)
-            .at(Pages.WEATHER, "visual_snow").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.MEDIUM).credit().register();
+            .at(Pages.VISUAL_SNOW, "visual_snow/on_blocks").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.MEDIUM).credit().register();
     public static final BoolOption SNOW_DRIPS = BoolOption.builder("weather.visual_snow.drips", true)
-            .at(Pages.WEATHER, "visual_snow").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.LOW).credit().register();
+            .at(Pages.VISUAL_SNOW, "visual_snow/on_blocks").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.LOW).credit().register();
     public static final BoolOption SNOW_UNDER_TREES = BoolOption.builder("weather.visual_snow.under_trees", true)
-            .at(Pages.WEATHER, "visual_snow").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.LOW).register();
+            .at(Pages.VISUAL_SNOW, "visual_snow/sheltered").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.LOW).register();
     public static final BoolOption SNOW_UNDER_OVERHANGS = BoolOption.builder("weather.visual_snow.under_overhangs", true)
-            .at(Pages.WEATHER, "visual_snow").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.LOW).register();
+            .at(Pages.VISUAL_SNOW, "visual_snow/sheltered").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.LOW).register();
     // Today's near look (the whole leaf block) is the default; the user hasn't chosen one yet.
     public static final EnumOption<SnowyLeavesLook> SNOWY_LEAVES_LOOK = EnumOption.builder("weather.visual_snow.leaves",
                     SnowyLeavesLook.class, SnowyLeavesLook.WHOLE)
-            .at(Pages.WEATHER, "visual_snow").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.FREE).register();
+            .at(Pages.VISUAL_SNOW, "visual_snow/plants").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.FREE).register();
     public static final BoolOption SNOWY_GRASS = BoolOption.builder("weather.visual_snow.grass", true)
-            .at(Pages.WEATHER, "visual_snow").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.FREE).register();
+            .at(Pages.VISUAL_SNOW, "visual_snow/plants").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.FREE).register();
     public static final BoolOption MORE_SNOWFLAKES = BoolOption.builder("weather.visual_snow.more_flakes", true)
-            .at(Pages.WEATHER, "visual_snow").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.LOW)
+            .at(Pages.WEATHER, "details").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.LOW)
             .enabledWhen(LiteLightsOptions::particlesOn).register();
-    public static final BoolOption FAR_SNOW = BoolOption.builder("weather.visual_snow.far", true)
-            .at(Pages.WEATHER, "visual_snow").feature("visual_snow").needs(VISUAL_SNOW).cost(Cost.LOW).register();
+    // Snow on far terrain (weather.visual_snow.far) was a row here until far-snow-115; it is far
+    // terrain's own now (FarLandSettings.farSnow), under the same name, so a saved value carries over.
     // Weather on glass shares one feature, so if Weather Glass is installed every row says it handles them.
     // It follows its own rows only, whatever Rain and snow is set to (decide16). Breath on glass
     // (weather.glass_breath) was removed in 0.1.6 and Rain on glass (weather.glass_style) in 0.1.7,

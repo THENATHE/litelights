@@ -27,9 +27,13 @@ import net.minecraft.util.Util;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.SnowLayerBlock;
+import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.Half;
+import net.minecraft.world.level.block.state.properties.SlabType;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -69,8 +73,8 @@ final class FluidColumnMap implements AutoCloseable {
     private static final int CANOPY_REACH = 16;
     /** Frames between workings-out of the snow's fanning while chunks change. */
     private static final int FAN_FRAMES = 10;
-    /** How far below an overhang its ground may be, in blocks. */
-    private static final int OVERHANG_REACH = 6;
+    /** How far below an overhang its ground may be, in blocks: eight since visual-snow-117 (six before), for higher roofs and balconies. */
+    private static final int OVERHANG_REACH = 8;
     /** The shore field is worked out again at most this often while columns keep changing, in nanoseconds. */
     private static final long SHORE_FIELD_INTERVAL = 300_000_000L;
     /** Slot offsets from the camera's chunk, nearest first. */
@@ -689,7 +693,10 @@ final class FluidColumnMap implements AutoCloseable {
      */
     private void noteSnowCover(LevelChunk chunk, int x, int z, int rainTop, int groundY, BlockState ground) {
         int flags = ground.is(BlockTags.LOGS) ? SnowCoverGrid.TRUNK : 0;
-        if (visualPlants ? standsInVisualSnow(x, groundY + 1, z) : standsInSnow(chunk, x, groundY + 1, z)) {
+        // With the visual snow on, a plant stands in snow by its own snow at its base and, as without
+        // it, by real snow lying beside it: up to 1.1.4 only the first counted then, so a plant whose
+        // own point the season's share hadn't reached stayed green between real snow layers.
+        if (standsInSnow(chunk, x, groundY + 1, z) || (visualPlants && standsInVisualSnow(x, groundY + 1, z))) {
             flags |= SnowCoverGrid.PLANT_IN_SNOW;
         }
         snowCover.setFan(x, z, SnowFanField.BLOCKED, groundY);
@@ -825,10 +832,18 @@ final class FluidColumnMap implements AutoCloseable {
         if (!ground.getFluidState().isEmpty() || ground.is(BlockTags.LOGS) || ground.is(BlockTags.SNOW) || ground.is(BlockTags.ICE)) {
             return false;
         }
-        if (!ground.isFaceSturdy(chunk, probeCursor.set(x, y, z), Direction.UP)) {
+        if (!ground.isFaceSturdy(chunk, probeCursor.set(x, y, z), Direction.UP) && !doorstep(ground)) {
             return false;
         }
         return !chunk.getBlockState(probeCursor.set(x, y + 1, z)).is(BlockTags.SNOW);
+    }
+
+    /** A bottom slab or the lower half of a stair: a doorstep's top takes the dusting too (visual-snow-117). */
+    private static boolean doorstep(BlockState ground) {
+        if (ground.getBlock() instanceof SlabBlock) {
+            return ground.getValueOrElse(BlockStateProperties.SLAB_TYPE, SlabType.DOUBLE) == SlabType.BOTTOM;
+        }
+        return ground.getBlock() instanceof StairBlock && ground.getValueOrElse(BlockStateProperties.HALF, Half.TOP) == Half.BOTTOM;
     }
 
     /** Spruce and, for other mods' trees, leaves named for a needle-leaved tree hold more snow. */

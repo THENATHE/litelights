@@ -31,6 +31,11 @@ import java.util.Map;
  * light, no block light) belongs to a closed cave nobody far away can see, and is left out. That
  * keeps the quads to the land's outer shell.
  *
+ * <p><b>Steps.</b> At coarse levels a voxel's top is drawn where its land really ends (its inset,
+ * {@link TileVoxels#inset}), so two whole voxels side by side can end at different heights. The
+ * higher one's side is drawn against the lower one there, down to the row's bottom, so a slope
+ * within one row of voxels is a staircase, not a stack of loose planes.
+ *
  * <p><b>Borders.</b> A face on a tile's edge looks across at the neighbour tile's edge column
  * ({@link EdgeTops}). It is drawn from the neighbour's top up (the neighbour's own top row
  * included, which the neighbour covers when both are drawn at this level and which closes the
@@ -85,6 +90,15 @@ public final class FarMesher {
      * @param caveCulling  leave out faces on unlit air (dimensions with sky light)
      */
     public FarMesh mesh(TileVoxels tile, EdgeTops outside, FaceLooks looks, boolean caveCulling) {
+        return mesh(tile, outside, looks, caveCulling, NO_LIGHT_FLOOR);
+    }
+
+    /**
+     * As above, with no light points from light sources below {@code lightFloorY} (a world height:
+     * the sea level in dimensions with sky light, so lava and lit caves under the sea and under
+     * lakes don't glow through the water; {@link #NO_LIGHT_FLOOR} for none).
+     */
+    public FarMesh mesh(TileVoxels tile, EdgeTops outside, FaceLooks looks, boolean caveCulling, int lightFloorY) {
         quads = 0;
         int[] firstQuad = new int[FarMesh.BUCKETS];
         int[] quadCount = new int[FarMesh.BUCKETS];
@@ -166,7 +180,7 @@ public final class FarMesher {
         }
         quadCount[FarMesh.WATER] = quads - firstQuad[FarMesh.WATER];
         firstQuad[FarMesh.LIGHTS] = quads;
-        meshLights(tile, looks, lowest, highest);
+        meshLights(tile, looks, lowest, highest, lightFloorY);
         quadCount[FarMesh.LIGHTS] = quads - firstQuad[FarMesh.LIGHTS];
         return new FarMesh(Arrays.copyOf(output, quads * FarQuad.INTS), firstQuad, quadCount, lowest, highest);
     }
@@ -307,6 +321,11 @@ public final class FarMesher {
                     hidden = hiding[base + word] >>> 1 | (word + 1 < words ? hiding[base + word + 1] << 63 : 0L);
                 } else if (face == FarQuad.DOWN) {
                     hidden = hiding[base + word] << 1 | (word > 0 ? hiding[base + word - 1] >>> 63 : 0L);
+                } else if (!water && tile.level > 0) {
+                    // A coarse neighbour's top voxel may end lower than this one (its inset):
+                    // faceKey decides whether the step between them shows.
+                    long above = hiding[neighbour + word] >>> 1 | (word + 1 < words ? hiding[neighbour + word + 1] << 63 : 0L);
+                    hidden = hiding[neighbour + word] & above;
                 } else {
                     hidden = hiding[neighbour + word];
                 }
@@ -364,13 +383,16 @@ public final class FarMesher {
         } else {
             int neighbourIndex = TileVoxels.index(nx, ny, nz);
             if (covers(tile, looks, neighbourIndex, OPPOSITE[face], water)) {
-                return 0;
-            }
-            if (kinds[neighbourIndex] == BlockKinds.WATER && !openWater(tile, nx, nz, tops)) {
+                if (water || !stepBeside(tile, face, index, neighbourIndex, y == ownTop)) {
+                    return 0;
+                }
+                light = lightOver(tile, nx, ny, nz, tops);
+            } else if (kinds[neighbourIndex] == BlockKinds.WATER && !openWater(tile, nx, nz, tops)) {
                 // Under ice or anything else over the water: nobody sees this floor.
                 return 0;
+            } else {
+                light = kinds[neighbourIndex] == BlockKinds.WATER ? underWaterLight(tile, nx, ny, nz, tops) : tile.light[neighbourIndex] & 0xFF;
             }
-            light = kinds[neighbourIndex] == BlockKinds.WATER ? underWaterLight(tile, nx, ny, nz, tops) : tile.light[neighbourIndex] & 0xFF;
             if (caveCulling && light == 0) {
                 return 0;
             }
@@ -430,6 +452,35 @@ public final class FarMesher {
             case FarShape.BOXES -> looks.shape(tile.states[index]).coversSide(side);
             default -> false;
         };
+    }
+
+    /**
+     * Whether a coarse voxel's side shows against a whole neighbour beside it: where the neighbour's
+     * land ends lower in this row than this voxel's (a larger inset under open air or water), the
+     * step between the two tops is this voxel's side. Without it the tops of a slope within one row
+     * of voxels are flat planes at different heights with gaps between them. The face reaches down
+     * to the row's bottom, behind the neighbour's top, as a border face's skirt does.
+     */
+    private boolean stepBeside(TileVoxels tile, int face, int index, int neighbourIndex, boolean ownTop) {
+        if (tile.level == 0 || face < FarQuad.NORTH) {
+            return false;
+        }
+        int above = neighbourIndex + TileVoxels.COLUMNS;
+        if (above < kinds.length && kinds[above] == BlockKinds.SOLID) {
+            return false;
+        }
+        int ownInset = ownTop ? TileVoxels.inset(tile, index) : 0;
+        return TileVoxels.inset(tile, neighbourIndex) > ownInset;
+    }
+
+    /** The light over a voxel's top: in the air or water above it, or the open sky over the tile. */
+    private int lightOver(TileVoxels tile, int x, int y, int z, int[] tops) {
+        int above = y + 1;
+        if (above >= tile.height) {
+            return 0xF0;
+        }
+        int index = TileVoxels.index(x, above, z);
+        return kinds[index] == BlockKinds.WATER ? underWaterLight(tile, x, above, z, tops) : tile.light[index] & 0xFF;
     }
 
     private static int edgeOf(int face) {
@@ -761,9 +812,15 @@ public final class FarMesher {
     /** A cell of lights is this many voxels a side. */
     private static final int LIGHT_CELL = 4;
     private static final int MAX_LIGHT_POINTS = 512;
+    /** No floor under the light points: every light shows. */
+    public static final int NO_LIGHT_FLOOR = Integer.MIN_VALUE;
 
-    /** Gathers the tile's lights into cells, a point per cell at its brightest light. */
-    private void meshLights(TileVoxels tile, FaceLooks looks, int lowest, int highest) {
+    /**
+     * Gathers the tile's lights into cells, a point per cell at its brightest light, leaving out
+     * every light whose source lies below {@code floorY}: a light block's own row (at coarse levels
+     * where its voxel's land ends, its inset), or for a voxel lit by blocks the voxel's top.
+     */
+    private void meshLights(TileVoxels tile, FaceLooks looks, int lowest, int highest, int floorY) {
         int cellsAcross = TileVoxels.SIZE / LIGHT_CELL;
         int cellRows = (highest + 1) / LIGHT_CELL + 1;
         int[] best = null;
@@ -789,6 +846,9 @@ public final class FarMesher {
                     brightness = (tile.light[index] & 15) - 2;
                     colour = WARM_LIGHT;
                 } else {
+                    continue;
+                }
+                if (floorY != NO_LIGHT_FLOOR && lightSourceY(tile, index, y) < floorY) {
                     continue;
                 }
                 if (best == null) {
@@ -824,6 +884,13 @@ public final class FarMesher {
             quads++;
             emitted++;
         }
+    }
+
+    /** The world height of the light a voxel stands for: a light block's own row, or a lit air voxel's top. */
+    private int lightSourceY(TileVoxels tile, int index, int y) {
+        int size = 1 << tile.level;
+        int top = tile.minY + (y + 1) * size - 1;
+        return kinds[index] == BlockKinds.AIR ? top : top - TileVoxels.inset(tile, index);
     }
 
     // --- Merging ---

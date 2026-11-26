@@ -2,10 +2,12 @@ package com.thenathe.litelights.gui;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.thenathe.litelights.config.Cost;
 import com.thenathe.litelights.config.LiteLightsConfig;
 import com.thenathe.litelights.config.Pages;
 import com.thenathe.litelights.config.RowState;
 import com.thenathe.litelights.gui.widget.ArmedButton;
+import com.thenathe.litelights.gui.widget.CreditHeart;
 import com.thenathe.litelights.gui.widget.DropdownWidget;
 import com.thenathe.litelights.gui.widget.FoldStrip;
 import com.thenathe.litelights.gui.widget.Ink;
@@ -17,6 +19,7 @@ import com.thenathe.litelights.gui.widget.SliderWidget;
 import com.thenathe.litelights.gui.widget.ToggleWidget;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -143,7 +146,7 @@ public final class SettingsScreen extends Screen {
     protected void init() {
         popup.close();
         buildModels();
-        layout = ScreenLayout.of(width, height, fullScreenWanted(), pages.size());
+        layout = ScreenLayout.of(width, height, fullScreenWanted(), pages.size()).withCostColumn(costBadgeW());
 
         search = new SearchField(layout.searchX(), layout.searchY(), layout.searchW(), ScreenLayout.SEARCH_H,
                 Component.translatable("litelights.search"));
@@ -358,10 +361,20 @@ public final class SettingsScreen extends Screen {
     }
 
     private int buildPage(PageModel model, int y) {
-        for (PageModel.Section section : model.sections()) {
+        // Only what is on the page now: rows locked by another setting are left out, with any
+        // sub-heading or section they leave empty.
+        List<PageModel.Section> sections = model.shownSections();
+        // A page's own credit is a heart beside its first caption; a page with no caption keeps it as a note.
+        Component credit = model.credit();
+        if (credit != null && sections.stream().noneMatch(section -> section.caption() != null)) {
+            y = addNote(new PageModel.Note(credit), y, false);
+            credit = null;
+        }
+        for (PageModel.Section section : sections) {
             boolean grouped = false;
             if (section.caption() != null) {
-                y = addCaption(model.page(), section, y);
+                y = addCaption(model.page(), section, y, credit);
+                credit = null;
                 grouped = true;
                 if (isFolded(model.page(), section)) {
                     continue;
@@ -378,26 +391,7 @@ public final class SettingsScreen extends Screen {
         String needle = query.toLowerCase(Locale.ROOT).strip();
         for (Pages.PageInfo info : pages) {
             PageModel model = models.get(info.id());
-            List<PageModel.Entry> matches = new ArrayList<>();
-            for (PageModel.Section section : model.sections()) {
-                String caption = section.caption() == null ? "" : section.caption().getString().toLowerCase(Locale.ROOT);
-                PageModel.Subheading heading = null;
-                for (PageModel.Entry entry : section.entries()) {
-                    if (entry instanceof PageModel.Subheading subheading) {
-                        heading = subheading;
-                        continue;
-                    }
-                    String label = searchableLabel(entry);
-                    String headingText = heading == null ? "" : heading.caption().getString().toLowerCase(Locale.ROOT);
-                    if (label != null && (label.contains(needle) || caption.contains(needle) || headingText.contains(needle))) {
-                        // Rows under a sub-heading share their labels ("Fog density"): keep the heading above them.
-                        if (heading != null && !matches.contains(heading)) {
-                            matches.add(heading);
-                        }
-                        matches.add(entry);
-                    }
-                }
-            }
+            List<PageModel.Entry> matches = model.matches(needle);
             if (matches.isEmpty()) {
                 continue;
             }
@@ -409,14 +403,6 @@ public final class SettingsScreen extends Screen {
             }
         }
         return y;
-    }
-
-    private static String searchableLabel(PageModel.Entry entry) {
-        return switch (entry) {
-            case PageModel.Setting setting -> setting.value().shown() ? setting.value().label().getString().toLowerCase(Locale.ROOT) : null;
-            case PageModel.Action action -> action.label().getString().toLowerCase(Locale.ROOT);
-            default -> null;
-        };
     }
 
     private String foldKey(String pageId, PageModel.Section section) {
@@ -433,15 +419,19 @@ public final class SettingsScreen extends Screen {
         return section.entries().stream().anyMatch(entry -> entry instanceof PageModel.Setting setting && setting.value().changed());
     }
 
-    private int addCaption(String pageId, PageModel.Section section, int y) {
+    private int addCaption(String pageId, PageModel.Section section, int y, Component credit) {
         int h = rows.isEmpty() ? FIRST_CAPTION_H : CAPTION_H;
         FoldStrip strip = new FoldStrip(layout.listW(), 12, section.caption(), () -> {
             String key = foldKey(pageId, section);
             folded.put(key, !folded.getOrDefault(key, false));
             rebuildList();
         });
-        List<Placed> placed = List.of(new Placed(strip, 0, h - 13));
-        register(placed);
+        List<Placed> placed = new ArrayList<>(List.of(new Placed(strip, 0, h - 13)));
+        if (credit != null) {
+            placed.add(new Placed(new CreditHeart(credit), 0, h - 12));
+        }
+        // The heart takes clicks before the strip under it, so pointing at it never folds the section.
+        register(placed.reversed());
         rows.add(new ListRow(RowKind.CAPTION, new CaptionState(pageId, section), y, h, false, placed));
         return y + h;
     }
@@ -460,7 +450,10 @@ public final class SettingsScreen extends Screen {
         };
     }
 
-    /** The line under a row: its feature's reason if it leads the feature, then its credit. */
+    /**
+     * The lines under a row: its feature's reason if it leads the feature, then what its status
+     * stands for. A credit isn't one of them; it is the heart's tooltip.
+     */
     private List<Detail> details(RowValue value) {
         List<Detail> lines = new ArrayList<>();
         RowState state = value.state();
@@ -474,8 +467,14 @@ public final class SettingsScreen extends Screen {
                 }
             }
         }
-        if (value.credit() != null) {
-            lines.add(new Detail(value.credit().copy().withStyle(ChatFormatting.ITALIC), Theme.TEXT_DIM));
+        Component detail = value.detail();
+        if (detail != null && !detail.getString().isEmpty()) {
+            lines.add(new Detail(detail, Theme.TEXT_DIM));
+        }
+        // A row locked off its page is only ever seen in search: say why it isn't on the page.
+        Component locked = value.lockedTag();
+        if (searching() && locked != null) {
+            lines.add(new Detail(Component.translatable("litelights.search.locked", locked), Theme.NOTICE));
         }
         return lines;
     }
@@ -527,9 +526,13 @@ public final class SettingsScreen extends Screen {
             }
         }
         if (value.tracked()) {
-            placed.add(new Placed(new ResetWidget(value, this::rebuildList), layout.resetDx(), (ROW_H - ResetWidget.SIZE) / 2));
+            placed.add(new Placed(new ResetWidget(value, this::rebuildKeepingPlace), layout.resetDx(), (ROW_H - ResetWidget.SIZE) / 2));
         }
-        register(placed);
+        // Last, so the choice segments keep their indices; drawSetting moves it to the name's end.
+        if (value.credit() != null) {
+            placed.add(new Placed(new CreditHeart(value.credit()), 0, (ROW_H - CreditHeart.HEIGHT) / 2));
+        }
+        register(focusOrder(placed));
         int detailLines = detailLines(value).size();
         int h = ROW_H + detailLines * LINE + (detailLines == 0 ? 0 : 2);
         rows.add(new ListRow(RowKind.SETTING, value, y, h, grouped, placed));
@@ -594,7 +597,7 @@ public final class SettingsScreen extends Screen {
     }
 
     private int addAction(PageModel.Action action, int y, boolean grouped) {
-        int w = layout.resetDx() + ResetWidget.SIZE - layout.controlDx();
+        int w = layout.listW() - layout.actionDx();
         Runnable run = action.opener() != null
                 ? () -> minecraft.gui.setScreen(action.opener().apply(this))
                 : () -> {
@@ -607,7 +610,7 @@ public final class SettingsScreen extends Screen {
         AbstractWidget button = action.confirm()
                 ? new ArmedButton(0, 0, w, CONTROL_H, action.button(), run)
                 : new LiteButton(0, 0, w, CONTROL_H, action.button(), run);
-        List<Placed> placed = List.of(new Placed(button, layout.controlDx(), (ROW_H - CONTROL_H) / 2));
+        List<Placed> placed = List.of(new Placed(button, layout.actionDx(), (ROW_H - CONTROL_H) / 2));
         register(placed);
         rows.add(new ListRow(RowKind.ACTION, action, y, ROW_H, grouped, placed));
         return y + ROW_H;
@@ -679,6 +682,13 @@ public final class SettingsScreen extends Screen {
         return TextColor.fromRgb(argb & 0xFFFFFF);
     }
 
+    /** Tab goes along a row as it reads: the heart beside the name first, then the control and the reset. */
+    private static List<Placed> focusOrder(List<Placed> placed) {
+        List<Placed> ordered = new ArrayList<>(placed);
+        ordered.sort(Comparator.comparingInt(widget -> widget.widget() instanceof CreditHeart ? 0 : 1));
+        return ordered;
+    }
+
     private void register(List<Placed> placed) {
         for (Placed widget : placed) {
             listWidgets.add(widget.widget());
@@ -720,8 +730,35 @@ public final class SettingsScreen extends Screen {
      */
     private void rebuildIfLayoutChanged() {
         if (!layoutSignature().equals(builtLayout)) {
-            rebuildList();
+            rebuildKeepingPlace();
         }
+    }
+
+    private void rebuildKeepingPlace() {
+        // A change can take rows off the page or bring them back (the Clouds choice locks rows below
+        // it). The row being changed, and everything above it, stays where it is on screen: the
+        // scroll follows that row, with room left at the end if the page got shorter.
+        Object anchor = focusedSource() != null ? focusedSource() : described;
+        int anchorBefore = contentY(anchor);
+        int scrollBefore = scroll;
+        rebuildList();
+        int anchorAfter = contentY(anchor);
+        int wanted = Math.max(0, anchorBefore >= 0 && anchorAfter >= 0 ? scrollBefore + anchorAfter - anchorBefore : scrollBefore);
+        if (wanted != scroll) {
+            contentHeight = Math.max(contentHeight, wanted + layout.shortestListH());
+            scroll = wanted;
+            placeWidgets();
+        }
+    }
+
+    /** Where a row starts in the list's own coordinates, or -1 when it isn't in the list. */
+    private int contentY(Object source) {
+        for (ListRow row : rows) {
+            if (source != null && row.source() == source) {
+                return row.y();
+            }
+        }
+        return -1;
     }
 
     /** Per setting row of what the list is built from: whether it shows, its state, its extra lines. */
@@ -747,6 +784,7 @@ public final class SettingsScreen extends Screen {
                     RowValue value = setting.value();
                     boolean shown = value.shown();
                     signature.add(shown);
+                    signature.add(value.lockedTag() != null);
                     if (shown) {
                         signature.add(value.state());
                         signature.add(detailLines(value).size());
@@ -767,7 +805,8 @@ public final class SettingsScreen extends Screen {
             boolean usable = value.state().editable() && value.active();
             for (Placed placed : row.widgets()) {
                 AbstractWidget widget = placed.widget();
-                if (widget instanceof ResetWidget) {
+                // The credit stays reachable on a row that is greyed out.
+                if (widget instanceof ResetWidget || widget instanceof CreditHeart) {
                     continue;
                 }
                 if (value.state() instanceof RowState.Failed && value.leadsFeature()) {
@@ -897,13 +936,29 @@ public final class SettingsScreen extends Screen {
 
         if (layout.describeH() > 0) {
             drawDescription(graphics, pointerX, pointerY);
-        } else if (pointed != null && pointerX >= layout.listX() && pointerX < layout.listX() + layout.controlDx()) {
+        } else if (pointed != null && pointerX >= layout.listX() && pointerX < layout.listX() + layout.controlDx()
+                && !creditHeartHovered()) {
             Component description = descriptionOf(pointed);
             if (description != null) {
                 graphics.setTooltipForNextFrame(tooltipLines(description), pointerX, pointerY);
             }
         }
         popup.extract(graphics, mouseX, mouseY);
+    }
+
+    /** Over a credit heart, its own tooltip shows instead of the row's description. */
+    private boolean creditHeartHovered() {
+        return listWidgets.stream().anyMatch(widget -> widget instanceof CreditHeart && widget.visible && widget.isHovered());
+    }
+
+    /** The row's credit heart, or null when it has none. */
+    private static CreditHeart creditHeart(ListRow row) {
+        for (Placed placed : row.widgets()) {
+            if (placed.widget() instanceof CreditHeart heart) {
+                return heart;
+            }
+        }
+        return null;
     }
 
     /** Rows that light up under the pointer and fill the description box; headings don't. */
@@ -981,7 +1036,7 @@ public final class SettingsScreen extends Screen {
             case NOTE -> drawNote(graphics, (PageModel.Note) row.source(), top);
             case SETTING -> drawSetting(graphics, (RowValue) row.source(), row, top);
             case RECOMMENDATION -> drawRecommendation(graphics, (PageModel.Recommendation) row.source(), top);
-            case ACTION -> drawLabel(graphics, ((PageModel.Action) row.source()).label(), top, Theme.TEXT, layout.controlDx() - 6);
+            case ACTION -> drawLabel(graphics, ((PageModel.Action) row.source()).label(), top, Theme.TEXT, layout.actionDx() - 6);
             case CARD -> drawCard(graphics, (PageModel.Card) row.source(), top, row.h() - 4);
         }
         // A sub-heading has no rule under it, so it reads as the title of the rows that follow.
@@ -1002,15 +1057,24 @@ public final class SettingsScreen extends Screen {
     private void drawSetting(GuiGraphicsExtractor graphics, RowValue value, ListRow row, int top) {
         RowState state = value.state();
         boolean usable = state.editable() && value.active();
-        int badgeW = drawBadge(graphics, value, top);
-        int room = layout.controlDx() - 6 - badgeW;
-        String label = Ink.trim(font, value.label().getString(), room - (value.changed() ? 5 : 0));
+        CreditHeart heart = creditHeart(row);
+        NameLine line = nameLine(value, heart != null);
         int labelY = top + (ROW_H - 8) / 2;
-        graphics.text(font, label, layout.listX(), labelY, usable ? Theme.TEXT : Theme.TEXT_OFF, usable);
-        if (value.changed()) {
-            int markX = layout.listX() + font.width(label) + 3;
-            graphics.fill(markX, labelY + 2, markX + 3, labelY + 5, Theme.CHANGED);
+        graphics.text(font, line.label(), layout.listX(), labelY, usable ? Theme.TEXT : Theme.TEXT_OFF, usable);
+        if (heart != null) {
+            // The name's length changes with trimming, so the heart follows it each frame.
+            heart.setX(line.heartX());
         }
+        if (value.changed()) {
+            graphics.fill(line.markX(), labelY + 2, line.markX() + 3, labelY + 5, Theme.CHANGED);
+        }
+        if (line.tag() != null) {
+            drawRowTag(graphics, value, line, top + (ROW_H - 11) / 2);
+        }
+        if (state instanceof RowState.ComingSoon) {
+            drawComingSoon(graphics, top);
+        }
+        drawCost(graphics, value, top);
         if (value.kind() == RowValue.Kind.NOTICE) {
             drawNoticeStatus(graphics, value, top);
         }
@@ -1022,13 +1086,69 @@ public final class SettingsScreen extends Screen {
     }
 
     /**
+     * A setting row's name and what follows it: the name as shortened to fit, and where the heart,
+     * the changed marker and the row's tag (such as Experimental) go. The tag shows as its word
+     * when the whole name still fits beside it, otherwise as a small flask chip.
+     */
+    private record NameLine(String label, int heartX, int markX, Component tag, int tagX, int tagW, boolean tagCompact) {
+    }
+
+    private NameLine nameLine(RowValue value, boolean credited) {
+        String name = value.label().getString();
+        int room = ScreenLayout.labelRoom(ScreenLayout.nameRoom(controlLeftDx(value)), credited, value.changed());
+        Component tag = value.rowTag();
+        int tagW = 0;
+        boolean compact = false;
+        if (tag != null) {
+            tagW = font.width(tag) + 6;
+            if (font.width(name) + TAG_GAP + tagW > room) {
+                compact = true;
+                tagW = Glyphs.FLASK.width() + 6;
+            }
+            room -= TAG_GAP + tagW;
+        }
+        String label = Ink.trim(font, name, room);
+        int x = layout.listX() + font.width(label);
+        int heartX = x + 3;
+        if (credited) {
+            x += ScreenLayout.HEART_ROOM;
+        }
+        int markX = x + 3;
+        if (value.changed()) {
+            x += ScreenLayout.CHANGED_ROOM;
+        }
+        return new NameLine(label, heartX, markX, tag, x + TAG_GAP, tagW, compact);
+    }
+
+    private static final int TAG_GAP = 4;
+
+    /**
+     * Where the row's own control starts, as an offset from the list's left edge: a switch sits at
+     * the controls' right edge, sliders and choices take the controls' whole width, a notice's
+     * status and "Coming soon" are as wide as their words.
+     */
+    private int controlLeftDx(RowValue value) {
+        if (value.state() instanceof RowState.ComingSoon) {
+            return layout.controlEndDx() - comingSoonW();
+        }
+        if (value.state() instanceof RowState.Failed && value.leadsFeature()) {
+            return layout.controlDx();
+        }
+        return switch (value.kind()) {
+            case TOGGLE -> layout.controlEndDx() - ToggleWidget.WIDTH;
+            case SLIDER, CHOICE -> layout.controlDx();
+            case NOTICE -> noticeStatusLeft(value) - layout.listX();
+        };
+    }
+
+    /**
      * A notice's status, right-aligned where a switch would be: green with a tick while what it
      * stands for is running ("Active"), dimmed otherwise, with the reason on the line under it.
      */
     private void drawNoticeStatus(GuiGraphicsExtractor graphics, RowValue value, int top) {
-        boolean good = value.state() instanceof RowState.Ready;
+        boolean good = value.noticeGood();
         String text = noticeStatusText(value);
-        int x = layout.listX() + layout.controlDx() + layout.controlW() - font.width(text);
+        int x = layout.listX() + layout.controlEndDx() - font.width(text);
         if (good) {
             Glyphs.CHECK.draw(graphics, x - 11, top + (ROW_H - 6) / 2, Theme.GOOD);
         }
@@ -1036,87 +1156,78 @@ public final class SettingsScreen extends Screen {
     }
 
     private String noticeStatusText(RowValue value) {
-        int room = layout.controlW() - (value.state() instanceof RowState.Ready ? 11 : 0);
+        int room = layout.controlW() - (value.noticeGood() ? 11 : 0);
         return Ink.trim(font, value.format(value.value()).getString(), room);
     }
 
-    /** Where a notice's status starts, tick included, so its tag can sit just before it. */
+    /** Where a notice's status starts, tick included. */
     private int noticeStatusLeft(RowValue value) {
-        int tick = value.state() instanceof RowState.Ready ? 11 : 0;
-        return layout.listX() + layout.controlDx() + layout.controlW() - font.width(noticeStatusText(value)) - tick;
+        int tick = value.noticeGood() ? 11 : 0;
+        return layout.listX() + layout.controlEndDx() - font.width(noticeStatusText(value)) - tick;
     }
 
-    /**
-     * The cost badge just before the control, or "Coming soon" while the feature isn't built.
-     * On narrow lists it shrinks to a coloured dot. Returns the room it took.
-     */
-    private int drawBadge(GuiGraphicsExtractor graphics, RowValue value, int top) {
-        boolean comingSoon = value.state() instanceof RowState.ComingSoon;
-        int right = layout.listX() + (comingSoon ? layout.controlDx() + layout.controlW() : layout.controlDx() - 4);
-        if (value.kind() == RowValue.Kind.NOTICE) {
-            // A notice costs nothing and has no control: its tag (such as Temporary) sits just before
-            // the short status, leaving the label the room a control would have taken.
-            int tagRight = noticeStatusLeft(value) - 6;
-            int taken = drawRowTag(graphics, value, tagRight, top + (ROW_H - 11) / 2, 0);
-            return layout.listX() + layout.controlDx() - (tagRight - taken);
-        }
-        if (!value.tracked()) {
-            return 0;
-        }
-        if (!comingSoon && !(value.state() instanceof RowState.Ready || value.state() instanceof RowState.Failed)) {
-            // No cost badge while the row can't be used, but an Experimental tag still says what it is.
-            return drawRowTag(graphics, value, right, top + (ROW_H - 11) / 2, 0);
-        }
-        Component text = comingSoon ? Component.translatable("litelights.state.coming_soon")
-                : Component.translatable(value.cost().translationKey());
-        int colour = comingSoon ? Theme.TEXT_DIM : Theme.costColour(value.cost());
-        int textW = font.width(text);
-        boolean roomy = comingSoon || layout.controlDx() - textW - 10 >= 70;
-        if (!roomy) {
-            int dotY = top + ROW_H / 2 - 2;
-            Surfaces.rounded(graphics, right - 5, dotY, 5, 5, colour);
-            return 9;
-        }
-        int w = textW + 6;
+    /** "Coming soon" takes the control's place while the feature isn't built. */
+    private void drawComingSoon(GuiGraphicsExtractor graphics, int top) {
+        Component text = Component.translatable("litelights.state.coming_soon");
+        int w = comingSoonW();
+        int x = layout.listX() + layout.controlEndDx() - w;
         int y = top + (ROW_H - 11) / 2;
-        Surfaces.chip(graphics, right - w, y, w, 11, colour);
-        graphics.text(font, text, right - w + 3, y + 2, colour, false);
-        if (comingSoon) {
-            return 0;
+        Surfaces.chip(graphics, x, y, w, 11, Theme.TEXT_DIM);
+        graphics.text(font, text, x + 3, y + 2, Theme.TEXT_DIM, false);
+    }
+
+    private int comingSoonW() {
+        return font.width(Component.translatable("litelights.state.coming_soon")) + 6;
+    }
+
+    /** The widest cost badge, so every badge in the cost column is the same width and they line up. */
+    private int costBadgeW() {
+        int widest = 0;
+        for (Cost cost : Cost.values()) {
+            widest = Math.max(widest, font.width(Component.translatable(cost.translationKey())));
         }
-        return drawRowTag(graphics, value, right, y, w + 4);
+        return widest + 6;
     }
 
     /**
-     * The row's tag (such as Experimental) left of what already sits at the right; returns the room
-     * taken in all. Where the word would squeeze the label, a small flask chip stands in for it and
-     * the word shows as a tooltip over the chip. A tag with a tooltip of its own (such as Temporary)
-     * shows that over the chip instead, in either form.
+     * The cost column at the right edge of the row: the cost badge, or a coloured dot on narrow
+     * lists. A notice, a row with no default, a row that can't be used and a locked row (seen only
+     * in search, where the line under it says why) show none.
      */
-    private int drawRowTag(GuiGraphicsExtractor graphics, RowValue value, int right, int y, int taken) {
-        Component tag = value.rowTag();
-        if (tag == null) {
-            return taken;
+    private void drawCost(GuiGraphicsExtractor graphics, RowValue value, int top) {
+        int x = layout.listX() + layout.costDx();
+        int w = layout.costW();
+        int y = top + (ROW_H - 11) / 2;
+        if (value.lockedTag() != null || value.kind() == RowValue.Kind.NOTICE || !value.tracked()
+                || !(value.state() instanceof RowState.Ready || value.state() instanceof RowState.Failed)) {
+            return;
         }
+        int colour = Theme.costColour(value.cost());
+        if (!layout.costWords()) {
+            Surfaces.rounded(graphics, x + (w - 5) / 2, top + ROW_H / 2 - 2, 5, 5, colour);
+            return;
+        }
+        Component text = Component.translatable(value.cost().translationKey());
+        Surfaces.chip(graphics, x, y, w, 11, colour);
+        graphics.text(font, text, x + (w - font.width(text)) / 2, y + 2, colour, false);
+    }
+
+    /**
+     * The row's tag (such as Experimental) after its name, as its word or, where the word would
+     * cut the name short, a small flask chip with the word as a tooltip. A tag with a tooltip of
+     * its own (such as Temporary) shows that over the chip instead, in either form.
+     */
+    private void drawRowTag(GuiGraphicsExtractor graphics, RowValue value, NameLine line, int y) {
         Component tooltip = value.rowTagTooltip();
-        int tagRight = right - taken;
-        int tagW = font.width(tag) + 6;
-        if (layout.controlDx() - taken - tagW - 10 >= 70) {
-            Surfaces.chip(graphics, tagRight - tagW, y, tagW, 11, Theme.NOTICE);
-            graphics.text(font, tag, tagRight - tagW + 3, y + 2, Theme.NOTICE, false);
-            if (tooltip != null && pointerOverChip(tagRight - tagW, tagW, y)) {
-                hoveredTag = tooltip;
-            }
-            return taken + tagW + 4;
+        Surfaces.chip(graphics, line.tagX(), y, line.tagW(), 11, Theme.NOTICE);
+        if (line.tagCompact()) {
+            Glyphs.FLASK.drawCentred(graphics, line.tagX(), y, line.tagW(), 11, Theme.NOTICE);
+        } else {
+            graphics.text(font, line.tag(), line.tagX() + 3, y + 2, Theme.NOTICE, false);
         }
-        int chipW = Glyphs.FLASK.width() + 6;
-        int chipX = tagRight - chipW;
-        Surfaces.chip(graphics, chipX, y, chipW, 11, Theme.NOTICE);
-        Glyphs.FLASK.drawCentred(graphics, chipX, y, chipW, 11, Theme.NOTICE);
-        if (pointerOverChip(chipX, chipW, y)) {
-            hoveredTag = tooltip != null ? tooltip : tag;
+        if (pointerOverChip(line.tagX(), line.tagW(), y) && (tooltip != null || line.tagCompact())) {
+            hoveredTag = tooltip != null ? tooltip : line.tag();
         }
-        return taken + chipW + 4;
     }
 
     private boolean pointerOverChip(int chipX, int chipW, int y) {
@@ -1126,14 +1237,21 @@ public final class SettingsScreen extends Screen {
     private void drawCaption(GuiGraphicsExtractor graphics, CaptionState state, ListRow row, int y) {
         int x = layout.listX();
         FoldStrip strip = (FoldStrip) row.widgets().getFirst().widget();
-        boolean hot = strip.lit();
+        CreditHeart heart = creditHeart(row);
+        // Over the heart a click doesn't fold, so the caption doesn't light up there.
+        boolean hot = strip.lit() && (heart == null || !heart.isHovered());
         boolean isFolded = isFolded(state.pageId(), state.section());
         int colour = hot ? Theme.ACCENT_HOT : Theme.CAPTION;
         Glyphs chevron = isFolded ? Glyphs.CHEVRON_RIGHT : Glyphs.CHEVRON_DOWN;
         chevron.draw(graphics, x + (7 - chevron.width()) / 2, y + (8 - chevron.height()) / 2, colour);
-        String text = Ink.trim(font, state.section().caption().getString().toUpperCase(Locale.ROOT), layout.listW() - 20);
+        int room = layout.listW() - 20 - (heart != null ? ScreenLayout.HEART_ROOM : 0);
+        String text = Ink.trim(font, state.section().caption().getString().toUpperCase(Locale.ROOT), room);
         graphics.text(font, text, x + 10, y, colour, false);
         int textEnd = x + 10 + font.width(text);
+        if (heart != null) {
+            heart.setX(textEnd + 3);
+            textEnd += ScreenLayout.HEART_ROOM;
+        }
         if (isFolded && sectionChanged(state.section())) {
             graphics.fill(textEnd + 3, y + 2, textEnd + 6, y + 5, Theme.CHANGED);
         }
@@ -1275,6 +1393,11 @@ public final class SettingsScreen extends Screen {
                 heading.append(Component.literal("  "))
                         .append(Component.translatable(value.changed() ? "litelights.description.changed" : "litelights.description.default")
                                 .withStyle(style -> style.withItalic(true).withColor(rgb(Theme.TEXT_DIM))));
+            }
+            // The row's tag or locked reason in words, which the row itself may show only as a chip.
+            if (value.rowTag() != null) {
+                heading.append(Component.literal("  "))
+                        .append(value.rowTag().copy().withStyle(style -> style.withColor(rgb(Theme.NOTICE))));
             }
         }
         return new DescriptionText(font.split(heading, textW), font.split(description, textW), false);
@@ -1517,7 +1640,7 @@ public final class SettingsScreen extends Screen {
         }
         for (Placed placed : row.widgets()) {
             AbstractWidget widget = placed.widget();
-            if (!(widget instanceof ResetWidget)) {
+            if (!(widget instanceof ResetWidget) && !(widget instanceof CreditHeart)) {
                 boolean inside = widget.visible && widget.getY() >= layout.listY() && widget.getBottom() <= layout.listBottom();
                 return inside ? new int[] {widget.getX() + widget.getWidth() / 2, widget.getY() + widget.getHeight() / 2} : null;
             }
@@ -1595,10 +1718,9 @@ public final class SettingsScreen extends Screen {
         }
         for (ListRow row : rows) {
             if (row.source() instanceof RowValue value && value.label().getString().equals(name)) {
-                int badgeW = font.width(Component.translatable(value.cost().translationKey())) + 6;
-                boolean roomy = layout.controlDx() - font.width(Component.translatable(value.cost().translationKey())) - 10 >= 70;
-                int right = layout.listX() + layout.controlDx() - 4 - (roomy ? badgeW + 4 : 9);
-                return new int[] {right - (Glyphs.FLASK.width() + 6) / 2, label[1]};
+                NameLine line = nameLine(value, creditHeart(row) != null);
+                int tagW = line.tag() != null ? line.tagW() : Glyphs.FLASK.width() + 6;
+                return new int[] {line.tagX() + tagW / 2, label[1]};
             }
         }
         return null;
@@ -1614,6 +1736,33 @@ public final class SettingsScreen extends Screen {
         throw new IllegalStateException("No preview button for " + control);
     }
 
+    /** For QA: the rows and captions on show that carry a credit heart, each with the credit it shows. */
+    public Map<String, String> creditHearts() {
+        Map<String, String> hearts = new LinkedHashMap<>();
+        for (ListRow row : rows) {
+            CreditHeart heart = creditHeart(row);
+            if (heart != null) {
+                hearts.put(heartRowName(row), heart.credit().getString());
+            }
+        }
+        return hearts;
+    }
+
+    /** For QA: the middle of the credit heart on the row or caption with this name, in GUI pixels, or null. */
+    public int[] creditHeartPoint(String name) {
+        for (ListRow row : rows) {
+            CreditHeart heart = creditHeart(row);
+            if (heart != null && heart.visible && name.equals(heartRowName(row))) {
+                return new int[] {heart.getX() + CreditHeart.WIDTH / 2, heart.getY() + CreditHeart.HEIGHT / 2};
+            }
+        }
+        return null;
+    }
+
+    private static String heartRowName(ListRow row) {
+        return row.source() instanceof CaptionState caption ? caption.section().caption().getString() : describableName(row);
+    }
+
     /** For QA: whether the row with this name is in the list, and whether its control takes input. */
     public boolean hasRow(String name) {
         return rows.stream().anyMatch(row -> row.source() instanceof RowValue value && value.label().getString().equals(name));
@@ -1622,7 +1771,8 @@ public final class SettingsScreen extends Screen {
     public boolean rowUsable(String name) {
         for (ListRow row : rows) {
             if (row.source() instanceof RowValue value && value.label().getString().equals(name)) {
-                return row.widgets().stream().anyMatch(placed -> !(placed.widget() instanceof ResetWidget) && placed.widget().active);
+                return row.widgets().stream().anyMatch(placed -> !(placed.widget() instanceof ResetWidget)
+                        && !(placed.widget() instanceof CreditHeart) && placed.widget().active);
             }
         }
         return false;

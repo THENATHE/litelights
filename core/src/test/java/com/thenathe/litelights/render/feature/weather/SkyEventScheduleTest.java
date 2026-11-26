@@ -77,8 +77,8 @@ class SkyEventScheduleTest {
     @Test
     void burstsAreFixedByBeat() {
         SkyEventSchedule.Night night = SkyEventSchedule.night(SEED, 7);
-        float[] first = new float[5];
-        float[] second = new float[5];
+        float[] first = new float[6];
+        float[] second = new float[6];
         for (long beat = 0; beat < 500; beat++) {
             int bursts = SkyEventSchedule.volleySize(SEED, night, beat);
             assertEquals(bursts, SkyEventSchedule.volleySize(SEED, night, beat));
@@ -92,18 +92,23 @@ class SkyEventScheduleTest {
     }
 
     @Test
-    void fireworksStayLowOverTheHorizonSmallAndInTheEvening() {
+    void burstsSpreadOverATownAtTheirOwnSizeAndInTheEvening() {
         SkyEventSchedule.Night night = SkyEventSchedule.night(SEED, 3);
-        float[] burst = new float[5];
+        float[] burst = new float[6];
+        float smallest = Float.MAX_VALUE;
+        float largest = 0.0f;
         for (long beat = 0; beat < 500; beat++) {
             for (int index = 0; index < SkyEventSchedule.volleySize(SEED, night, beat); index++) {
                 SkyEventSchedule.firework(SEED, night, beat, index, burst);
-                assertTrue(burst[1] > Math.toRadians(6.0) && burst[1] < Math.toRadians(22.0));
-                assertTrue(burst[2] >= Math.toRadians(3.6) - 1e-6 && burst[2] <= Math.toRadians(6.6) + 1e-6,
-                    "0.9.8's bursts are about 60 % of 0.9.7's 6 to 11 degrees: " + Math.toDegrees(burst[2]));
+                assertTrue(burst[0] >= -1.0f && burst[0] <= 1.0f && burst[5] >= -1.0f && burst[5] <= 1.0f, "inside the town's spread");
+                assertTrue(burst[1] >= 0.0f && burst[1] < 1.0f, "a share of the room under the clouds");
                 assertTrue(burst[3] >= 0 && burst[3] < 6);
+                smallest = Math.min(smallest, burst[2]);
+                largest = Math.max(largest, burst[2]);
             }
         }
+        assertTrue(smallest >= 30.0f && largest <= 45.0f && largest - smallest > 10.0f,
+            "60 to 90 blocks across: " + smallest + " to " + largest + " radius");
         assertTrue(SkyEventSchedule.fireworksHour(13_500));
         assertTrue(SkyEventSchedule.fireworksHour(3 * 24000 + 15_000));
         assertTrue(!SkyEventSchedule.fireworksHour(6_000));
@@ -111,9 +116,23 @@ class SkyEventScheduleTest {
     }
 
     @Test
+    void theShowsDistanceIsKeptForTheNightAndWithinItsRange() {
+        float nearest = Float.MAX_VALUE;
+        float farthest = 0.0f;
+        for (long index = 0; index < 400; index++) {
+            SkyEventSchedule.Night night = SkyEventSchedule.night(SEED, index);
+            assertEquals(night.fireworksDistance(), SkyEventSchedule.night(SEED, index).fireworksDistance());
+            nearest = Math.min(nearest, night.fireworksDistance());
+            farthest = Math.max(farthest, night.fireworksDistance());
+        }
+        assertTrue(nearest >= FireworksShow.NEAREST && farthest <= FireworksShow.FARTHEST);
+        assertTrue(nearest < 1_600.0f && farthest > 2_900.0f, "spread over the range: " + nearest + " to " + farthest);
+    }
+
+    @Test
     void aVolleyStaysInsideItsBeat() {
         for (SkyEventSchedule.Night night : List.of(SkyEventSchedule.night(SEED, 3),
-                SkyEventSchedule.preview(3, PreviewEvent.Event.FIREWORKS, 0.0f, 0.0f))) {
+                SkyEventSchedule.preview(3, PreviewEvent.Event.FIREWORKS, 0.0f))) {
             int beatTicks = SkyEventSchedule.beatTicks(night);
             for (long beat = -50; beat < 2000; beat++) {
                 int bursts = SkyEventSchedule.volleySize(SEED, night, beat);
@@ -146,7 +165,7 @@ class SkyEventScheduleTest {
 
     @Test
     void aPreviewIsBusierButStillPauses() {
-        Show show = show(SkyEventSchedule.preview(9, PreviewEvent.Event.FIREWORKS, 0.0f, 0.0f), 5_000);
+        Show show = show(SkyEventSchedule.preview(9, PreviewEvent.Event.FIREWORKS, 0.0f), 5_000);
         double average = show.pauses.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
         assertTrue(average > 3.0 && average < 4.5, "about half a real night's pauses: " + average);
         assertTrue(show.pauses.stream().allMatch(pause -> pause >= 1.0), "volleys never run together");
@@ -155,7 +174,7 @@ class SkyEventScheduleTest {
 
     @Test
     void aPreviewShowsItsFirstBurstWithinASecond() {
-        SkyEventSchedule.Night preview = SkyEventSchedule.preview(9, PreviewEvent.Event.FIREWORKS, 0.0f, 0.0f);
+        SkyEventSchedule.Night preview = SkyEventSchedule.preview(9, PreviewEvent.Event.FIREWORKS, 0.0f);
         int beatTicks = SkyEventSchedule.beatTicks(preview);
         for (long chosen = 1_000; chosen < 200_000; chosen += 997) {
             long delay = SkyEventSchedule.previewDelay(SEED, preview, chosen, 10);
@@ -200,19 +219,19 @@ class SkyEventScheduleTest {
     @Test
     void aPreviewShowsOnlyItsEventTowardTheView() {
         float bearing = 2.0f;
-        SkyEventSchedule.Night aurora = SkyEventSchedule.preview(4, PreviewEvent.Event.AURORA, bearing, 0.1f);
+        SkyEventSchedule.Night aurora = SkyEventSchedule.preview(4, PreviewEvent.Event.AURORA, bearing);
         assertTrue(aurora.auroraStrength() > 0.8f && !aurora.meteorShower() && !aurora.fireworks());
         assertEquals(bearing, aurora.auroraBearing());
 
-        SkyEventSchedule.Night meteors = SkyEventSchedule.preview(4, PreviewEvent.Event.METEOR_SHOWER, bearing, 0.1f);
+        SkyEventSchedule.Night meteors = SkyEventSchedule.preview(4, PreviewEvent.Event.METEOR_SHOWER, bearing);
         assertTrue(meteors.meteorShower() && meteors.auroraStrength() == 0.0f && !meteors.fireworks());
 
-        SkyEventSchedule.Night fireworks = SkyEventSchedule.preview(4, PreviewEvent.Event.FIREWORKS, bearing, 0.5f);
+        SkyEventSchedule.Night fireworks = SkyEventSchedule.preview(4, PreviewEvent.Event.FIREWORKS, bearing);
         assertTrue(fireworks.fireworks() && !fireworks.meteorShower() && fireworks.auroraStrength() == 0.0f);
         assertEquals(bearing, fireworks.fireworksAzimuth());
-        assertTrue(fireworks.fireworksLift() > 0.0f, "looking up lifts the bursts into view");
+        assertEquals(FireworksShow.PREVIEW_DISTANCE, fireworks.fireworksDistance(), "a previewed show is at the near end");
 
-        SkyEventSchedule.Night stars = SkyEventSchedule.preview(4, PreviewEvent.Event.FALLING_STARS, bearing, 0.1f);
+        SkyEventSchedule.Night stars = SkyEventSchedule.preview(4, PreviewEvent.Event.FALLING_STARS, bearing);
         assertTrue(!stars.meteorShower() && !stars.fireworks() && stars.auroraStrength() == 0.0f,
             "falling stars are the sky pass's, not a sky event");
     }

@@ -62,7 +62,8 @@ public final class ModStatus {
             new Mod("ferritecore", "FerriteCore", "ferritecore", Group.WORKS_WITH, "ferrite-core"),
             new Mod("iris", "Iris", "iris", Group.NOT_COMPATIBLE, null),
             new Mod("dynamic_overlays", "Dynamic Overlays", "dynamic_overlays", Group.NOT_COMPATIBLE, null),
-            // Support for both was dropped in 1.0.8; LiteLights steps aside while either is installed.
+            // Support for both was dropped in 1.0.8 (an internal note: their cards only say what LiteLights
+            // does while either is installed); LiteLights steps aside for them.
             new Mod("voxy", "Voxy", "voxy", Group.NOT_COMPATIBLE, null),
             new Mod("distanthorizons", "Distant Horizons", "distanthorizons", Group.NOT_COMPATIBLE, null));
 

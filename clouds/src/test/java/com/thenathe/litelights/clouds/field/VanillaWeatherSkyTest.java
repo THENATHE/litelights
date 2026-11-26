@@ -27,19 +27,22 @@ class VanillaWeatherSkyTest {
         assertTrue(rain.meanStorm > clear.meanStorm, "rain clouds are darker");
     }
 
+    /** Rain decks reach up through the third level and a little over its top; towers go on into the fourth. */
+    private static final float TOWERS_FROM = CloudType.levelTop(3) + 100.0f;
+
     @Test
     void thunderAddsTowers() {
         Survey rain = survey(1.0f, 0.0f, TestSkies.TICK);
         int seedsWithTowers = 0;
         for (int day = 0; day < 6; day++) {
             Survey thunder = survey(1.0f, 1.0f, TestSkies.TICK + day * 24_000.0);
-            if (thunder.highestTop > TestSkies.BASE + 800.0f) {
+            if (thunder.highestTop > TestSkies.BASE + TOWERS_FROM) {
                 seedsWithTowers++;
             }
             assertTrue(thunder.meanStorm > rain.meanStorm, "thunder is darker than rain");
         }
         assertTrue(seedsWithTowers >= 5, "towers within reach on " + seedsWithTowers + " of 6 days");
-        assertTrue(rain.highestTop < TestSkies.BASE + 800.0f, "no towers in rain without thunder, highest " + rain.highestTop);
+        assertTrue(rain.highestTop < TestSkies.BASE + TOWERS_FROM, "no towers in rain without thunder, highest " + rain.highestTop);
     }
 
     @Test
@@ -128,7 +131,7 @@ class VanillaWeatherSkyTest {
                     if (type == CloudType.NIMBOSTRATUS || type == CloudType.CUMULONIMBUS) {
                         survey.stormSpans++;
                     }
-                    if (column.density(span) >= 0.5f && !type.skyLayer()) {
+                    if (column.density(span) >= 0.5f && type.lowestLevel() < CloudType.LEVELS) {
                         bases += column.bottom(span);
                         storms += column.storminess(span);
                         spans++;

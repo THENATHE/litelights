@@ -1,5 +1,6 @@
 package com.thenathe.litelights.render.frame;
 
+import com.thenathe.litelights.render.feature.climate.RegionalRain;
 import com.thenathe.litelights.render.feature.clouds.DynamicClouds;
 import net.minecraft.client.multiplayer.ClientLevel;
 
@@ -8,7 +9,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
  * meet in the middle (clouds.field.CloudWeather): the clouds close at a pace a sky can, and the
  * rain, snow, mist, sky and land darkening and rain sounds ease in and out with them, so the first
  * drops fall under a sky already darkening. With any other clouds this is the level's own rain and
- * thunder, exactly as before.
+ * thunder, exactly as before, except under Almanac's regional weather, where the rain reaches up
+ * to the drawn cloud rather than stopping at Almanac's storm top (climate.RegionalRain).
  *
  * <p>Only what is drawn and heard changes. The server's weather, and every game rule that follows
  * it, never sees these levels. Read on the client and render threads (the same thread).
@@ -23,6 +25,9 @@ public final class ShownWeather {
         if (clouds.pacesWeather(level)) {
             return clouds.shownRain(partialTicks);
         }
+        if (RegionalRain.shows(level)) {
+            return RegionalRain.rain(partialTicks);
+        }
         return level.getRainLevel(partialTicks);
     }
 
@@ -31,6 +36,9 @@ public final class ShownWeather {
         DynamicClouds clouds = DynamicClouds.get();
         if (clouds.pacesWeather(level)) {
             return clouds.shownThunder(partialTicks);
+        }
+        if (RegionalRain.shows(level)) {
+            return RegionalRain.thunder(partialTicks);
         }
         return level.getThunderLevel(partialTicks);
     }

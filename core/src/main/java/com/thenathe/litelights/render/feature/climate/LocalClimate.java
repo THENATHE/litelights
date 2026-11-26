@@ -186,12 +186,14 @@ public final class LocalClimate {
                 inWorld = false;
                 WATCH.forget();
                 source.forget();
+                RegionalRain.forget();
             }
             return;
         }
         inWorld = true;
         AlmanacNotice.inWorld(client);
         source.tick(level);
+        RegionalRain.tick(client);
         if (WATCH.changed(level, source, client.player.getBlockX(), client.player.getBlockZ())) {
             noteChange();
         }

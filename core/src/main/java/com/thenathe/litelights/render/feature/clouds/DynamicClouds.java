@@ -1,20 +1,7 @@
 package com.thenathe.litelights.render.feature.clouds;
 
-import com.mojang.blaze3d.buffers.Std140Builder;
-import com.mojang.blaze3d.buffers.Std140SizeCalculator;
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.renderpearl.api.GpuFormat;
-import com.mojang.renderpearl.api.buffers.GpuBuffer;
-import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
-import com.mojang.renderpearl.api.commands.RenderPass;
-import com.mojang.renderpearl.api.pipeline.BindGroupLayout;
-import com.mojang.renderpearl.api.pipeline.ColorTargetState;
-import com.mojang.renderpearl.api.pipeline.DepthStencilState;
-import com.mojang.renderpearl.api.pipeline.PrimitiveTopology;
-import com.mojang.renderpearl.api.pipeline.RenderPipeline;
-import com.mojang.renderpearl.api.pipeline.UniformType;
-import com.thenathe.litelights.LiteLightsClient;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import com.thenathe.litelights.clouds.field.CloudDrift;
 import com.thenathe.litelights.clouds.field.CloudWeather;
 import com.thenathe.litelights.clouds.field.IntegratedWind;
@@ -22,9 +9,7 @@ import com.thenathe.litelights.clouds.field.RegionalStorm;
 import com.thenathe.litelights.clouds.field.StormPresence;
 import com.thenathe.litelights.clouds.field.VanillaWeatherSky;
 import com.thenathe.litelights.clouds.field.WeatherForecast;
-import com.thenathe.litelights.clouds.mesh.CloudCells;
-import com.thenathe.litelights.clouds.mesh.CloudRings;
-import com.thenathe.litelights.clouds.mesh.FaceFormat;
+import com.thenathe.litelights.clouds.volume.CloudMap;
 import com.thenathe.litelights.config.DimensionOptions.Aspect;
 import com.thenathe.litelights.mixin.particles.BiomeManagerAccessor;
 import com.thenathe.litelights.render.LiteLightsRenderer;
@@ -35,21 +20,17 @@ import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.feature.climate.LocalClimate;
+import com.thenathe.litelights.render.feature.climate.RegionalRain;
 import com.thenathe.litelights.render.frame.DimensionGate;
 import com.thenathe.litelights.render.frame.FrameFlags;
 import com.thenathe.litelights.render.frame.FrameState;
 import com.thenathe.litelights.render.frame.WeatherPreview;
-import com.thenathe.litelights.render.pipeline.GuardedRenderPass;
 import com.thenathe.litelights.render.pipeline.PipelineOwners;
 import java.util.List;
-import java.util.Optional;
-import java.util.OptionalDouble;
 import java.util.concurrent.CompletableFuture;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.BindGroupLayouts;
-import net.minecraft.client.renderer.MappableRingBuffer;
 import net.minecraft.client.renderer.fog.FogData;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.server.level.ServerLevel;
@@ -60,19 +41,20 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The Dynamic clouds (the Clouds row's fourth choice): big voxel clouds of real height from the
- * cloud field (clouds.field), meshed on worker threads ({@link CloudBuilder}) and drawn as one
- * face list expanded in the vertex shader ({@code shaders/clouds/dynamic.*}).
+ * The Dynamic clouds (the Clouds row's fourth choice): soft volumetric clouds of real height from
+ * the cloud field (clouds.field), written out as column maps on worker threads ({@link CloudBuilder},
+ * clouds.volume.CloudMap) and marched through in a fragment shader ({@link CloudVolume},
+ * {@code shaders/clouds/volume_*}).
  *
  * <ul>
- *   <li><b>Where it draws:</b> the opaque cubes go into the main target after the solid world and
+ *   <li><b>Where it draws:</b> into the main target after the solid world and far terrain and
  *   before translucent terrain (mixin.water.LevelRendererWaterMixin's split), with both transparency
- *   modes, so they never pass through Improved Transparency's stages, which cost five times as much
- *   per face; water, glass and particles in front blend over them as over land.</li>
- *   <li><b>Generations:</b> every second or so a new build of every chunk in reach is made, and the
- *   change from the last one is drawn as growth over {@link #TRANSITION_TICKS}: cubes rise, sink,
- *   widen and shrink instead of switching (clouds.mesh.CloudMesher). The wind is an offset in the
- *   uniform, so drifting needs no build at all.</li>
+ *   modes, writing its depth where it hides what is behind, so water, glass and particles in front
+ *   blend over it as over land.</li>
+ *   <li><b>Generations:</b> every second or so a new build of the maps is made, and the change from
+ *   the last one is blended in over {@link #TRANSITION_TICKS}, column by column on the GPU
+ *   ({@link CloudMapTextures}): tops rise, bases sink, clouds widen and fade instead of switching.
+ *   The wind is an offset in the uniform, so drifting needs no build at all.</li>
  *   <li><b>The weather's pace:</b> {@link CloudWeather} follows the level's rain and thunder at a
  *   pace a sky can, and gives the rain to show under it (render.frame.ShownWeather). In single player
  *   the integrated server's countdowns let the clouds close before the rain.</li>
@@ -91,8 +73,6 @@ import org.jspecify.annotations.Nullable;
 public final class DynamicClouds {
     private static final DynamicClouds INSTANCE = new DynamicClouds();
 
-    /** Cube size near the camera, in blocks (the clouds writeup's 8; cheap to change only in multiples of 8). */
-    public static final int CUBE_BLOCKS = 8;
     /** Ticks each generation's change takes to grow in: one second. */
     static final double TRANSITION_TICKS = 20.0;
     /** A sky that changed nothing in a build is built again only after this many transitions. */
@@ -100,8 +80,8 @@ public final class DynamicClouds {
     /** The clouds fade out over this share of the reach, to its end. */
     static final float FADE_SHARE = 0.15f;
     /**
-     * A camera this far from where the shown generation was built (as a share of the near ring, or
-     * of the reach if that is shorter) jumps to a new one at once.
+     * A camera this far from where the shown generation was built (as a share of the near map's
+     * half-width, or of the reach if that is shorter) jumps to a new one at once.
      */
     static final double JUMP_SHARE = 0.4;
     /** How long resources outlive the choice being switched off, in nanoseconds. */
@@ -110,18 +90,21 @@ public final class DynamicClouds {
     private static final float INSIDE_FOG_DENSITY = 0.12f;
     /** With vanilla's fog, how far one sees deep inside a cloud, in blocks (where its fog ends). */
     private static final float INSIDE_SIGHT = 32.0f;
+    /** The fog inside a cloud starts where the envelope at the camera is this solid, and is whole at this. */
+    private static final float INSIDE_FROM = 0.45f;
+    private static final float INSIDE_FULL = 0.85f;
     /** The tallest a cloud can be above the floor, in blocks, for the far plane. */
-    private static final float TALLEST_CLOUD = CloudCells.HEIGHT * FaceFormat.CELL_BLOCKS;
-    /** How far round the camera the cloud over it is looked at for the rain under it, in 8-block columns. */
-    private static final int COVER_AROUND = 4;
+    private static final float TALLEST_CLOUD = CloudMap.HEIGHT_RANGE;
+    /** How far round the camera the cloud over it is looked at for the rain under it, in blocks. */
+    private static final double COVER_AROUND = 32.0;
     /** How often Almanac's storms near the camera are asked for, in client ticks. */
     private static final int STORMS_EVERY = 20;
     /** How far past the reach Almanac's storms are asked for, in blocks, so one drifting into view is known first. */
     private static final double STORMS_BEYOND_REACH = 2_048.0;
     /** How far ahead of the weather tick a weather mod's wind is summed before the first build, in ticks. */
     private static final double WIND_AHEAD = 48_000.0;
-    /** How far round the camera the clouds' tops are looked at for the weather that falls at its height, in 8-block columns. */
-    private static final int TOPS_AROUND = 6;
+    /** How far round the camera the clouds' tops are looked at for the weather that falls at its height, in blocks. */
+    private static final double TOPS_AROUND = 48.0;
     /** The weather fades out from this far under the clouds' tops round the camera to this far over them, in blocks. */
     private static final float TOPS_FADE_UNDER = 24.0f;
     private static final float TOPS_FADE_OVER = 8.0f;
@@ -131,23 +114,6 @@ public final class DynamicClouds {
     private static final float NIGHT_RED = 0.12f;
     private static final float NIGHT_GREEN = 0.135f;
     private static final float NIGHT_BLUE = 0.19f;
-
-    static final BindGroupLayout LAYOUT = BindGroupLayout.builder()
-        .withUniform("DynamicCloudInfo", UniformType.UNIFORM_BUFFER)
-        .withUniform("DynamicCloudFaces", UniformType.TEXEL_BUFFER, GpuFormat.RGBA32_UINT)
-        .build();
-    static final RenderPipeline PIPELINE = RenderPipeline.builder()
-        .withLocation(LiteLightsClient.id("pipeline/dynamic_clouds"))
-        .withBindGroupLayout(BindGroupLayouts.PROJECTION)
-        .withBindGroupLayout(BindGroupLayouts.DYNAMIC_TRANSFORMS)
-        .withBindGroupLayout(LAYOUT)
-        .withVertexShader(LiteLightsClient.id("clouds/dynamic"))
-        .withFragmentShader(LiteLightsClient.id("clouds/dynamic"))
-        .withPrimitiveTopology(PrimitiveTopology.QUADS)
-        .withColorTargetState(ColorTargetState.DEFAULT)
-        .withDepthStencilState(DepthStencilState.DEFAULT)
-        .build();
-    private static final int INFO_SIZE = new Std140SizeCalculator().putVec4().putVec4().putVec4().get();
 
     private final CloudWeather pace = new CloudWeather();
     /** Almanac's storms to draw, each faded in or out where it appeared or went at once. */
@@ -160,12 +126,14 @@ public final class DynamicClouds {
     private volatile boolean pacing;
     /** How much of the weather falls at the camera's height: 1 under the clouds' tops, 0 over them. */
     private float underTops = 1.0f;
+    /** The top of the cloud the rain falls from round the camera, in world y; negative infinity with none near, NaN with none built. */
+    private float rainCloudTop = Float.NaN;
 
     private @Nullable CloudBuilder builder;
-    private @Nullable CloudFaceBuffer faces;
-    private @Nullable CloudShadows shadows;
+    private @Nullable CloudMapTextures nearTextures;
+    private @Nullable CloudMapTextures farTextures;
+    private @Nullable CloudVolume volume;
     private int shownReach;
-    private @Nullable MappableRingBuffer info;
     private @Nullable CompletableFuture<Generation> building;
     private boolean buildingJump;
     private @Nullable Generation ready;
@@ -173,6 +141,14 @@ public final class DynamicClouds {
     private @Nullable Generation shown;
     private @Nullable Generation beforeShown;
     private double swapTick;
+    /**
+     * The far map's own change: it is built every few builds, so its change is blended in over that
+     * many transitions rather than one, and distant clouds move on evenly instead of in steps.
+     */
+    private @Nullable CloudMap farBefore;
+    private @Nullable CloudMap farAfter;
+    private double farSwapTick;
+    private float farProgress = 1.0f;
     private double lastTick;
     /**
      * The field's tick this frame: the game time, or with Almanac's regional weather its weather
@@ -189,7 +165,8 @@ public final class DynamicClouds {
     private @Nullable CompletableFuture<Void> windSummed;
     private @Nullable ClientLevel builtLevel;
     private boolean drawThisFrame;
-    private int drawFaces;
+    /** What this frame's clouds hand to what is drawn after them, or null when they drew none. */
+    private @Nullable Cover cover;
     private long lastChosenNanos;
     private int quietBuilds;
     private long builds;
@@ -216,7 +193,8 @@ public final class DynamicClouds {
 
     /** From LiteLightsClient, after sky-fog, so the in-cloud fog joins the storm fog sky-fog has just worked out. */
     public static void register() {
-        PipelineOwners.claim(RenderFeature.DYNAMIC_CLOUDS, PIPELINE, CloudShadows.PIPELINE);
+        PipelineOwners.claim(RenderFeature.DYNAMIC_CLOUDS, CloudVolume.MARCH, CloudVolume.RESOLVE, CloudVolume.COMPOSITE, CloudVolume.DEPTH,
+            CloudMapTextures.BLEND, CloudShadows.PIPELINE);
         ClientTickEvents.END_CLIENT_TICK.register(INSTANCE::onClientTick);
         LiteRenderEvents.FRAME_UPDATE.register(INSTANCE::onFrameUpdate);
     }
@@ -279,6 +257,7 @@ public final class DynamicClouds {
         if (level == null || !chosen) {
             pacing = false;
             underTops = 1.0f;
+            rainCloudTop = Float.NaN;
             if (level != pacedLevel || System.nanoTime() - lastChosenNanos > RELEASE_NANOS) {
                 pace.reset();
                 pacedLevel = null;
@@ -301,7 +280,8 @@ public final class DynamicClouds {
         } else {
             followOwnSky(minecraft, level);
         }
-        underTops += Math.clamp(underTopsTarget(camera) - underTops, -TOPS_EASE, TOPS_EASE);
+        rainCloudTop = rainCloudTopOver(camera);
+        underTops += Math.clamp(underTopsTarget(camera.y, rainCloudTop) - underTops, -TOPS_EASE, TOPS_EASE);
     }
 
     /** Whether Almanac's regional weather decides where it rains in the level: its storms are drawn, on its weather tick. */
@@ -319,7 +299,11 @@ public final class DynamicClouds {
             refreshStorms(level, camera.x, camera.z);
         }
         storms.tick();
-        pace.tickUnder(level.getRainLevel(1.0f), level.getThunderLevel(1.0f), LocalClimate.realWorldRain(level),
+        // Almanac's levels at the camera stop at its storm's top; RegionalRain's reach the cloud drawn here.
+        boolean upToTheCloud = RegionalRain.shows(level);
+        float rain = upToTheCloud ? RegionalRain.rain(1.0f) : level.getRainLevel(1.0f);
+        float thunder = upToTheCloud ? RegionalRain.thunder(1.0f) : level.getThunderLevel(1.0f);
+        pace.tickUnder(rain, thunder, LocalClimate.realWorldRain(level),
             LocalClimate.realWorldThunder(level), regional && shown != null && builtLevel == level ? cloudCoverOverhead() : 1.0f);
     }
 
@@ -363,32 +347,48 @@ public final class DynamicClouds {
             return 0.0f;
         }
         Generation before = beforeShown != null ? beforeShown : after;
-        int cubeX = (int) Math.floor((camera.x - wind.driftX(skyTick)) / CUBE_BLOCKS);
-        int cubeZ = (int) Math.floor((camera.z - wind.driftZ(skyTick)) / CUBE_BLOCKS);
-        float was = before.coverAround(cubeX, cubeZ, COVER_AROUND);
-        float now = after.coverAround(cubeX, cubeZ, COVER_AROUND);
+        double cloudX = camera.x - wind.driftX(skyTick);
+        double cloudZ = camera.z - wind.driftZ(skyTick);
+        float was = before.coverAround(cloudX, cloudZ, COVER_AROUND);
+        float now = after.coverAround(cloudX, cloudZ, COVER_AROUND);
         return was + (now - was) * progress;
     }
 
     /**
-     * Rain and snow fall from the clouds, not from the sky over them: 1 under the top of the cloud
-     * the rain falls from round the camera (the lowest run of cloud in each column: the deck, or a
-     * tower out of it, not an anvil over them), easing to 0 just over it; 1 where no cloud is near
-     * (a gap in the deck lets the rain through).
+     * The top of the cloud the rain falls from round the camera (the lowest run of cloud in each
+     * column: the deck, or a tower out of it, not an anvil over them), in world y: from the floor the
+     * Cloud height setting and the dimension put the clouds at. Negative infinity where no such cloud
+     * is near; NaN with nothing built yet.
      */
-    private float underTopsTarget(Vec3 position) {
+    private float rainCloudTopOver(Vec3 position) {
         Generation generation = shown;
         if (generation == null || wind == null) {
+            return Float.NaN;
+        }
+        float top = generation.rainCloudTopAround(position.x - wind.driftX(skyTick), position.z - wind.driftZ(skyTick), TOPS_AROUND);
+        return top < 0.0f ? Float.NEGATIVE_INFINITY : generation.floor() + top;
+    }
+
+    /**
+     * Rain and snow fall from the clouds, not from the sky over them: 1 under the top of the cloud
+     * the rain falls from round the camera, easing to 0 just over it; 1 where no cloud is near (a
+     * gap in the deck lets the rain through).
+     */
+    private static float underTopsTarget(double cameraY, float rainCloudTop) {
+        if (Float.isNaN(rainCloudTop) || rainCloudTop == Float.NEGATIVE_INFINITY) {
             return 1.0f;
         }
-        int cubeX = (int) Math.floor((position.x - wind.driftX(skyTick)) / CUBE_BLOCKS);
-        int cubeZ = (int) Math.floor((position.z - wind.driftZ(skyTick)) / CUBE_BLOCKS);
-        float top = generation.rainCloudTopAround(cubeX, cubeZ, TOPS_AROUND);
-        if (top < 0.0f) {
-            return 1.0f;
-        }
-        float over = (float) (position.y - generation.floor()) - top;
+        float over = (float) (cameraY - rainCloudTop);
         return 1.0f - LiteMath.smoothstep(-TOPS_FADE_UNDER, TOPS_FADE_OVER, over);
+    }
+
+    /**
+     * How high the weather reaches under the clouds shown, in world y: the top of the cloud the rain
+     * falls from round the camera and the band the weather thins out over it. Negative infinity
+     * where no such cloud is near; NaN with nothing built (climate.RegionalRain).
+     */
+    public float rainCloudCeiling() {
+        return rainCloudTop + TOPS_FADE_OVER;
     }
 
     /**
@@ -416,8 +416,8 @@ public final class DynamicClouds {
 
     /**
      * Before the frame's translucent pass (from LiteClouds, in vanilla's cloud prepare): takes in a
-     * finished build, uploads a slice, swaps when the last change has grown in, starts the next
-     * build and writes this frame's uniform.
+     * finished build, uploads a slice of its maps, swaps when the last change has grown in and
+     * starts the next build.
      *
      * @param color   vanilla's cloud colour (only its alpha is used: the dimension's clouds shown at all)
      * @param bottomY the clouds' height in this dimension: the floor
@@ -448,7 +448,7 @@ public final class DynamicClouds {
                 storms.startAfresh();
                 wind = regional ? almanacWind(level) : VanillaWeatherSky.windOf(levelSeed);
             }
-            // After any forgetting above, which lets the face buffers go.
+            // After any forgetting above, which lets go of the workers' results.
             ensureResources();
             skyTick = regional ? AlmanacStorms.weatherTick(level, partialTicks) : tick;
             if (windSummed != null && !windSummed.isDone()) {
@@ -456,23 +456,38 @@ public final class DynamicClouds {
                 RenderFeatureStatus.succeeded(RenderFeature.DYNAMIC_CLOUDS);
                 return;
             }
-            CloudFaceBuffer buffers = faces;
             int reach = RenderSettingsAccess.current().sky().cloudReach();
             shownReach = reach;
+            if (!volume.ready() && builder.noise().isDone()) {
+                volume.uploadNoise(builder.noise().join());
+            }
 
             if (building != null && building.isDone()) {
                 Generation built = building.join();
                 building = null;
                 ready = built;
                 readyJump = buildingJump;
-                buffers.begin(built.faces(), built.faceCount());
+                Generation before = beforeShown != null ? beforeShown : shown;
+                nearTextures.begin(built.near(), before != null ? before.near() : null, shown != null ? shown.near() : null);
+                farTextures.begin(built.far(), farBefore, farAfter);
             }
             progress = shown == null ? 1.0f : LiteMath.clamp01((float) ((tick - swapTick) / TRANSITION_TICKS));
+            farProgress = LiteMath.clamp01((float) ((tick - farSwapTick) / (TRANSITION_TICKS * CloudBuilder.FAR_EVERY)));
             if (ready != null) {
                 boolean now = shown == null || readyJump;
-                if (buffers.uploadSome(now) && (now || progress >= 1.0f)) {
-                    buffers.swap();
+                boolean nearUp = nearTextures.uploadSome(now);
+                boolean farUp = farTextures.uploadSome(now);
+                if (nearUp && farUp && (now || progress >= 1.0f)) {
                     beforeShown = readyJump ? ready : shown;
+                    if (readyJump || farAfter == null) {
+                        farBefore = ready.far();
+                        farAfter = ready.far();
+                        farSwapTick = tick;
+                    } else if (ready.far() != farAfter) {
+                        farBefore = farAfter;
+                        farAfter = ready.far();
+                        farSwapTick = tick;
+                    }
                     shown = ready;
                     ready = null;
                     swapTick = tick;
@@ -483,7 +498,8 @@ public final class DynamicClouds {
             boolean jumped = shown != null && cameraMovedFar(shown, cameraPosition, skyTick, reach);
             if (building == null && (ready == null || jumped) && (shown == null || jumped || dueForBuild(tick))) {
                 if (jumped && ready != null) {
-                    buffers.dropPending();
+                    nearTextures.dropPending();
+                    farTextures.dropPending();
                     ready = null;
                 }
                 if (regional && (shown == null || jumped)) {
@@ -495,12 +511,7 @@ public final class DynamicClouds {
             }
 
             clearColour(color);
-            drawFaces = buffers.drawnFaces();
-            if (shown != null && drawFaces > 0) {
-                writeInfo(cameraPosition, skyTick, reach);
-                RenderSystem.getSequentialBuffer(PrimitiveTopology.QUADS).requestIndexCount(6 * drawFaces);
-                drawThisFrame = true;
-            }
+            drawThisFrame = shown != null && volume.ready();
             RenderFeatureStatus.succeeded(RenderFeature.DYNAMIC_CLOUDS);
         } catch (RuntimeException error) {
             forget();
@@ -554,7 +565,7 @@ public final class DynamicClouds {
     private void startBuild(double tick, Vec3 cameraPosition, int reach, boolean jump) {
         Generation previous = jump ? null : shown;
         if (shown != null && !jump) {
-            quietBuilds = shown.movingFaces() == 0 ? quietBuilds + 1 : 0;
+            quietBuilds = beforeShown != null && shown.near().sameAs(beforeShown.near()) && shown.far() == beforeShown.far() ? quietBuilds + 1 : 0;
         }
         // A previewed weather shows its clouds at once; the world's weather comes at the clouds' pace.
         float rain = WeatherPreview.rain(pace.rain());
@@ -569,23 +580,8 @@ public final class DynamicClouds {
     private boolean cameraMovedFar(Generation generation, Vec3 cameraPosition, double tick, int reach) {
         double dx = cameraPosition.x - wind.driftX(tick) - generation.cameraCloudX();
         double dz = cameraPosition.z - wind.driftZ(tick) - generation.cameraCloudZ();
-        double limit = Math.min(reach, CloudRings.NEAR_RING) * JUMP_SHARE;
+        double limit = Math.min(reach, generation.near().spanBlocks() * 0.5) * JUMP_SHARE;
         return dx * dx + dz * dz > limit * limit;
-    }
-
-    private void writeInfo(Vec3 cameraPosition, double tick, int reach) {
-        Generation generation = shown;
-        double originX = (double) generation.originX() * CUBE_BLOCKS + wind.driftX(tick) - cameraPosition.x;
-        double originZ = (double) generation.originZ() * CUBE_BLOCKS + wind.driftZ(tick) - cameraPosition.z;
-        float originY = (float) (generation.floor() - cameraPosition.y);
-        // A fresh slot every prepare: the level can be drawn twice in a frame (LiteClouds' note).
-        info.rotate();
-        try (GpuBufferSlice.MappedView view = info.currentBuffer().map(false, true)) {
-            Std140Builder.intoBuffer(view.data())
-                .putVec4((float) originX, originY, (float) originZ, FaceFormat.CELL_BLOCKS)
-                .putVec4(colourRed, colourGreen, colourBlue, moonlight)
-                .putVec4(progress, reach * (1.0f - FADE_SHARE), reach, inside);
-        }
     }
 
     /** Whether a pass before translucent terrain is wanted this frame (mixin.water.LevelRendererWaterMixin). */
@@ -593,44 +589,68 @@ public final class DynamicClouds {
         return drawThisFrame;
     }
 
-    /** Draws the opaque cubes into the main target, after the solid world and before translucents. */
+    /**
+     * Draws the clouds into the main target, after the solid world and far terrain and before
+     * translucents: the shown maps blended between builds, the shadows on the land (with the Cloud
+     * shadows row on), then the clouds themselves.
+     */
     public void drawBeforeTranslucents(RenderTarget mainTarget) {
+        cover = null;
         if (!drawThisFrame) {
             return;
         }
         drawThisFrame = false;
-        GpuBuffer drawn = faces != null ? faces.drawn() : null;
-        if (drawn == null || info == null || mainTarget.getDepthTextureView() == null) {
+        Generation after = shown;
+        if (after == null || wind == null || volume == null || mainTarget.getDepthTextureView() == null) {
             return;
         }
-        if (RenderSettingsAccess.current().sky().cloudShadows() && shown != null && wind != null) {
-            try {
-                if (shadows == null) {
-                    shadows = new CloudShadows();
-                }
-                Generation before = beforeShown != null ? beforeShown : shown;
-                shadows.draw(mainTarget, before, shown, progress, camera.x, camera.y, camera.z, skyTick, wind, shownReach);
-            } catch (RuntimeException error) {
-                RenderFeatureStatus.failed(RenderFeature.DYNAMIC_CLOUDS, error);
+        try {
+            Generation before = beforeShown != null ? beforeShown : after;
+            GpuTextureView near = nearTextures.shown(before.near(), after.near(), progress);
+            GpuTextureView far = farAfter != null ? farTextures.shown(farBefore, farAfter, farProgress) : null;
+            if (near == null || far == null) {
                 return;
             }
-        }
-        try (RenderPass pass = GuardedRenderPass.open(() -> "LiteLights dynamic clouds", mainTarget.getColorTextureView(), Optional.empty(),
-                mainTarget.getDepthTextureView(), OptionalDouble.empty())) {
-            RenderSystem.bindDefaultUniforms(pass);
-            LiteLightsRenderer.get().bindWorldUniforms(pass);
-            GpuBufferSlice transforms = RenderSystem.getDynamicUniforms().writeTransform(RenderSystem.getModelViewMatrixCopy());
-            RenderSystem.AutoStorageIndexBuffer indices = RenderSystem.getSequentialBuffer(PrimitiveTopology.QUADS);
-            pass.setPipeline(RenderSystem.getCompiledPipeline(PIPELINE));
-            pass.setUniform("DynamicTransforms", transforms);
-            pass.setIndexBuffer(indices.getBuffer(), indices.type());
-            pass.setVertexBuffer(0, null);
-            pass.setUniform("DynamicCloudInfo", info.currentBuffer());
-            pass.setUniform("DynamicCloudFaces", drawn);
-            pass.drawIndexed(6 * drawFaces, 1, 0, 0, 0);
+            double driftX = wind.driftX(skyTick);
+            double driftZ = wind.driftZ(skyTick);
+            CloudMap nearMap = after.near();
+            CloudMap farMap = farAfter;
+            double cloudX = camera.x - driftX;
+            double cloudZ = camera.z - driftZ;
+            // Wrapped by the widest of the noises' periods (the coarse warp's, four of the billows'; the
+            // heads' is a quarter of the billows'), so no noise shifts when the camera crosses a wrap.
+            float period = CloudVolume.NOISE_PERIOD * 4.0f;
+            CloudVolume.Frame frame = new CloudVolume.Frame(near, nearMap,
+                (double) nearMap.originX() * nearMap.texelBlocks() - cloudX, (double) nearMap.originZ() * nearMap.texelBlocks() - cloudZ,
+                far, farMap, (double) farMap.originX() * farMap.texelBlocks() - cloudX, (double) farMap.originZ() * farMap.texelBlocks() - cloudZ,
+                (float) (after.floor() - camera.y), shownReach * (1.0f - FADE_SHARE), shownReach, colourRed, colourGreen, colourBlue, moonlight,
+                cloudX - Math.floor(cloudX / period) * period, camera.y - Math.floor(camera.y / period) * period,
+                cloudZ - Math.floor(cloudZ / period) * period,
+                CloudVolume.Quality.of(RenderSettingsAccess.current().sky().cloudQuality()));
+            if (RenderSettingsAccess.current().sky().cloudShadows()) {
+                CloudShadows.draw(mainTarget, frame);
+            }
+            volume.draw(mainTarget, frame, camera.x, camera.y, camera.z);
+            GpuTextureView resolved = volume.lastResolved();
+            cover = resolved != null ? new Cover(resolved, volume.lastDivisor(), after.floor()) : null;
         } catch (RuntimeException error) {
             RenderFeatureStatus.failed(RenderFeature.DYNAMIC_CLOUDS, error);
         }
+    }
+
+    /**
+     * What the clouds drawn this frame leave for what is drawn after them, before translucents.
+     *
+     * @param resolved the clouds as the composite laid them over the picture ({@link CloudVolume#lastResolved})
+     * @param divisor  the screen's pixels per marched pixel
+     * @param floorY   the clouds' floor, world y: no cloud lies under it
+     */
+    public record Cover(GpuTextureView resolved, int divisor, float floorY) {
+    }
+
+    /** This frame's clouds for what is drawn after them (the distant fireworks), or null when none were drawn. */
+    public @Nullable Cover coverThisFrame() {
+        return cover;
     }
 
     /**
@@ -704,38 +724,16 @@ public final class DynamicClouds {
     }
 
     /**
-     * How far inside cloud the camera is, 0..1: the cells' solidity blended between the cell
-     * middles around it (and between the change's two builds by its progress), 0.5 on a face.
+     * How far inside cloud the camera is, 0..1: the maps' envelope at the camera (blended between
+     * the change's two builds by its progress), before the shader's noise wears it; only its solid
+     * core counts, so the fog doesn't close in where the march still shows a gap.
      */
     private float insideAmount(Generation after, Generation before, float change) {
         double cloudX = camera.x - wind.driftX(skyTick);
         double cloudZ = camera.z - wind.driftZ(skyTick);
-        double cellX = cloudX / CUBE_BLOCKS - 0.5;
-        double cellZ = cloudZ / CUBE_BLOCKS - 0.5;
-        double cellY = (camera.y - after.floor()) / FaceFormat.CELL_BLOCKS - 0.5;
-        if (cellY < -2.0 || cellY > CloudCells.HEIGHT + 1.0) {
-            return 0.0f;
-        }
-        int x0 = (int) Math.floor(cellX);
-        int y0 = (int) Math.floor(cellY);
-        int z0 = (int) Math.floor(cellZ);
-        double fx = cellX - x0;
-        double fy = cellY - y0;
-        double fz = cellZ - z0;
-        double solid = 0.0;
-        for (int corner = 0; corner < 8; corner++) {
-            int x = x0 + (corner & 1);
-            int y = y0 + (corner >> 1 & 1);
-            int z = z0 + (corner >> 2 & 1);
-            double weight = ((corner & 1) != 0 ? fx : 1.0 - fx) * ((corner >> 1 & 1) != 0 ? fy : 1.0 - fy) * ((corner >> 2 & 1) != 0 ? fz : 1.0 - fz);
-            if (weight <= 0.0) {
-                continue;
-            }
-            double now = after.solid(x, z, y) ? 1.0 : 0.0;
-            double was = before.solid(x, z, y) ? 1.0 : 0.0;
-            solid += weight * (was + (now - was) * change);
-        }
-        return LiteMath.smoothstep(0.2f, 0.65f, (float) solid);
+        float now = after.envelopeAt(cloudX, camera.y, cloudZ);
+        float was = before.envelopeAt(cloudX, camera.y, cloudZ);
+        return LiteMath.smoothstep(INSIDE_FROM, INSIDE_FULL, was + (now - was) * change);
     }
 
     // ---- Lifecycle ----------------------------------------------------------------------------
@@ -744,11 +742,12 @@ public final class DynamicClouds {
         if (builder == null) {
             builder = new CloudBuilder();
         }
-        if (faces == null) {
-            faces = new CloudFaceBuffer();
+        if (nearTextures == null) {
+            nearTextures = new CloudMapTextures("near cloud map");
+            farTextures = new CloudMapTextures("far cloud map");
         }
-        if (info == null) {
-            info = new MappableRingBuffer(() -> "LiteLights dynamic clouds info", GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_MAP_WRITE, INFO_SIZE);
+        if (volume == null) {
+            volume = new CloudVolume();
         }
     }
 
@@ -761,34 +760,36 @@ public final class DynamicClouds {
         ready = null;
         shown = null;
         beforeShown = null;
+        farBefore = null;
+        farAfter = null;
         quietBuilds = 0;
         drawThisFrame = false;
-        if (faces != null) {
-            faces.close();
-            faces = null;
-        }
-        if (shadows != null) {
-            shadows.forget();
+        if (nearTextures != null) {
+            nearTextures.forget();
+            farTextures.forget();
         }
     }
 
     /** Lets go of the workers and the GPU memory, a while after the choice was switched off or the world left. */
     private void release() {
-        if (builder == null && faces == null && info == null) {
+        if (builder == null && nearTextures == null && volume == null) {
             return;
         }
         forget();
+        cover = null;
         if (builder != null) {
             builder.close();
             builder = null;
         }
-        if (info != null) {
-            info.close();
-            info = null;
+        if (nearTextures != null) {
+            nearTextures.close();
+            farTextures.close();
+            nearTextures = null;
+            farTextures = null;
         }
-        if (shadows != null) {
-            shadows.close();
-            shadows = null;
+        if (volume != null) {
+            volume.close();
+            volume = null;
         }
         builtLevel = null;
         floor = Float.NaN;
@@ -797,9 +798,9 @@ public final class DynamicClouds {
 
     // ---- For QA -------------------------------------------------------------------------------
 
-    /** The shown generation's faces, or 0. */
-    public int shownFaces() {
-        return shown != null ? shown.faceCount() : 0;
+    /** How many of the shown near map's columns hold cloud, or 0 before the first build is up. */
+    public int shownColumns() {
+        return shown != null ? shown.cloudedColumns() : 0;
     }
 
     /** The shown generation, for QA's readings. */

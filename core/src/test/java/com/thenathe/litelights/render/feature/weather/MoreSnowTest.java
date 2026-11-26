@@ -19,13 +19,13 @@ class MoreSnowTest {
     void offAsBefore() {
         assertEquals(1.0f, WeatherParticles.moreSnow(RenderSettings.Weather.DEFAULTS, 0.0f));
         assertEquals(1.0f, WeatherParticles.moreSnow(RenderSettings.Weather.DEFAULTS, 1.0f));
-        VisualSnow masterOff = VisualSnow.of(false, true, true, true, true, RenderSettings.SnowyLeavesLook.WHOLE, true, true, true);
+        VisualSnow masterOff = VisualSnow.of(false, true, true, true, true, RenderSettings.SnowyLeavesLook.WHOLE, true, true);
         assertEquals(1.0f, WeatherParticles.moreSnow(with(masterOff), 1.0f));
     }
 
     @Test
     void onMoreInCalmSnowAndMostInABlizzard() {
-        VisualSnow on = VisualSnow.of(true, true, true, true, true, RenderSettings.SnowyLeavesLook.WHOLE, true, true, true);
+        VisualSnow on = VisualSnow.of(true, true, true, true, true, RenderSettings.SnowyLeavesLook.WHOLE, true, true);
         assertEquals(WeatherParticles.MORE_CALM_SNOW, WeatherParticles.moreSnow(with(on), 0.0f));
         assertEquals(WeatherParticles.MORE_BLIZZARD_SNOW, WeatherParticles.moreSnow(with(on), 1.0f));
         assertEquals(1.35f, WeatherParticles.moreSnow(with(on), 0.5f), 1e-6);

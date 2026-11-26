@@ -22,9 +22,13 @@ const int LITE_FAR_CARD = 6;
 // A level swap's dither fade (FarLandSession.SWAP_FADE_MILLIS), in hundredths of a second.
 const float LITE_FAR_SWAP_FADE = 25.0;
 
-// A light's point (LITE_FAR_LIGHTS): never smaller across than this many pixels, nor larger.
-const float LITE_FAR_LIGHT_MIN_PIXELS = 1.5;
-const float LITE_FAR_LIGHT_MAX_PIXELS = 24.0;
+// A light's point (LITE_FAR_LIGHTS): its glow reaches this many of its voxels out from its centre,
+// never fewer pixels than the least nor more than the most. Twice 1.1.4's (seedgen-speed-115).
+const float LITE_FAR_LIGHT_REACH = 3.0;
+const float LITE_FAR_LIGHT_MIN_PIXELS = 3.0;
+const float LITE_FAR_LIGHT_MAX_PIXELS = 48.0;
+// The glow's brightness at its centre, against a light's strength: half 1.1.4's.
+const float LITE_FAR_LIGHT_PEAK = 0.5;
 
 const int LITE_FAR_FLAG_CUTOUT = 1;
 const int LITE_FAR_FLAG_WATER = 2;

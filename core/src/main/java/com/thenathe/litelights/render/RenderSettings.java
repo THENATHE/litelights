@@ -94,12 +94,17 @@ public record RenderSettings(
 
     public enum CloudStyle { OFF, FLAT, FANCY, DYNAMIC }
 
+    public enum CloudQuality { LOW, MEDIUM, HIGH, ULTRA }
+
     /**
      * @param cloudReach   how far the Dynamic clouds reach, in blocks
-     * @param cloudShadows whether the Dynamic clouds cast shadows on the land
+     * @param cloudShadows whether the Dynamic clouds cast shadows on the land (their shading of
+     *                     themselves stays either way)
+     * @param cloudQuality how finely the Dynamic clouds are drawn
      */
-    public record Sky(SkyPalette palette, boolean fallingStars, CloudStyle clouds, int cloudLayers, int cloudReach, boolean cloudShadows) {
-        public static final Sky DEFAULTS = new Sky(SkyPalette.VANILLA_COLOURS, true, CloudStyle.FANCY, 1, 8192, true);
+    public record Sky(SkyPalette palette, boolean fallingStars, CloudStyle clouds, int cloudLayers, int cloudReach, boolean cloudShadows,
+                      CloudQuality cloudQuality) {
+        public static final Sky DEFAULTS = new Sky(SkyPalette.VANILLA_COLOURS, true, CloudStyle.FANCY, 1, 8192, true, CloudQuality.MEDIUM);
     }
 
     public enum FogLook { VANILLA, HAZE, OFF }
@@ -494,17 +499,16 @@ public record RenderSettings(
         boolean underOverhangs,
         SnowyLeavesLook leaves,
         boolean grass,
-        boolean moreFlakes,
-        boolean far
+        boolean moreFlakes
     ) {
         public static final VisualSnow DEFAULTS = new VisualSnow(false, false, false, false, false, SnowyLeavesLook.WHOLE,
-            false, false, false);
+            false, false);
 
         /** The master and the rows as saved: every row counts only while the master is on. */
         public static VisualSnow of(boolean on, boolean blocks, boolean drips, boolean underTrees, boolean underOverhangs,
-                                    SnowyLeavesLook leaves, boolean grass, boolean moreFlakes, boolean far) {
+                                    SnowyLeavesLook leaves, boolean grass, boolean moreFlakes) {
             return new VisualSnow(on, on && blocks, on && drips, on && underTrees, on && underOverhangs,
-                on ? leaves : SnowyLeavesLook.WHOLE, on && grass, on && moreFlakes, on && far);
+                on ? leaves : SnowyLeavesLook.WHOLE, on && grass, on && moreFlakes);
         }
     }
 

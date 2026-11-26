@@ -24,10 +24,8 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 
 /**
- * Not used since 1.0.8: far snow only ever drew on Voxy's and Distant Horizons' pixels, whose support
- * was dropped. Kept, with FarSnowGrid, FarSnowSource and AlmanacFarSnow and their tests, as the data
- * side LiteLights' own far terrain will reuse (the snow lines from Almanac); nothing creates it, so
- * nothing runs. What follows is how it worked for the far mods.
+ * The data side of Snow on far terrain on LiteLights' own far land (FarLandSnow makes it; up to 1.0.7
+ * it served Voxy's and Distant Horizons' pixels, whose support was dropped in 1.0.8).
  *
  * <p>Seasonal snow on far terrain (farsnow), with Almanac 1.0.0 or later on the client. Voxy and
  * Distant Horizons draw far land as it was when each chunk was last loaded, so a winter capture stays
@@ -79,8 +77,6 @@ final class FarSnow implements AutoCloseable {
     private static final int COLOUR_BYTES = COLOUR_SIZE * COLOUR_SIZE * 2 * 4;
     /** The colours texture's rows: grass, foliage, then the snow by place (FarSnowPlaces). */
     private static final int COLOUR_ROWS = COLOUR_SIZE * 2 + FarSnowPlaces.CELLS;
-    /** Over how many blocks past the near land far land eases from the snow here to each place's. */
-    static final int PLACES_EASE = 512;
 
     /** Where finished fills go: the far pass's textures, or a test's record of them. */
     interface Uploads {
@@ -132,8 +128,10 @@ final class FarSnow implements AutoCloseable {
     private int placesOriginX;
     private int placesOriginZ;
     private long lastPlacesStart;
-    /** How far the near land reaches from the camera, in blocks: far land eases to the snow by place past it. */
-    private int nearReach;
+    /** The places' shares the last fill knew, for the next (FarSnowPlaces.Remembered). */
+    private FarSnowPlaces.@Nullable Remembered placesRemembered;
+    /** How many places out from the camera's are asked about. */
+    private int placesReach = FarSnowPlaces.MOST_REACH;
     private int cameraColumnX;
     private int cameraColumnZ;
     /** A cover this far along that is no longer part way has reached all of its ground. */
@@ -166,7 +164,9 @@ final class FarSnow implements AutoCloseable {
     private double lastFillMillis;
     private double lastColourFillMillis;
     private int placesFills;
+    private int placesAsked;
     private int placesKnown;
+    private int placesRecalled;
     private double lastPlacesFillMillis;
     private boolean anyKnown;
     /** The render thread's share of the last fill: taking it in and uploading it. */
@@ -310,6 +310,7 @@ final class FarSnow implements AutoCloseable {
         colourJob = null;
         placesJob = null;
         placesFilled = false;
+        placesRemembered = null;
         lastPlacesStart = clock.getAsLong() - FarSnowPlaces.INTERVAL_NANOS;
         linesStale = false;
         inner.clear();
@@ -361,7 +362,8 @@ final class FarSnow implements AutoCloseable {
         from.snowShares(currentLevel, here);
         ByteBuffer staging = sparePlacesStaging != null ? sparePlacesStaging : ByteBuffer.allocateDirect(FarSnowPlaces.BYTES).order(ByteOrder.LITTLE_ENDIAN);
         sparePlacesStaging = null;
-        FarSnowPlaces.Job job = new FarSnowPlaces.Job(currentLevel, from, FarSnowPlaces.originFor(cameraX), FarSnowPlaces.originFor(cameraZ), here, staging);
+        FarSnowPlaces.Job job = new FarSnowPlaces.Job(currentLevel, from, FarSnowPlaces.originFor(cameraX), FarSnowPlaces.originFor(cameraZ),
+            placesReach, here, placesRemembered, staging);
         placesJob = CompletableFuture.supplyAsync(job::run, executor);
     }
 
@@ -437,7 +439,10 @@ final class FarSnow implements AutoCloseable {
                 placesOriginZ = job.originZ;
                 placesFilled = true;
                 placesFills++;
+                placesAsked = job.asked;
                 placesKnown = job.known;
+                placesRecalled = job.recalled;
+                placesRemembered = job.remembered;
                 lastPlacesFillMillis = job.nanos / 1.0e6;
             }
             sparePlacesStaging = job.staging;
@@ -617,14 +622,19 @@ final class FarSnow implements AutoCloseable {
         this.whiteGrass = whiteGrass;
     }
 
-    /** How far the near land reaches from the camera, in blocks. */
-    void setNearReach(int blocks) {
-        nearReach = blocks;
+    /** How far far land reaches from the camera, in blocks: the places within it are asked about. */
+    void setReach(float blocks) {
+        placesReach = FarSnowPlaces.reachFor(blocks);
     }
 
-    /** The distance from the camera where far land starts easing to the snow by place, or -1 with none filled. */
+    /**
+     * 0 when far land takes each place's snow, from the camera out (FarSnowPlaces), or -1 with none
+     * filled. Up to 1.1.4 far land took the snow where the player stands out to the render distance
+     * and eased to the places' over the next 512 blocks, so far land at a storm's snow turned bare as
+     * it neared, before the near land with the snow came in.
+     */
     float placesFrom() {
-        return placesFilled ? nearReach : -1.0f;
+        return placesFilled ? 0.0f : -1.0f;
     }
 
     private void writeUniforms() {
@@ -666,9 +676,9 @@ final class FarSnow implements AutoCloseable {
         if (source == null) {
             return "absent (" + problem + ")";
         }
-        return String.format(Locale.ROOT, "knownInner=%d, knownOuter=%d, fills=%d, staleFills=%d, lastFillMs=%.1f, lastApplyMs=%.2f, cover=%.3f, colours=%s, colourFills=%d, lastColourFillMs=%.1f, lastColourApplyMs=%.2f, byPlace=%s, placesFills=%d, placesKnown=%d, lastPlacesFillMs=%.1f, holdsLevel=%s",
+        return String.format(Locale.ROOT, "knownInner=%d, knownOuter=%d, fills=%d, staleFills=%d, lastFillMs=%.1f, lastApplyMs=%.2f, cover=%.3f, colours=%s, colourFills=%d, lastColourFillMs=%.1f, lastColourApplyMs=%.2f, byPlace=%s, placesFills=%d, placesAsked=%d, placesKnown=%d, placesRecalled=%d, placesReach=%d, lastPlacesFillMs=%.1f, holdsLevel=%s",
             inner.live().known(), outer.live().known(), fills, staleFills, lastFillMillis, lastApplyMillis, cover(), coloursKnown, colourFills,
-            lastColourFillMillis, lastColourApplyMillis, placesFilled, placesFills, placesKnown, lastPlacesFillMillis, level != null);
+            lastColourFillMillis, lastColourApplyMillis, placesFilled, placesFills, placesAsked, placesKnown, placesRecalled, placesReach, lastPlacesFillMillis, level != null);
     }
 
     /** The world was left: every line is forgotten and the textures go. */

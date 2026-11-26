@@ -16,8 +16,11 @@ import net.minecraft.world.level.block.state.BlockState;
  * <ul>
  *   <li>vanilla's snow: a snow layer block (its layers), a snow block (a full eight);</li>
  *   <li>LambdaBetterGrass's better snow, while it is installed and on: on the blocks its resources
- *   list for its snow layer ({@code bettergrass/states}, type {@code layer}), standing beside a snow
- *   layer, it draws a layer as deep as that one (the deepest beside, as it shows).</li>
+ *   list for its snow layer ({@code bettergrass/states}, type {@code layer}) with snow layers on at
+ *   least two of their four sides, it draws a layer of its own (the deepest beside counts here).
+ *   With snow on one side only it draws none, as seen in game (visual-snow-117): up to 1.1.7 one
+ *   side was taken as enough, so the visual snow stood aside for snow that wasn't drawn, and a
+ *   plant beside a single snow layer stood in a hole.</li>
  * </ul>
  *
  * <p><b>Joinery.</b> The user's planned building mod will keep real snow layers inside a space
@@ -45,7 +48,7 @@ public final class RealSnow {
         if (vanilla > 0) {
             return vanilla;
         }
-        if (betterSnow.covers(state.getBlock())) {
+        if (betterSnow.covers(state.getBlock()) && sidesWithSnow(level, pos) >= 2) {
             return deepestBeside(level, pos);
         }
         // Joinery's snow in a shared space goes here, when Joinery exists (see the class description).
@@ -58,6 +61,18 @@ public final class RealSnow {
             return state.getValue(SnowLayerBlock.LAYERS);
         }
         return state.is(Blocks.SNOW_BLOCK) ? SnowLayerRule.MOST_LAYERS : 0;
+    }
+
+    /** How many of a block's four sides have a snow layer. */
+    public static int sidesWithSnow(BlockGetter level, BlockPos pos) {
+        int sides = 0;
+        BlockPos.MutableBlockPos beside = new BlockPos.MutableBlockPos();
+        for (Direction side : Direction.Plane.HORIZONTAL) {
+            if (level.getBlockState(beside.setWithOffset(pos, side)).getBlock() instanceof SnowLayerBlock) {
+                sides++;
+            }
+        }
+        return sides;
     }
 
     /** The deepest snow layer beside a block, on the four sides; 0 with none. */

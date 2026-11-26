@@ -84,8 +84,12 @@ final class FarLandPass implements AutoCloseable {
     /** Far water's Plain look (FarLandSettings.WaterLook): the near water's shading only where it hands over. */
     static final RenderPipeline WATER_PLAIN = overScenePipeline("far_land_water_plain", BlendFunction.TRANSLUCENT, ColorTargetState.WRITE_ALL, true,
         "LITE_FAR_WATER", "LITE_FAR_WATER_PLAIN");
-    /** The lights' glow is added to the colour only: the alpha keeps the emissive mark under it. */
-    static final RenderPipeline LIGHTS = overScenePipeline("far_land_lights", BlendFunction.ADDITIVE, ColorTargetState.WRITE_COLOR, false, "LITE_FAR_LIGHTS");
+    /**
+     * The lights' glow goes to the colour only (the alpha keeps the emissive mark under it), by the
+     * greater of the two, not added: glows overlapping in a village or over a lava field come out as
+     * bright as the brightest of them, never a white blotch (seedgen-speed-115; added up to 1.1.4).
+     */
+    static final RenderPipeline LIGHTS = overScenePipeline("far_land_lights", BlendFunction.MAX, ColorTargetState.WRITE_COLOR, false, "LITE_FAR_LIGHTS");
 
     private @Nullable GpuTexture seamTexture;
     private @Nullable GpuTextureView seamView;

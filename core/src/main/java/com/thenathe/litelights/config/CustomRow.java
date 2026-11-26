@@ -34,6 +34,9 @@ public final class CustomRow {
     private BooleanSupplier shownWhen = () -> true;
     private boolean tracked = true;
     private String tagKey;
+    private String lockedTagKey;
+    private Supplier<Component> detail = () -> null;
+    private BooleanSupplier good = () -> true;
 
     private CustomRow(Kind kind, Component label, Component description, int defaultValue, int min, int max, int step,
                       List<Component> choices, IntFunction<Component> format, IntSupplier getter, IntConsumer setter) {
@@ -98,6 +101,27 @@ public final class CustomRow {
         return this;
     }
 
+    /**
+     * A line under the row that says more, asked for each time the page is drawn (null for none),
+     * such as what a status stands for right now.
+     */
+    public CustomRow detail(Supplier<Component> detail) {
+        this.detail = detail;
+        return this;
+    }
+
+    /** For a notice: whether its status is good news (a tick, in the good colour) while the row is ready. */
+    public CustomRow goodWhen(BooleanSupplier condition) {
+        this.good = condition;
+        return this;
+    }
+
+    /** While the row is greyed out, a small tag saying why, such as {@code litelights.tag.dynamic_clouds_only}. */
+    public CustomRow lockedTag(String translationKey) {
+        this.lockedTagKey = translationKey;
+        return this;
+    }
+
     /** Greys the row out while the condition is false. */
     public CustomRow enabledWhen(BooleanSupplier condition) {
         this.enabledWhen = condition;
@@ -121,6 +145,15 @@ public final class CustomRow {
 
     public boolean active() {
         return enabledWhen.getAsBoolean();
+    }
+
+    /** The line under the row now, or null. */
+    public Component detail() {
+        return detail.get();
+    }
+
+    public boolean good() {
+        return good.getAsBoolean();
     }
 
     public boolean shown() {
@@ -174,6 +207,10 @@ public final class CustomRow {
     /** The translation key of the row's tag, or null for none. */
     public String tagKey() {
         return tagKey;
+    }
+
+    public String lockedTagKey() {
+        return lockedTagKey;
     }
 
     public RowState state() {

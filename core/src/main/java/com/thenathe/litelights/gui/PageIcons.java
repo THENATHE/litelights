@@ -4,8 +4,9 @@ import java.util.Map;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
- * The 11x11 pixel pictures in the navigation, one per page. Letters pick colours from
- * {@link #COLOURS}; '.' is empty. A page whose icon name isn't here gets the "module" icon.
+ * The 11x11 pixel pictures in the navigation, one per page, and the small credit heart. Letters
+ * pick colours from {@link #COLOURS}; '.' is empty. A page whose icon name isn't here gets the
+ * "module" icon.
  */
 public final class PageIcons {
     public static final int SIZE = 11;
@@ -160,6 +161,18 @@ public final class PageIcons {
                     "..b..b..b..",
                     ".b..b..b...",
                     "..........."}),
+            Map.entry("visual_snow", new String[] {
+                    "...w...w...",
+                    "....w.w....",
+                    ".w..www..w.",
+                    "..wwwlwww..",
+                    ".w..www..w.",
+                    "....w.w....",
+                    "...w...w...",
+                    "...........",
+                    "wwwwwwwwwww",
+                    "lllllllllll",
+                    "ddddddddddd"}),
             Map.entry("outlines", new String[] {
                     "........ppp",
                     ".......pwlp",
@@ -220,6 +233,14 @@ public final class PageIcons {
                     "...rrrrr...",
                     "....rrr....",
                     ".....r....."}),
+            // The Credits heart at the size of a row's name, beside each credited row (CreditHeart).
+            Map.entry("credit_heart", new String[] {
+                    ".rr.rr.",
+                    "rwrrrrr",
+                    "rwrrrrr",
+                    ".rrrrr.",
+                    "..rrr..",
+                    "...r..."}),
             Map.entry("module", new String[] {
                     "...........",
                     ".aaaa.llll.",

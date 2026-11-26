@@ -1,5 +1,123 @@
 # Changelog
 
+## 1.1.9+26.3 (local)
+
+### Changed
+- **Settings that do nothing with the current choices are left off the page** instead of shown locked: on the Sky page, Cloud reach, Cloud shadows and Cloud quality show only with Dynamic clouds, Cloud layers and Cloud distance only with Flat and Fancy, Cloud height only while clouds are on. They come back as soon as the choice allows, keep their values while away, and still count in "settings changed" and Reset all. The row you are changing stays where it is on screen. Search still finds them, greyed, with why they are hidden ("Hidden on its page: Dynamic clouds only").
+- **Distant fireworks are a town's show at a real place in the world,** a kilometre and a half to three kilometres away in the night's direction, instead of sparks painted on the sky behind the clouds. Bursts are a real size (60 to 90 blocks across), so a show looks small and far off, and always go off under the clouds' bases, over the land there and never inside it. The show stays put while you walk or fly, the land in front of it hides it, cloud in front of it (seen from above the clouds) dims it by how much the cloud lets through, cloud behind it no longer covers it, and haze, fog and rain dim it as they dim distant land. The same nights have shows as before, with the same colours and sparks; the settings preview puts one in front of you.
+- **The rainbow shows in front of distant clouds and land,** as real raindrops along the line of sight would, and fades out over anything nearer than a few hundred blocks, so it is never painted on a tree or wall beside you. Its shape, colours, timing and strength are as they were.
+- The aurora, the stars, falling stars and meteor showers are unchanged, beyond the clouds.
+- **Storm clouds are no longer a disc with things on top.** A storm is one irregular mass: a lobed outline that wanders out past the storm's edge in bays and bulges, a low shelf at its edge sloping up to a range of merged towers, highest off its middle. A thunderstorm's tower stands there with lesser turrets on its shoulders. Vanilla rain's deck rises and falls in hills and towers on top. Rain still falls only under cloud.
+- **Heaped clouds are soft and fluffy again:** rolling billows like 1.1.3's, big forms carrying smaller puffs, with soft vapour edges and gentle hollows, instead of packed cellular lumps.
+- **Fair-weather clouds are bigger:** heaped clouds are about one and a half times as wide, fewer of them small, with their masses grown together into one body.
+
+### Fixed
+- **No dry gap under raised clouds with Almanac's regional weather.** With Cloud height above Almanac's storm tops (rain storms reach 200 to 240, thunderstorms 250 to 320), the rain, snow, mist and rain sound stopped at the storm's top while its cloud was drawn higher, so flying up to it crossed dry air. The weather now reaches the drawn cloud: into the Dynamic clouds to the top of the cloud the rain falls from, up to the Fancy or Flat layer, as before with clouds off. Lowering the clouds takes no rain away.
+
+## 1.1.8+26.3 (local)
+
+### Changed
+- **Settings rows read name, control, reset, cost:** the cost badges sit in a column at the right edge, all one width, so they line up down the page. Each row's name now runs up to its own control, so names beside a switch show in full; docked at 1920x1080, row names cut short across all pages went from 12 to 2. A locked row shows a small lock where its cost would be, with the reason when you point at it and in the description box. Experimental and Temporary follow the name, as the word when the name still fits, otherwise as the small flask.
+- **The dusting under roofs and awnings reaches a little further in** (four blocks where it was three), under roofs up to eight blocks above the ground (six before) and onto doorsteps of slabs and stairs, **and is a little lighter**, so the ground shows through more.
+
+### Fixed
+- **Grass stayed green in snow with some resource packs:** a pack that gives short grass or tall grass extra variants (Vanilla Experience+ does) left those variants out of LiteLights' plant looks, so White grass in snow (and the plants' sway) missed them. Every variant a pack gives a block is now seen.
+- **A plant beside a single snow layer stood in a hole with LambdaBetterGrass's better snow on:** LambdaBetterGrass draws its snow in a plant only with snow on two sides or more, and LiteLights stood aside wherever there was snow on one. It now draws its own snow there.
+- **The ground at the foot of a stack of fence posts, walls or panes is snowed** like the ground beside it, while the posts below the top take no snow of their own.
+
+## 1.1.7+26.3 (local)
+
+### Changed
+- **Clouds have stranger, clearer shapes from the side:** fewer, bigger masses with sky between them; towers, anvils, boots, arches, chains, crowns, leaning stacks and rings among ordinary lopsided heaps, as big as clouds were in 1.1.4 and more of them. No thin upright slivers or streaky tower sides.
+- **Seed generation is much faster at high Detail,** and fills the land near you first. It works out far less of the rock inside the land, which nobody sees, and uses more of the processor by default, so at Ultra the whole fill takes about half as long as in 1.1.4 or less. The land it predicts is the same.
+- **Seed generation fills in three steps** (the owner's order): first the land near you, out to 256 blocks past the render distance, at its full detail; then everything else at low detail; then the rest refined to the Detail you chose. It follows you as you travel, and Doing now says which step it is on.
+- **Wait for detail is short at every setting.** It holds far land back only until the first two steps are done, which take the same time at Medium, High and Ultra: higher Detail now only means more refining after far land has appeared, never a longer blank wait.
+- **Background threads:** Auto uses more of a big processor (half its threads less two, up to eight: six on a sixteen-thread processor, two on eight), and the row adds 6, 8 and All but 2.
+- **Far lights are softer:** each glow is half as bright at its middle and twice as wide, fading out evenly with no bright core and no edge, and many lights together no longer add up to a white blotch.
+
+### Fixed
+- **A speckled edge on clouds while you move.**
+- **Far lights showing through water.** Lights below the sea level (lava, lit caves and other lights under the sea and under lakes) no longer glow through the water from afar. Lights in dry land below the sea level, such as a lit ravine open to the sky, don't show from afar either now.
+
+## 1.1.6+26.3 (local)
+
+### Changed
+- **Idea credits are a small heart beside the feature's name** instead of a line of text under the row: point at the heart, or move to it with Tab, to read the credit, word for word as before. The Overlays and Far Terrain pages' credits are a heart beside the page's first heading instead of a note at the top. The Credits page is as it was.
+- **Clouds are odd shapes, and there are more of them:** heaped clouds are built of several masses (lopsided heaps, towers, rafts with a turret, chains, arches, rings, forks, streamers, shelves, torn clusters), and fair weather has about twice as many heaped clouds. Storms are as they were.
+- **Cloud rows that do nothing are locked and say why:** with Dynamic clouds, Cloud distance (Minecraft's own) says "Flat and Fancy only"; with clouds off, Cloud height says "Clouds are off"; the rows for Dynamic clouds only say so. Cloud height says what it means with Dynamic clouds.
+
+### Fixed
+- **Clouds shimmering at their edges while you walk, sprint or turn,** and a rim of cloud or sky round leaves and block edges in front of them.
+
+## 1.1.5+26.3 (local)
+
+### Changed
+- **Visual snow has a page of its own** (Visual Snow, beside Weather), with its rows in sections: On blocks, Under trees and roofs, Leaves and grass. The Weather page keeps what falls and hangs in the air; More snow in snowstorms stays there, under Weather details. Every setting keeps its saved value.
+- **Snow on far terrain is far terrain's own row,** on by default, and no longer needs Visual snow: with far terrain on, far land shows Almanac's snow as it lies now. It shows on the Far Terrain page and at the end of the Visual Snow page, one setting in both places. A choice saved before carries over (on stays on, off stays off).
+- **Far snow by place follows Almanac's snow nodes:** each place is one of Almanac's points every 256 blocks, eased between them as Almanac eases the snow of loaded chunks, so far land carries the same snow as the near land that replaces it, from the camera out. Only places within the far land's reach are asked about.
+
+### Fixed
+- **Far land showed the snow where you stand instead of where storms laid it,** or none at all: most places were unknown to Almanac and took the snow where you stood, so standing in snow whitened all far land, and far land at a storm's snow turned bare as you came near it. With Almanac's next release (or its far-snow-111 build) far land shows each place's snow; beside Almanac 1.1.0 or 1.0.0 too, as far as they can tell. A place Almanac doesn't know yet keeps the snow it last had, else the average of the places known.
+- **Snow over edges** no longer weeps down grass blocks (their own snowy side does it), snow, glass and glass panes of every kind, or leaves.
+- **Visual snow only on the top of a column:** in a stack of fences, walls, panes, slabs or stairs only the top one is snowed, as real snow would lie; a block under another gets none.
+- **White grass in snow** whitened grass standing between real snow layers only when the visual snow's own snow lay at its foot; it now whitens whenever snow lies beside it, and two-block grass whitens whole.
+
+
+## 1.1.4+26.3 (local)
+
+### Changed
+- **Heaped and storm clouds are clumpy:** cumulus, towering cumulus and storms are built of rounded lumps packed together, big lumps carrying smaller ones, with shaded clefts between, so they read as cauliflower heads rather than smooth blobs, as soft as before. Their sides break into lobes, their tops stack a little higher, and their undersides hang in pouches of differing depth all along instead of lying level. The wispy and thin clouds are as they were.
+- **The Dynamic clouds cost a little less:** at Medium about 0.35 milliseconds a frame on a strong graphics card at 1440p (0.6 flying among the clouds).
+
+### Fixed
+- **A straight upright line down the side of some big clouds,** where a cloud's thin edge stood out in front of the rest as a sheer wall.
+
+## 1.1.3+26.3 (local)
+
+### Changed
+- **The Dynamic clouds are soft and volumetric** instead of built of cubes: amorphous, billowing clouds with heads on their tops, sides that bulge and lean, and bases flat only where a storm's are, lit through their own depth by the sun or the moon, with light glowing through thin edges. They are larger and much taller: fair-weather cumulus are about as tall as they are wide, towering cumulus reach twice as high, and the sky has four levels the cloud types reach into, from low heaps and stratus through stratocumulus and the middle-height alto clouds to wisps and veils at the top. A rain storm is one great mass from just over the cloud floor up through the third level; a thunderstorm is one tower nearly as wide as its storm, from the floor to the top of the sky, spreading into an anvil. Fair weather is a random mix of most of the types and is spread more evenly over the sky, with fewer long stretches of empty blue. Flying into a cloud is a white-out, whatever the Fog setting.
+- **Cloud bases sag and billow** instead of lying on one level: from below a cloud is lumpy, and from the side its underside curls round like the rest of it.
+- **Cloud shadows** switch only the clouds' shadows on the land; the clouds shade themselves either way.
+
+### Added
+- **Cloud quality** (Sky, Clouds; with the Dynamic clouds): how finely they are drawn. Low is lightest, Medium (the default) costs about 0.4 milliseconds a frame on a strong graphics card at 1440p (0.7 flying among the clouds), High a little more, Ultra draws them at full resolution.
+- **Altostratus, cirrocumulus and cirrostratus** among the Dynamic clouds' types.
+
+### Fixed
+- **The Dynamic clouds flickering while the sky changed:** far patches of cloud blinked out and back every second while a rain deck closed in.
+- **Seeing cube faces from inside a cloud,** some of them missing.
+
+## 1.1.2+26.3 (local)
+
+### Fixed
+- **Seed generation on servers with terrain mods.** On a server without LiteLights, with the seed entered and the same terrain mods on both sides (Tectonic, for one), seed generation stopped at once with "Couldn't start: Registry Loading". Your game now reads the mods' own world-generation data as the server does, so it predicts, and the land matches what loads. If something still can't be read, the page names the mod or data pack instead of "Registry Loading".
+
+### Added
+- **Wait for detail** (Far Terrain page, under Seed generation; on by default): the first time seed generation fills a world, far land stays hidden, with the game's own fog at the render distance, until the land past it is predicted close to its own detail, so the coarsest level never shows up close; then far land fades in. About two and a half minutes at the default settings on a fast machine, longer on a slower one or with terrain mods. Later, and in worlds already filled, far land shows at once.
+- **Doing now** (Far Terrain page, under Seed generation): what seed generation is doing right now, in plain words, with how much is done, at which detail, how fast, and roughly how long the rest takes.
+
+### Changed
+- The Far Terrain and About pages no longer carry the note about Voxy and Distant Horizons. With either installed, LiteLights still leaves its terrain alone, and the Far shadows row says why it is off.
+- **Predicted here** shows how much is predicted and its size on disk; what seed generation is doing moved to Doing now.
+
+### Known gaps
+- **Seed generation:** a terrain mod that changes its terrain through its own settings (Tectonic's, for one) only matches the server when your settings for it are the server's; mods that register world-generation data some other way than Fabric API's can still fail to read, and the page then names them. The other seed generation gaps are 1.1.1's.
+- The other known gaps are 1.1.1's.
+
+## 1.1.1+26.3 (local)
+
+Two far terrain fixes on top of 1.1.0, found in game just after it was released.
+
+### Fixed
+- **Far terrain: holes in far hillsides.** Far land a few hundred blocks out and further, where a voxel is two blocks or more, could be drawn as loose flat tops at different heights with the sky showing between them, worst at the furthest level. Hillsides are now steps with their sides drawn.
+- **Far terrain drawn under the land loaded round you.** Far land didn't step aside in most loaded chunks: inside the render distance near ice looked solid and patchy, chunk by chunk, near leaves looked solid, and with seed generation on predicted land, with its stand-in trees and coarse blocks, stood over the real land for a while after you arrived. Far land now steps aside wherever the game draws its own chunks. A far terrain store from 1.1.0 is read as it is.
+
+### Known gaps
+- **Far terrain:** a thin pale straight line can lie on far sea some hundreds of blocks out; near water has fine grain and the floor of deep water under it where far water is smoother; far plants past the Detail distance are left out; far lights are faint at a few hundred blocks; far ice has no reflections; lakes away from sea level can sit up to a voxel off where two levels meet; no cloud shadows on near or far water.
+- **Seed generation:** no ravines, no features other than trees (ice spikes, boulders, flowers), no structures (villages appear when visited); trees are stand-ins placed where LiteLights chooses and move when the real chunks arrive; coasts are the least accurate, and filling all 4 km to full detail takes several minutes.
+- The other known gaps are 1.1.0's.
+
+
 ## 1.1.0+26.3
 
 The first public release since 1.0.0. It brings together everything built since then (the local builds 1.0.2 to 1.0.15, each listed below) and goes out with **Almanac 1.0.0**. If you last played 1.0.0, this is what's different.

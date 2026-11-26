@@ -143,6 +143,75 @@ class TerrainSamplerTest {
         System.out.println("Predicted tile times (first ones include warming up): " + timings);
     }
 
+    /**
+     * The surface rules run only on voxel rows that can show (seedgen-speed-115): every voxel the
+     * mesher can draw a face of (beside air or water, or at the tile's edge, where the wall toward
+     * land never seen is drawn) is the same block as with the rules on every row, as up to
+     * 1.1.4, and so are every column's top and light. Only rock inside the land differs, and the
+     * biome of a few columns on a climate border (see below).
+     */
+    @Test
+    void rulesOnlyWhereTheyShowGiveTheSameLand() {
+        TableIds ids = new TableIds();
+        TerrainSampler everyRow = new TerrainSampler(inputs, MIN_Y, HEIGHT, ids, new Canopies(SEED));
+        everyRow.columns().rulesOnEveryRow = true;
+        TerrainSampler whereSeen = new TerrainSampler(inputs, MIN_Y, HEIGHT, ids, new Canopies(SEED));
+        long buriedDifferent = 0;
+        long voxels = 0;
+        long columns = 0;
+        long biomesOtherwise = 0;
+        for (int level = 1; level <= 5; level++) {
+            for (int[] at : new int[][] {{1, -1}, {-7, 4}, {12, 9}}) {
+                long key = TileKey.of(level, at[0] * (6 - level), at[1] * (6 - level));
+                TileVoxels expected = everyRow.sample(key);
+                TileVoxels made = whereSeen.sample(key);
+                assertTrue(java.util.Arrays.equals(expected.light, made.light), "light at " + TileKey.describe(key));
+                // Every column's top the same, and its biome but for a few at climate borders: the game's
+                // climate sampler, with its caches, can answer a quart on a border either way depending on
+                // what it was asked before (the rules ask it about the rock below the top).
+                TerrainColumns before = everyRow.columns();
+                TerrainColumns after = whereSeen.columns();
+                assertTrue(java.util.Arrays.equals(before.tops, after.tops), "tops at " + TileKey.describe(key));
+                for (int i = 0; i < after.biomes.length; i++) {
+                    columns++;
+                    if (before.biomes[i] != after.biomes[i]) {
+                        biomesOtherwise++;
+                    }
+                }
+                for (int z = 0; z < TileVoxels.SIZE; z++) {
+                    for (int x = 0; x < TileVoxels.SIZE; x++) {
+                        int top = expected.top(x, z, ids);
+                        assertEquals(top, made.top(x, z, ids), "top at " + x + ", " + z + " of " + TileKey.describe(key));
+                        for (int y = 0; y < expected.height; y++) {
+                            int index = TileVoxels.index(x, y, z);
+                            voxels++;
+                            if (expected.states[index] == made.states[index]) {
+                                continue;
+                            }
+                            boolean shows = x == 0 || z == 0 || x == TileVoxels.SIZE - 1 || z == TileVoxels.SIZE - 1
+                                || uncovered(expected, ids, x + 1, y, z) || uncovered(expected, ids, x - 1, y, z) || uncovered(expected, ids, x, y, z + 1)
+                                || uncovered(expected, ids, x, y, z - 1) || uncovered(expected, ids, x, y + 1, z) || uncovered(expected, ids, x, y - 1, z);
+                            assertTrue(!shows, "a voxel that can show differs at " + x + ", " + y + ", " + z + " of " + TileKey.describe(key)
+                                + ": " + ids.state(expected.states[index]) + " against " + ids.state(made.states[index]));
+                            buriedDifferent++;
+                        }
+                    }
+                }
+            }
+        }
+        System.out.println("Rock inside the land with another block than with the rules on every row: " + buriedDifferent + " of " + voxels
+            + " voxels; columns with the biome across a climate border: " + biomesOtherwise + " of " + columns);
+        assertTrue(biomesOtherwise * 200 < columns, biomesOtherwise + " of " + columns + " columns with another biome");
+    }
+
+    private static boolean uncovered(TileVoxels tile, TableIds ids, int x, int y, int z) {
+        if (y < 0 || y >= tile.height) {
+            return y >= tile.height;
+        }
+        int state = tile.states[TileVoxels.index(x, y, z)];
+        return state == 0 || ids.kind(state) != BlockKinds.SOLID;
+    }
+
     /** Warm timings per level, when asked for ({@code -Plitelights.farterrain.probe=true}). */
     @Test
     void probeCostPerLevel() {

@@ -13,9 +13,10 @@
 // the near snow's) are past its point, and the point is the near snow's own (SnowPoints), so far
 // and near show the same columns white at the hand-over and build up and thaw alike. At and above
 // the bare line there is snow whatever the shares; below the far snow line none. Under Almanac's
-// regional weather the snow differs by place: past the near land the shares ease over 512 blocks
-// from those where the player stands to each place's (FarSnowPlaces, in FarSnowColours' rows from
-// 512), so near and far still agree at the hand-over.
+// regional weather the snow differs by place: far land takes each place's shares (FarSnowPlaces, in
+// FarSnowColours' rows from 512), one place at each of Almanac's snow nodes, eased between them as
+// Almanac weighs a loaded chunk's snow from its nodes, so far land and the near land that replaces
+// it agree.
 //
 // How it shows: upward faces with snow turn to snow, whiter as layers add up (a stair's steps and a
 // slab's top too, the fake snow's top-face rule); leaves whole or only on top (FarSnowColourOrigin.z);
@@ -32,9 +33,9 @@
 layout(std140) uniform FarSnow {
     ivec4 FarSnowOrigins;      // xy the inner ring's first column (block x, z), zw the outer ring's
     ivec4 FarSnowColourOrigin; // xy the colours' first column (block x, z); z 1 leaves white only on top; w 1 grass in snow white
-    vec4 FarSnowState;         // x where the snow by place starts (blocks from the camera; -1 none), y the level's floor (block y), z 1 when colours are known, w 1 for the debug view
+    vec4 FarSnowState;         // x 0 with the snow by place filled, -1 without; y the level's floor (block y), z 1 when colours are known, w 1 for the debug view
     vec4 FarSnowShares[3];     // each climate's (HOT, TEMPERATE, COLD) layer shares where the player stands, layers 1 to 4
-    ivec4 FarSnowPlaces;       // xy the first place's corner (block x, z), zw the camera's column
+    ivec4 FarSnowPlaces;       // xy the first place's corner (block x, z), zw the camera's column (unread since far-snow-115)
 };
 
 uniform sampler2D FarSnowLines;
@@ -44,12 +45,12 @@ const int LITE_FAR_SNOW_SIZE = 512;
 const int LITE_FAR_SNOW_INNER_SHIFT = 4;   // 16 blocks a texel
 const int LITE_FAR_SNOW_OUTER_SHIFT = 6;   // 64 blocks a texel
 const int LITE_FAR_SNOW_COLOUR_SHIFT = 5;  // 32 blocks a texel
-// The snow by place (FarSnowPlaces): 64 x 64 places 512 blocks apart, a block of 64 texels per
-// climate across, from row 512 of FarSnowColours, each layer's share as its step out of 32.
+// The snow by place (FarSnowPlaces): 64 x 64 places 256 blocks apart (Almanac's snow nodes), a
+// block of 64 texels per climate across, from row 512 of FarSnowColours, each layer's share as its
+// step out of 32.
 const int LITE_FAR_SNOW_PLACES = 64;
-const float LITE_FAR_SNOW_PLACE_SIZE = 512.0;
+const float LITE_FAR_SNOW_PLACE_SIZE = 256.0;
 const int LITE_FAR_SNOW_PLACES_ROW = 512;
-const float LITE_FAR_SNOW_PLACES_EASE = 512.0;
 const float LITE_FAR_SNOW_STEPS = 32.0;
 const uint LITE_FAR_SNOW_CODE = 0x3FFFu;
 // Snow's colour before lighting, as the near snowy leaves use it (weather/snow_cover.glsl), and how
@@ -94,22 +95,16 @@ bool lite_far_snow_codes(ivec2 column, out uvec2 codes, out int climate) {
     return codes.y != 0u;
 }
 
-// A climate's layer shares at a column: where the player stands near the camera, easing to the
-// places' round the column (between their middles, by the colours' linear sampler) past the near land.
+// A climate's layer shares at a column: the places' round the column (between their middles, by the
+// colours' linear sampler) under regional weather, else where the player stands.
 vec4 lite_far_snow_shares(ivec2 column, int climate) {
-    vec4 here = FarSnowShares[climate - 1];
     if (FarSnowState.x < 0.0) {
-        return here;
-    }
-    float ease = clamp((length(vec2(column - FarSnowPlaces.zw)) - FarSnowState.x) / LITE_FAR_SNOW_PLACES_EASE, 0.0, 1.0);
-    if (ease <= 0.0) {
-        return here;
+        return FarSnowShares[climate - 1];
     }
     // Clamped to the climate's own block of texels, so no other climate's places are blended in.
     vec2 place = clamp((vec2(column - FarSnowPlaces.xy) + 0.5) / LITE_FAR_SNOW_PLACE_SIZE, vec2(0.5), vec2(float(LITE_FAR_SNOW_PLACES) - 0.5));
     vec2 texel = vec2(float((climate - 1) * LITE_FAR_SNOW_PLACES), float(LITE_FAR_SNOW_PLACES_ROW)) + place;
-    vec4 there = texture(FarSnowColours, texel / vec2(textureSize(FarSnowColours, 0))) * (255.0 / LITE_FAR_SNOW_STEPS);
-    return mix(here, there, ease);
+    return texture(FarSnowColours, texel / vec2(textureSize(FarSnowColours, 0))) * (255.0 / LITE_FAR_SNOW_STEPS);
 }
 
 // Layers of snow on a surface at height surfaceY in a column: -1 where far snow doesn't know.

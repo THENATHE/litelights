@@ -45,14 +45,14 @@ void main() {
     fade = vec2(float((nodeData.w >> 4u) & 3u), clamp((FarParams.z - fadeStart) / LITE_FAR_SWAP_FADE, 0.0, 1.0));
     #ifdef LITE_FAR_LIGHTS
     // A light's point (FarQuad.writeLight): a soft disc facing the camera at its voxel's centre,
-    // drawn a little in front of it so the block it sits on doesn't hide it, and never under a
-    // pixel and a half across.
+    // drawn a little in front of it so the block it sits on doesn't hide it, and never under
+    // LITE_FAR_LIGHT_MIN_PIXELS across.
     vec3 centre = vec3(origin + ivec3(x, y, z) * size - LiteCameraBlock.xyz) - LiteCameraFraction.xyz + vec3(float(size) * 0.5);
     float centreDistance = max(length(centre), 1.0);
     vec4 clip = FarViewProjection * vec4(centre * max(0.0, 1.0 - float(size) * 0.75 / centreDistance), 1.0);
     // The projection's scale: the length of the matrix's second row (the view only turns things).
     float scale = length(vec3(FarViewProjection[0][1], FarViewProjection[1][1], FarViewProjection[2][1]));
-    float pixels = clamp(float(size) * 1.5 * scale / max(clip.w, 0.05) * LiteScreen.y * 0.5, LITE_FAR_LIGHT_MIN_PIXELS, LITE_FAR_LIGHT_MAX_PIXELS);
+    float pixels = clamp(float(size) * LITE_FAR_LIGHT_REACH * scale / max(clip.w, 0.05) * LiteScreen.y * 0.5, LITE_FAR_LIGHT_MIN_PIXELS, LITE_FAR_LIGHT_MAX_PIXELS);
     vec2 offset = vec2(corner) * 2.0 - 1.0;
     clip.xy += offset * pixels * 2.0 * LiteScreen.zw * clip.w;
     gl_Position = clip;

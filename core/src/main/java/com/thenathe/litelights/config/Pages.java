@@ -28,6 +28,8 @@ public final class Pages {
     public static final String VEGETATION = "vegetation";
     public static final String PARTICLES = "particles";
     public static final String WEATHER = "weather";
+    /** The visual snow's own page (far-snow-115), registered beside Weather by BuiltInPages. */
+    public static final String VISUAL_SNOW = "visual_snow";
     public static final String OUTLINES = "outlines";
     public static final String DIMENSIONS = "dimensions";
     public static final String OVERLAYS = "overlays";

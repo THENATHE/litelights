@@ -101,5 +101,15 @@ public interface ModuleSettings {
          */
         PageRows status(net.minecraft.network.chat.Component label, net.minecraft.network.chat.Component description,
                         java.util.function.Supplier<net.minecraft.network.chat.Component> status);
+
+        /**
+         * A status row as above with a line under it that says more ({@code detail}, null for none,
+         * wrapped to the page's width), and whether the status is good news ({@code good}: a tick,
+         * in the page's good colour; else dimmed). All three are asked for each time the page is drawn.
+         */
+        PageRows status(net.minecraft.network.chat.Component label, net.minecraft.network.chat.Component description,
+                        java.util.function.Supplier<net.minecraft.network.chat.Component> status,
+                        java.util.function.Supplier<net.minecraft.network.chat.@org.jspecify.annotations.Nullable Component> detail,
+                        java.util.function.BooleanSupplier good);
     }
 }

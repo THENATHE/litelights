@@ -94,7 +94,8 @@ class AlmanacStormsTest {
                         rainyUnderCloud += solid(column) ? 1 : 0;
                     }
                     double size = storm.size(tick);
-                    if (size <= 0.0 || storm.distance(x, z, tick) > 1.2 * size) {
+                    // The cloud's outline wanders in lobes out to about 1.5 of the storm's size (Footprint, clouds-look-118).
+                    if (size <= 0.0 || storm.distance(x, z, tick) > 1.6 * size) {
                         // A thunderstorm's anvil spreads past its edge high up, as real ones do; nothing lower does.
                         assertTrue(column.isClear() || storm.thunder() && column.lowestBottom() > FLOOR + 600.0f,
                             "storm cloud past the storm's edge at " + tick + " (" + storm.distance(x, z, tick) / size + ")");

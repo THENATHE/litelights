@@ -48,7 +48,8 @@ public final class RenderSettingsFeed {
                 RenderSettings.CloudStyle.valueOf(LiteLightsOptions.CLOUDS.get().name()),
                 LiteLightsOptions.CLOUD_LAYERS.value(),
                 LiteLightsOptions.CLOUD_REACH.value(),
-                LiteLightsOptions.CLOUD_SHADOWS.on()),
+                LiteLightsOptions.CLOUD_SHADOWS.on(),
+                RenderSettings.CloudQuality.valueOf(LiteLightsOptions.CLOUD_QUALITY.get().name())),
             new RenderSettings.Fog(
                 RenderSettings.FogLook.valueOf(LiteLightsOptions.FOG_LOOK.get().name()),
                 LiteLightsOptions.FOG_DENSITY.value(),
@@ -183,8 +184,7 @@ public final class RenderSettingsFeed {
                     LiteLightsOptions.SNOW_UNDER_OVERHANGS.on(),
                     RenderSettings.SnowyLeavesLook.valueOf(LiteLightsOptions.SNOWY_LEAVES_LOOK.get().name()),
                     LiteLightsOptions.SNOWY_GRASS.on(),
-                    LiteLightsOptions.MORE_SNOWFLAKES.on(),
-                    LiteLightsOptions.FAR_SNOW.on())),
+                    LiteLightsOptions.MORE_SNOWFLAKES.on())),
             new RenderSettings.Outlines(
                 LiteLightsOptions.OUTLINES.on(),
                 RenderSettings.GlowColour.valueOf(LiteLightsOptions.OUTLINE_COLOUR.get().name()),

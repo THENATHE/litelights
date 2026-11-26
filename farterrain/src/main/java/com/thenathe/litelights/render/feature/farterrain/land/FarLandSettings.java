@@ -54,9 +54,12 @@ public final class FarLandSettings {
         }
     }
 
-    /** Background workers that build far terrain's meshes, besides the one that stores it. */
+    /**
+     * Background workers that build far terrain's meshes and predict land from the seed, besides
+     * the one that stores it. All but two leaves two of the processor's threads to the game.
+     */
     public enum Threads {
-        AUTO(0), ONE(1), TWO(2), THREE(3), FOUR(4);
+        AUTO(0), ONE(1), TWO(2), THREE(3), FOUR(4), SIX(6), EIGHT(8), ALL_BUT_TWO(-1);
 
         public final int count;
 
@@ -82,8 +85,20 @@ public final class FarLandSettings {
     public final ChoiceSetting<Threads> threads;
     public final ToggleSetting lights;
     public final ChoiceSetting<WaterLook> waterLook;
+    /**
+     * Snow on far terrain: far land shows Almanac's snow as it lies now, by place under its regional
+     * weather. Its own row since far-snow-115 (it was under Visual snow, off by default, so far land
+     * kept the snow it was seen with unless both were on); the saved name is the old row's, so a
+     * value saved before carries over.
+     */
+    public final ToggleSetting farSnow;
     /** Seed generation: land not visited yet, predicted from the world's seed (off by default). */
     public final ToggleSetting seedGeneration;
+    /**
+     * On a world's first fill from the seed, far land stays hidden (the game's own fog at the render
+     * distance) until its first set of levels is built, so the coarsest level never shows up close.
+     */
+    public final ToggleSetting waitForDetail;
 
     /** Declares the rows through these settings: the module's own, or core's in its tests. */
     public FarLandSettings(ModuleSettings rows) {
@@ -101,10 +116,16 @@ public final class FarLandSettings {
             .feature(FEATURE).needs(enabled).toggle(true);
         waterLook = rows.row("far_terrain.water_look").at(ModuleSettings.FAR_TERRAIN_PAGE, SECTION).cost(RowCost.MEDIUM)
             .feature(FEATURE).needs(enabled).choice(WaterLook.class, WaterLook.FULL);
+        farSnow = rows.row("weather.visual_snow.far").at(ModuleSettings.FAR_TERRAIN_PAGE, SECTION).cost(RowCost.LOW)
+            .feature(FEATURE).needs(enabled).toggle(true);
         // Its own section under the switch, so its status and buttons sit with it. Off by default:
         // it keeps processor threads busy while land fills in.
         seedGeneration = rows.row("far_terrain.seed_generation").at(ModuleSettings.FAR_TERRAIN_PAGE, SEED_SECTION).cost(RowCost.HIGH)
             .feature(FEATURE).needs(enabled).tag(EXPERIMENTAL).toggle(false);
+        // On by default: it only changes the first minute or two of a world's first fill, and it
+        // keeps the coarse stand-ins out of sight then (user, 2026-11-25).
+        waitForDetail = rows.row("far_terrain.seed_wait_for_detail").at(ModuleSettings.FAR_TERRAIN_PAGE, SEED_SECTION)
+            .feature(FEATURE).needs(seedGeneration).toggle(true);
     }
 
     static FarLandSettings declare() {
@@ -120,12 +141,21 @@ public final class FarLandSettings {
         return (long) megabytes << 20;
     }
 
-    /** Mesh workers: Auto is a quarter of the cores, one to four. */
+    /** Mesh and prediction workers for this machine. */
     int meshThreads() {
-        int count = threads.get().count;
-        if (count == 0) {
-            count = Math.clamp(Runtime.getRuntime().availableProcessors() / 4, 1, 4);
-        }
-        return count;
+        return meshThreads(threads.get(), Runtime.getRuntime().availableProcessors());
+    }
+
+    /**
+     * Auto is half the processor's threads less two, one to eight (a quarter, one to four, up to
+     * 1.1.4): six of sixteen, two of eight, one of four. A count is never more than the processor
+     * has (DECISIONS, seedgen-speed-115).
+     */
+    static int meshThreads(Threads choice, int processors) {
+        return switch (choice) {
+            case AUTO -> Math.clamp(processors / 2 - 2, 1, 8);
+            case ALL_BUT_TWO -> Math.max(1, processors - 2);
+            default -> Math.clamp(choice.count, 1, Math.max(1, processors));
+        };
     }
 }

@@ -13,6 +13,7 @@ import com.thenathe.litelights.config.ValueFormat;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
@@ -228,6 +229,13 @@ final class CoreModuleSettings implements ModuleSettings {
         @Override
         public PageRows status(Component label, Component description, Supplier<Component> status) {
             content.row(CustomRow.notice(label, description, status));
+            return this;
+        }
+
+        @Override
+        public PageRows status(Component label, Component description, Supplier<Component> status, Supplier<Component> detail,
+                               BooleanSupplier good) {
+            content.row(CustomRow.notice(label, description, status).detail(detail).goodWhen(good));
             return this;
         }
     }

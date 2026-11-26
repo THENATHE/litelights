@@ -55,7 +55,7 @@ class VisualSnowUpgradeTest {
             assertFalse(LiteLightsOptions.PUDDLES.on());
             assertFalse(LiteLightsOptions.VISUAL_SNOW.on(), "the master switch starts off: the picture and cost as before");
             assertTrue(LiteLightsOptions.SNOW_ON_BLOCKS.on(), "each row starts on, for when the master is turned on");
-            assertTrue(LiteLightsOptions.FAR_SNOW.on());
+            // Snow on far terrain is far terrain's own row since far-snow-115: FarTerrainRowsTest.
             assertEquals(LiteLightsOptions.SnowyLeavesLook.WHOLE, LiteLightsOptions.SNOWY_LEAVES_LOOK.get(), "today's near look");
             assertFalse(LiteLightsOptions.SNOW_ON_BLOCKS.active(), "and is greyed out while the master is off");
 

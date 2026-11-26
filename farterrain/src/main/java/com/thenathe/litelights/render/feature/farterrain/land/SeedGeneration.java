@@ -9,6 +9,7 @@ import com.thenathe.litelights.render.feature.farterrain.seed.PredictionInputs;
 import com.thenathe.litelights.render.feature.farterrain.seed.SeedEntryScreen;
 import com.thenathe.litelights.render.feature.farterrain.seed.SeedNoticeScreen;
 import com.thenathe.litelights.render.feature.farterrain.seed.ServerSeeds;
+import com.thenathe.litelights.render.feature.farterrain.seed.UnreadableData;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -33,6 +34,7 @@ import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -62,9 +64,18 @@ import org.jspecify.annotations.Nullable;
  * The notice never blocks: Generate, Not now, or Don't ask again for this server.
  */
 final class SeedGeneration {
-    /** Raised whenever the sampler's output changes, so predictions made before are made again. */
+    /**
+     * Raised whenever the sampler's output changes, so predictions made before are made again.
+     * Kept at 1 by seedgen-speed-115: the rules it stopped running reached only rock no face shows,
+     * so 1.1.4's predictions draw the same land and are kept.
+     */
     static final int SAMPLER_VERSION = 1;
     private static final long CAPTURE_NANOS = 30_000_000_000L;
+    /** The Doing now row is worked out again at most this often. */
+    private static final long ACTIVITY_NANOS = 250_000_000L;
+    private static final String NOW = "litelights.option.far_terrain.seed_now.";
+    /** The fill's steps in plain words, by PredictedLand.STEP_NEAR to STEP_REFINE. */
+    private static final String[] STEP_KEYS = {"step_near", "step_coarse", "step_refine"};
 
     enum Phase { OFF, WAITING_FOR_HELPER, WAITING_FOR_SEED, PREPARING, ASKING, DECLINED, RUNNING, UNSUPPORTED, MISMATCH, FAILED }
 
@@ -79,7 +90,7 @@ final class SeedGeneration {
     private @Nullable FarLandSession session;
     private Phase phase = Phase.OFF;
     private @Nullable CompletableFuture<Prepared> preparing;
-    private @Nullable String problem;
+    private @Nullable Component problem;
     /** The connection the player answered the notice for, and the answer: Generate or Not now hold until they leave. */
     private @Nullable Object answeredConnection;
     private boolean answeredGenerate;
@@ -91,6 +102,8 @@ final class SeedGeneration {
     private long captureUntil;
     private boolean mismatchSaid;
     private SeedHelperClient.@Nullable Reply helperReply;
+    private @Nullable SeedActivity activity;
+    private long activityAt;
     private @Nullable Object helperConnection;
     private long helperWaitUntil;
     private @Nullable Map<String, Object> mismatchReading;
@@ -143,7 +156,7 @@ final class SeedGeneration {
                 }
                 return;
             }
-            open.planPredictions(camera, settings, serverTickMillis(minecraft));
+            open.planPredictions(camera, settings, minecraft.options.getEffectiveRenderDistance() * 16.0, serverTickMillis(minecraft));
         }
     }
 
@@ -196,8 +209,16 @@ final class SeedGeneration {
             prepared = done.join();
         } catch (RuntimeException failure) {
             Throwable cause = failure.getCause() != null ? failure.getCause() : failure;
-            problem = cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
-            LiteLightsMod.LOG.error("Seed generation couldn't get ready", cause);
+            if (cause instanceof UnreadableData unreadable) {
+                // The game has logged every entry that failed, and why, just before.
+                problem = Component.translatable(NOW + "unreadable", modNames(unreadable.namespaces()));
+                LiteLightsMod.LOG.error("Seed generation couldn't read this game's world-generation data from {}; the entries and why are in the "
+                    + "registry loading errors above", unreadable.namespaces());
+            } else {
+                problem = Component.translatable(NOW + "failed.detail",
+                    cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage());
+                LiteLightsMod.LOG.error("Seed generation couldn't get ready", cause);
+            }
             phase = Phase.FAILED;
             return;
         }
@@ -355,6 +376,17 @@ final class SeedGeneration {
         return entry != null && entry.choice() == ServerSeeds.Choice.ALWAYS;
     }
 
+    /**
+     * Whether far land is held back now: Wait for detail is on, and this world's first fill from
+     * the seed is running and hasn't built its first set of levels yet (PredictedLand.firstSetBuilt).
+     */
+    boolean holdsFarLand() {
+        FarLandSession open = session;
+        PredictedLand predicted = open == null ? null : open.predictions();
+        return settings.seedGeneration.on() && settings.waitForDetail.on() && phase == Phase.RUNNING && predicted != null
+            && predicted.firstFillPending();
+    }
+
     /** What the notice says, or null when there is nothing to say (the helper's fingerprint agrees and the seed is the world's). */
     static @Nullable List<Component> notice(PredictionInputs inputs, GenerationFingerprint mine, long seed, long serverSeedHash, TreeSet<String> serverBiomes,
                                             SeedHelperClient.@Nullable Reply helper) {
@@ -417,6 +449,18 @@ final class SeedGeneration {
         } catch (ReflectiveOperationException unavailable) {
             return 0L;
         }
+    }
+
+    /** Namespaces as the player knows them: a mod's name where a mod has that id, else the data pack namespace itself. */
+    static Component modNames(List<String> namespaces) {
+        if (namespaces.isEmpty()) {
+            return Component.translatable(NOW + "unnamed_data");
+        }
+        List<String> named = new ArrayList<>();
+        for (String namespace : namespaces) {
+            named.add(FabricLoader.getInstance().getModContainer(namespace).map(mod -> mod.getMetadata().getName()).orElse(namespace));
+        }
+        return Component.literal(String.join(", ", named));
     }
 
     private static double serverTickMillis(Minecraft minecraft) {
@@ -562,36 +606,144 @@ final class SeedGeneration {
             : "litelights.option.far_terrain.seed.typed");
     }
 
-    /** The Predicted row. */
+    /** Whether predictions are open for this world and dimension. */
+    boolean predicting() {
+        FarLandSession open = session;
+        return settings.seedGeneration.on() && open != null && open.predictions() != null;
+    }
+
+    /** The Predicted here row: how much is predicted for this world and dimension. */
     Component predictedStatus() {
-        if (!settings.seedGeneration.on()) {
-            return Component.translatable("litelights.option.far_terrain.predicted.off");
-        }
         FarLandSession open = session;
         PredictedLand predicted = open == null ? null : open.predictions();
+        if (!settings.seedGeneration.on() || predicted == null) {
+            return Component.translatable("litelights.option.far_terrain.predicted.none");
+        }
+        return Component.translatable("litelights.option.far_terrain.predicted.value",
+            String.format(Locale.ROOT, "%.1f", predicted.squareKilometres()),
+            String.format(Locale.ROOT, "%.1f", predicted.diskBytes() / 1048576.0));
+    }
+
+    /**
+     * The Doing now row: a short status, the line under it, and whether it is good news. Worked
+     * out at most four times a second from counters the workers keep anyway; the page asks every
+     * frame.
+     */
+    SeedActivity activity() {
+        long now = System.nanoTime();
+        if (activity == null || now - activityAt > ACTIVITY_NANOS) {
+            activity = workOutActivity();
+            activityAt = now;
+        }
+        return activity;
+    }
+
+    private SeedActivity workOutActivity() {
+        if (!settings.seedGeneration.on()) {
+            return SeedActivity.of("off", null, false);
+        }
         return switch (phase) {
-            case RUNNING -> predicted == null ? Component.translatable("litelights.option.far_terrain.predicted.preparing")
-                : Component.translatable("litelights.option.far_terrain.predicted.value",
-                    String.format(Locale.ROOT, "%.1f", predicted.squareKilometres()),
-                    String.format(Locale.ROOT, "%.1f", predicted.diskBytes() / 1048576.0),
-                    Component.translatable(predicted.working() > 0 ? "litelights.option.far_terrain.predicted.working"
-                        : "litelights.option.far_terrain.predicted.idle"));
-            case WAITING_FOR_SEED -> Component.translatable("litelights.option.far_terrain.predicted.no_seed");
-            case PREPARING, OFF -> Component.translatable("litelights.option.far_terrain.predicted.preparing");
-            case WAITING_FOR_HELPER -> Component.translatable("litelights.option.far_terrain.predicted.asking_server");
-            case ASKING -> Component.translatable("litelights.option.far_terrain.predicted.asking");
-            case DECLINED -> Component.translatable("litelights.option.far_terrain.predicted.declined");
-            case UNSUPPORTED -> Component.translatable("litelights.option.far_terrain.predicted.unsupported");
-            case MISMATCH -> Component.translatable("litelights.option.far_terrain.predicted.mismatch");
-            case FAILED -> Component.translatable("litelights.option.far_terrain.predicted.failed", problem == null ? "" : problem);
+            case OFF -> SeedActivity.of("starting", null, false);
+            case WAITING_FOR_HELPER -> SeedActivity.of("asking_server", Component.translatable(NOW + "asking_server.detail"), false);
+            case WAITING_FOR_SEED -> SeedActivity.of("no_seed", Component.translatable(NOW + "no_seed.detail"), false);
+            case PREPARING -> SeedActivity.of("checking", Component.translatable(NOW + (Minecraft.getInstance().getSingleplayerServer() != null
+                ? "checking.world" : "checking.installed")), false);
+            case ASKING -> SeedActivity.of("asking", Component.translatable(NOW + "asking.detail"), false);
+            case DECLINED -> SeedActivity.of("declined", Component.translatable(NOW + "declined.detail"), false);
+            case UNSUPPORTED -> SeedActivity.of("unsupported", Component.translatable(NOW + "unsupported.detail"), false);
+            case MISMATCH -> SeedActivity.of("mismatch", Component.translatable(NOW + "mismatch.detail"), false);
+            case FAILED -> SeedActivity.of("failed", problem, false);
+            case RUNNING -> running();
         };
+    }
+
+    /** Predicting: how far along, at which detail, how fast, and anything holding it back. */
+    private SeedActivity running() {
+        FarLandSession open = session;
+        PredictedLand predicted = open == null ? null : open.predictions();
+        if (predicted == null || !predicted.opened()) {
+            return SeedActivity.of("starting", Component.translatable(NOW + "opening.detail"), true);
+        }
+        if (predicted.problem() != null) {
+            return SeedActivity.of("stopped", Component.literal(predicted.problem()), false);
+        }
+        FillProgress.Reading progress = predicted.progress();
+        if (progress.complete() && predicted.working() == 0) {
+            return SeedActivity.of("done", Component.translatable(NOW + "done.detail", settings.distance.get().blocks / 1024), true);
+        }
+        List<Component> lines = new ArrayList<>();
+        boolean held = holdsFarLand();
+        int heldPercent = 0;
+        if (held) {
+            heldPercent = percent(progress.steps().firstTwoShare());
+            double rate = predicted.firstSetSharePerSecond();
+            double share = heldPercent / 100.0;
+            lines.add(rate > 0.0 && share < 1.0 ? Component.translatable(NOW + "held.detail_left", heldPercent, duration((1.0 - share) / rate))
+                : Component.translatable(NOW + "held.detail", heldPercent));
+        }
+        lines.add(Component.translatable(NOW + STEP_KEYS[progress.steps().nextStep()]));
+        Component detail = progress.nextLevel() <= 0 ? Component.translatable(NOW + "detail_full")
+            : Component.translatable(NOW + "detail_blocks", 1 << progress.nextLevel());
+        lines.add(Component.translatable(NOW + "progress", number(progress.done()), number(progress.wanted()), detail));
+        double tilesPerSecond = predicted.tilesPerSecond();
+        if (tilesPerSecond < 0.0) {
+            lines.add(Component.translatable(NOW + "measuring"));
+        } else {
+            Component speed = Component.translatable(NOW + "speed", String.format(Locale.ROOT, "%.1f", tilesPerSecond),
+                number(Math.round(tilesPerSecond * TileVoxels.SIZE * TileVoxels.SIZE)));
+            int left = progress.wanted() - progress.done();
+            lines.add(tilesPerSecond > 0.0 && left > 0 ? Component.translatable(NOW + "speed_left", speed, duration(left / tilesPerSecond)) : speed);
+        }
+        if (predicted.allowedWorkers() < predicted.maxWorkers()) {
+            lines.add(Component.translatable(NOW + "server_busy", String.format(Locale.ROOT, "%.0f", predicted.serverTickMillis()),
+                predicted.allowedWorkers(), predicted.maxWorkers()));
+        } else if (predicted.waitingBehindMeshes()) {
+            lines.add(Component.translatable(NOW + "behind_meshes"));
+        }
+        Component status = held ? Component.translatable(NOW + "held", heldPercent)
+            : Component.translatable(NOW + "predicting", percent(progress.wanted() == 0 ? 1.0 : progress.done() / (double) progress.wanted()));
+        return new SeedActivity(status, join(lines), true);
+    }
+
+    private static int percent(double share) {
+        return (int) Math.floor(Math.clamp(share, 0.0, 1.0) * 100.0);
+    }
+
+    private static String number(long value) {
+        return String.format(Locale.ROOT, "%,d", value);
+    }
+
+    /** A rough time: seconds to the nearest five under two minutes, then whole minutes, then hours. */
+    static Component duration(double seconds) {
+        if (seconds < 120.0) {
+            return Component.translatable(NOW + "seconds", Math.max(5, (int) (Math.round(seconds / 5.0) * 5)));
+        }
+        if (seconds < 7200.0) {
+            return Component.translatable(NOW + "minutes", Math.round(seconds / 60.0));
+        }
+        return Component.translatable(NOW + "hours", Math.round(seconds / 3600.0));
+    }
+
+    private static Component join(List<Component> lines) {
+        MutableComponent joined = Component.empty();
+        for (int i = 0; i < lines.size(); i++) {
+            if (i > 0) {
+                joined.append(". ");
+            }
+            joined.append(lines.get(i));
+        }
+        return joined.append(".");
     }
 
     /** For QA. */
     Map<String, Object> describe() {
         Map<String, Object> state = new java.util.LinkedHashMap<>();
         state.put("phase", phase.name());
-        state.put("problem", problem);
+        state.put("problem", problem == null ? null : problem.getString());
+        state.put("holdsFarLand", holdsFarLand());
+        SeedActivity now = workOutActivity();
+        state.put("activity", now.status().getString());
+        state.put("activityDetail", now.detail() == null ? null : now.detail().getString());
         state.put("mismatchReading", mismatchReading);
         SeedHelperClient.Reply helper = helperReply();
         state.put("helper", helper == null ? null : helper.toString());

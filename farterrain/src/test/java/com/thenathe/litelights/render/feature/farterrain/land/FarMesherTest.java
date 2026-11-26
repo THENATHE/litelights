@@ -312,6 +312,103 @@ class FarMesherTest {
         assertEquals(1, mesh.quadCount()[FarQuad.UP], "the slab is a whole voxel at level 1");
     }
 
+    /** A coarse tile of grass-topped stone: each column's top row and how far below that row's top its land ends. */
+    private static TileVoxels coarseLand(int level, int[] tops, int[] insets) {
+        TileVoxels tile = new TileVoxels(level, -64, 48);
+        for (int column = 0; column < TileVoxels.COLUMNS; column++) {
+            int x = column % TileVoxels.SIZE;
+            int z = column / TileVoxels.SIZE;
+            tile.setKnown(x, z);
+            for (int y = 0; y < tile.height; y++) {
+                int index = TileVoxels.index(x, y, z);
+                if (y <= tops[column]) {
+                    tile.states[index] = y == tops[column] ? TestLooks.GRASS : TestLooks.STONE;
+                    tile.light[index] = (byte) (y == tops[column] ? insets[column] : 0);
+                } else {
+                    tile.light[index] = (byte) 0xF0;
+                }
+            }
+        }
+        return tile;
+    }
+
+    /** Where a column's land ends, in blocks above the tile's bottom. */
+    private static int surface(int level, int top, int inset) {
+        return ((top + 1) << level) - inset;
+    }
+
+    @Test
+    void aCoarseSlopeWithinOneRowOfVoxelsHasItsSteps() {
+        int[] tops = new int[TileVoxels.COLUMNS];
+        int[] insets = new int[TileVoxels.COLUMNS];
+        java.util.Arrays.fill(tops, 20);
+        for (int column = 0; column < TileVoxels.COLUMNS; column++) {
+            // Four strips west to east, all their tops in row 20, each ending 4 blocks lower.
+            insets[column] = column % TileVoxels.SIZE / 8 * 4;
+        }
+        FarMesh mesh = mesher.mesh(coarseLand(4, tops, insets), neighboursAt(20), looks, true);
+        int steps = 0;
+        for (int i = 0; i < mesh.quadCount()[FarQuad.EAST]; i++) {
+            int offset = (mesh.firstQuad()[FarQuad.EAST] + i) * FarQuad.INTS;
+            int x = FarQuad.x(mesh.quads(), offset);
+            if (x < 31) {
+                assertTrue(x == 7 || x == 15 || x == 23, "a step only where the land drops, at " + x);
+                assertEquals(20, FarQuad.y(mesh.quads(), offset));
+                assertEquals(x / 8 * 4, FarQuad.inset(mesh.quads(), offset), "its top edge where its own land ends");
+                steps++;
+            }
+        }
+        assertEquals(3, steps, "one step between each two strips, the strip's whole length");
+        for (int i = 0; i < mesh.quadCount()[FarQuad.WEST]; i++) {
+            assertEquals(0, FarQuad.x(mesh.quads(), (mesh.firstQuad()[FarQuad.WEST] + i) * FarQuad.INTS), "no side toward higher land");
+        }
+    }
+
+    @Test
+    void everyStepBetweenCoarseColumnsIsClosed() {
+        java.util.Random random = new java.util.Random(26_03L);
+        for (int level = 1; level <= 7; level++) {
+            int size = 1 << level;
+            int[] tops = new int[TileVoxels.COLUMNS];
+            int[] insets = new int[TileVoxels.COLUMNS];
+            for (int column = 0; column < TileVoxels.COLUMNS; column++) {
+                tops[column] = 20 + random.nextInt(3);
+                insets[column] = random.nextInt(size);
+            }
+            FarMesh mesh = mesher.mesh(coarseLand(level, tops, insets), neighboursAt(20), looks, true);
+            // Per column and side, the blocks its side faces cover, from the tile's bottom.
+            boolean[][][] covered = new boolean[TileVoxels.COLUMNS][6][(48 << level) + 1];
+            for (int face = FarQuad.NORTH; face <= FarQuad.EAST; face++) {
+                for (int i = 0; i < mesh.quadCount()[face]; i++) {
+                    int offset = (mesh.firstQuad()[face] + i) * FarQuad.INTS;
+                    int x = FarQuad.x(mesh.quads(), offset);
+                    int z = FarQuad.z(mesh.quads(), offset);
+                    int bottom = FarQuad.y(mesh.quads(), offset) << level;
+                    int top = ((FarQuad.y(mesh.quads(), offset) + FarQuad.extentB(mesh.quads(), offset)) << level) - FarQuad.inset(mesh.quads(), offset);
+                    for (int along = 0; along < FarQuad.extentA(mesh.quads(), offset); along++) {
+                        int column = face == FarQuad.NORTH || face == FarQuad.SOUTH ? TileVoxels.column(x + along, z) : TileVoxels.column(x, z + along);
+                        for (int block = bottom; block < top; block++) {
+                            covered[column][face][block] = true;
+                        }
+                    }
+                }
+            }
+            for (int z = 0; z < TileVoxels.SIZE; z++) {
+                for (int x = 0; x + 1 < TileVoxels.SIZE; x++) {
+                    int west = TileVoxels.column(x, z);
+                    int east = TileVoxels.column(x + 1, z);
+                    int westTop = surface(level, tops[west], insets[west]);
+                    int eastTop = surface(level, tops[east], insets[east]);
+                    int high = westTop > eastTop ? west : east;
+                    int face = westTop > eastTop ? FarQuad.EAST : FarQuad.WEST;
+                    for (int block = Math.min(westTop, eastTop); block < Math.max(westTop, eastTop); block++) {
+                        assertTrue(covered[high][face][block], "level " + level + ": the step at " + x + ", " + z + " is closed at block " + block);
+                    }
+                }
+            }
+        }
+    }
+
     @Test
     void lightsGatherIntoOnePointACell() {
         TileVoxels tile = TestLooks.flatLand(128, 70);
@@ -327,6 +424,39 @@ class FarMesherTest {
         assertEquals(71, FarQuad.y(mesh.quads(), first));
         assertTrue(FarQuad.lightStrength(mesh.quads(), first) > FarQuad.lightStrength(mesh.quads(), second), "three lights glow stronger than one");
         assertEquals(0xFFB46A, FarQuad.tint(mesh.quads(), second));
+    }
+
+    @Test
+    void noLightPointsFromBelowTheSeaLevel() {
+        // Ground at row 70 (y 6), torches on it at y 7: under a sea at 63 they would glow through the water.
+        TileVoxels tile = TestLooks.flatLand(160, 70);
+        tile.states[TileVoxels.index(1, 71, 1)] = TestLooks.TORCH;
+        tile.states[TileVoxels.index(20, 140, 20)] = TestLooks.TORCH;
+        FarMesh everything = mesher.mesh(tile, neighboursAt(70), looks, true);
+        assertEquals(2, everything.quadCount()[FarMesh.LIGHTS], "no floor: both lights");
+        FarMesh underSea = mesher.mesh(tile, neighboursAt(70), looks, true, 63);
+        assertEquals(1, underSea.quadCount()[FarMesh.LIGHTS], "the light at y 7 is under the sea level");
+        assertEquals(140, FarQuad.y(underSea.quads(), underSea.firstQuad()[FarMesh.LIGHTS] * FarQuad.INTS), "the light at y 76 still shows");
+        assertEquals(2, mesher.mesh(tile, neighboursAt(70), looks, true, 7).quadCount()[FarMesh.LIGHTS], "a light at the sea level itself shows");
+    }
+
+    @Test
+    void aCoarseVoxelLitByBlocksIsBelowTheSeaLevelByItsTop() {
+        TileVoxels tile = new TileVoxels(2, -64, 32);
+        for (int z = 0; z < TileVoxels.SIZE; z++) {
+            for (int x = 0; x < TileVoxels.SIZE; x++) {
+                tile.setKnown(x, z);
+                for (int y = 0; y < 32; y++) {
+                    int index = TileVoxels.index(x, y, z);
+                    tile.states[index] = y < 20 ? TestLooks.STONE : 0;
+                    tile.light[index] = y < 20 ? 0 : (byte) 0xF0;
+                }
+            }
+        }
+        // Row 20 of four-block voxels holds y 16 to 19.
+        tile.light[TileVoxels.index(5, 20, 5)] = (byte) 0xFE;
+        assertEquals(1, mesher.mesh(tile, neighboursAt(19), looks, true, 19).quadCount()[FarMesh.LIGHTS]);
+        assertEquals(0, mesher.mesh(tile, neighboursAt(19), looks, true, 20).quadCount()[FarMesh.LIGHTS]);
     }
 
     @Test

@@ -39,6 +39,8 @@ public final class FarLand implements FarTerrainState {
     private static final FarLand INSTANCE = new FarLand();
     /** The far plane reaches a little past the far land, so its last tiles are never clipped. */
     private static final float FAR_PLANE_MARGIN = 512.0f;
+    /** Far land held back for a first fill eases in over this long once it shows: the fog moves out from the render distance. */
+    private static final long EASE_IN_NANOS = 1_500_000_000L;
 
     private @Nullable FarLandSettings settings;
     private @Nullable SeedGeneration seedGeneration;
@@ -51,6 +53,11 @@ public final class FarLand implements FarTerrainState {
     private long sessionsOpened;
     private long passes;
     private @Nullable String lastProblem;
+    /** Far land is held back this frame (Wait for detail, a first fill from the seed). */
+    private boolean heldBack;
+    /** When held-back far land was let show, for its ease in; 0 when it isn't easing. */
+    private long shownAt;
+    private long heldFrames;
 
     private FarLand() {
     }
@@ -190,6 +197,7 @@ public final class FarLand implements FarTerrainState {
                 LiteLightsMod.LOG.error("Seed generation failed; far terrain carries on with visited land", failure);
                 seedGeneration.off();
             }
+            holdBack(seedGeneration.holdsFarLand());
             LiteLightsApi.passes().addCpuTiming("farland.cpu", (System.nanoTime() - started) / 1.0e6);
             if (LiteLightsApi.passes().abFlipped("farland.hide")) {
                 drawn = false;
@@ -206,6 +214,27 @@ public final class FarLand implements FarTerrainState {
         } catch (RuntimeException failure) {
             features.failed(ModuleFeature.FAR_TERRAIN, failure);
             closeSession();
+        }
+    }
+
+    /**
+     * While a first fill from the seed builds its first set of levels, nothing of far land is drawn,
+     * visited land included, so the view isn't half there and the fog stays the game's own at the
+     * render distance. Meshes are still built meanwhile, so the land is ready when it shows; then
+     * every tile fades in and the fog eases out to the far land's end.
+     */
+    private void holdBack(boolean hold) {
+        if (hold) {
+            heldBack = true;
+            heldFrames++;
+            drawn = false;
+            shownAt = 0;
+            return;
+        }
+        if (heldBack) {
+            heldBack = false;
+            shownAt = System.nanoTime();
+            session.fadeInAgain();
         }
     }
 
@@ -258,7 +287,7 @@ public final class FarLand implements FarTerrainState {
 
     /** The level's far plane: out past the far land while it is on. */
     public float farPlane(float vanillaFarPlane) {
-        if (session == null || settings == null || !settings.enabled.on()) {
+        if (session == null || settings == null || !settings.enabled.on() || heldBack) {
             return vanillaFarPlane;
         }
         return Math.max(vanillaFarPlane, settings.distance.get().blocks + FAR_PLANE_MARGIN);
@@ -271,7 +300,28 @@ public final class FarLand implements FarTerrainState {
 
     @Override
     public float farDistance() {
-        return drawn && settings != null ? settings.distance.get().blocks : 0.0f;
+        if (!drawn || settings == null) {
+            return 0.0f;
+        }
+        float full = settings.distance.get().blocks;
+        if (shownAt == 0) {
+            return full;
+        }
+        double eased = (System.nanoTime() - shownAt) / (double) EASE_IN_NANOS;
+        if (eased >= 1.0) {
+            shownAt = 0;
+            return full;
+        }
+        // From where the game's own fog ends to the far land's end, smoothly.
+        float renderDistance = Minecraft.getInstance().options.getEffectiveRenderDistance() * 16.0f;
+        float step = (float) (eased * eased * (3.0 - 2.0 * eased));
+        return renderDistance + (full - renderDistance) * step;
+    }
+
+    @Override
+    public int highestLand(int minX, int minZ, int maxX, int maxZ) {
+        FarLandSession open = session;
+        return drawn && open != null ? open.highestLand(minX, minZ, maxX, maxZ) : Integer.MIN_VALUE;
     }
 
     /** Writes everything to disk, stops the threads and frees the video memory. */
@@ -282,6 +332,8 @@ public final class FarLand implements FarTerrainState {
         }
         session = null;
         drawn = false;
+        heldBack = false;
+        shownAt = 0;
         if (seedGeneration != null) {
             seedGeneration.sessionClosed();
         }
@@ -310,8 +362,12 @@ public final class FarLand implements FarTerrainState {
             Component.translatable("litelights.option.far_terrain.clear.button"),
             () -> clearRequested = session != null);
         rows.section(FarLandSettings.SEED_SECTION);
+        rows.status(Component.translatable("litelights.option.far_terrain.seed_now"),
+            Component.translatable("litelights.option.far_terrain.seed_now.description"),
+            () -> activity().status(), () -> activity().detail(), () -> activity().good());
         rows.status(Component.translatable("litelights.option.far_terrain.predicted"),
-            Component.translatable("litelights.option.far_terrain.predicted.description"), this::predictedStatus);
+            Component.translatable("litelights.option.far_terrain.predicted.description"), this::predictedStatus, () -> null,
+            () -> seedGeneration != null && session != null && seedGeneration.predicting());
         rows.status(Component.translatable("litelights.option.far_terrain.seed"),
             Component.translatable("litelights.option.far_terrain.seed.description"), this::seedStatus);
         rows.action(Component.translatable("litelights.option.far_terrain.seed_entry"),
@@ -336,8 +392,22 @@ public final class FarLand implements FarTerrainState {
     }
 
     private Component predictedStatus() {
-        return seedGeneration == null || session == null ? Component.translatable("litelights.option.far_terrain.predicted.off")
+        return seedGeneration == null || session == null ? Component.translatable("litelights.option.far_terrain.predicted.none")
             : seedGeneration.predictedStatus();
+    }
+
+    /** The Doing now row; with far terrain off or no world open, says so. */
+    private SeedActivity activity() {
+        if (seedGeneration == null || settings == null || !settings.seedGeneration.on()) {
+            return SeedActivity.of("off", null, false);
+        }
+        if (!settings.enabled.on()) {
+            return SeedActivity.of("off", Component.translatable("litelights.option.far_terrain.seed_now.far_terrain_off"), false);
+        }
+        if (session == null) {
+            return SeedActivity.of("off", Component.translatable("litelights.option.far_terrain.seed_now.no_world"), false);
+        }
+        return seedGeneration.activity();
     }
 
     private Component seedStatus() {
@@ -369,6 +439,8 @@ public final class FarLand implements FarTerrainState {
         state.put("session", session != null);
         state.put("sessionsOpened", sessionsOpened);
         state.put("drawn", drawn);
+        state.put("heldBack", heldBack);
+        state.put("heldFrames", heldFrames);
         state.put("farSnow", snow.active() + ": " + snow.describe());
         state.put("passes", passes);
         state.put("threads", Thread.getAllStackTraces().keySet().stream().filter(thread -> thread.getName().startsWith("LiteLights far terrain")).count());

@@ -64,10 +64,10 @@ class SeamCoverageTest {
         // Sea level in section 3, water down through section 2, the bed in section 1, which the near
         // renderer never compiled: it lay below the view from just over the water.
         SeamCoverage.Column sea = column(Set.of(3), Set.of(3, 2));
-        assertEquals(SeamCoverage.Cover.WATER, SeamCoverage.cover(sea, 3, -4, 4));
+        assertEquals(SeamCoverage.Cover.WATER, SeamCoverage.cover(sea, 3, true, -4, 4));
         SeamCoverage seam = new SeamCoverage();
-        seam.update(7, 2, SeamCoverage.cover(sea, 3, -4, 4), 1_000, false);
-        seam.update(7, 2, SeamCoverage.cover(sea, 3, -4, 4), 1_000 + SeamCoverage.FADE_MILLIS, false);
+        seam.update(7, 2, SeamCoverage.cover(sea, 3, true, -4, 4), 1_000, false);
+        seam.update(7, 2, SeamCoverage.cover(sea, 3, true, -4, 4), 1_000 + SeamCoverage.FADE_MILLIS, false);
         assertTrue(seam.waterCovered(7, 2), "the near water's surface is drawn: far water goes");
         assertEquals(0, seam.value(7, 2), "far land stays under the sea until the near bed is drawn");
         assertFalse(seam.fullyCovered(7, 2));
@@ -75,13 +75,24 @@ class SeamCoverageTest {
 
     @Test
     void coverFollowsTheTopAndTheBed() {
-        assertEquals(SeamCoverage.Cover.NONE, SeamCoverage.cover(column(Set.of(2), Set.of()), 3, -4, 4), "top not drawn yet");
-        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(column(Set.of(3, 2), Set.of()), 3, -4, 4), "land: the top is all");
-        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(column(Set.of(3, 1), Set.of(3, 2)), 3, -4, 4), "the bed drawn too");
-        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(column(Set.of(3), Set.of(3, 2, 1, 0, -1)), 3, -4, 4),
+        assertEquals(SeamCoverage.Cover.NONE, SeamCoverage.cover(column(Set.of(2), Set.of()), 3, false, -4, 4), "top not drawn yet");
+        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(column(Set.of(3, 2), Set.of()), 3, false, -4, 4), "land: the top is all");
+        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(column(Set.of(3, 1), Set.of(3, 2)), 3, true, -4, 4), "the bed drawn too");
+        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(column(Set.of(3), Set.of(3, 2, 1, 0, -1)), 3, true, -4, 4),
             "water deeper than four sections hides its bed");
-        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(column(Set.of(-4), Set.of(-4)), -4, -4, 4),
+        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(column(Set.of(-4), Set.of(-4)), -4, true, -4, 4),
             "nothing under the world's floor to wait for");
+    }
+
+    @Test
+    void landIceAndShallowWaterNeverWaitForTheGroundUnderThem() {
+        // The near renderer compiles only sections it can see into: under a field, under the ice
+        // and under a shallow lake's bed, the section below the top stays uncompiled for good.
+        SeamCoverage.Column underground = column(Set.of(3), Set.of());
+        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(underground, 3, false, -4, 4), "land: its top section is all of it");
+        SeamCoverage.Column frozen = column(Set.of(3), Set.of(2));
+        assertEquals(SeamCoverage.Cover.ALL, SeamCoverage.cover(frozen, 3, false, -4, 4), "ice over a lake: far land goes from under the near ice");
+        assertEquals(SeamCoverage.Cover.WATER, SeamCoverage.cover(frozen, 3, true, -4, 4), "open water over the same bed still waits for it");
     }
 
     @Test

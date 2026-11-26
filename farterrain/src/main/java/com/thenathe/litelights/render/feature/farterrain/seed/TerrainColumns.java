@@ -1,6 +1,7 @@
 package com.thenathe.litelights.render.feature.farterrain.seed;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import com.thenathe.litelights.render.feature.farterrain.land.TileVoxels;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.function.Supplier;
@@ -52,6 +53,8 @@ final class TerrainColumns {
     private static final int SURFACE_DEPTH = 12;
     /** ...on the blocks this close over a cave or overhang's ceiling (sandstone under sand and the like)... */
     private static final int CEILING_DEPTH = 4;
+    /** Bits a long: the voxel row masks below are this many voxel rows a word. */
+    private static final int ROWS_A_WORD = 64;
 
     private final PredictionInputs inputs;
     private final int minY;
@@ -79,6 +82,17 @@ final class TerrainColumns {
     /** Per column, the biome at its top, as a chunk stores it (the noise biome of that quart). */
     @SuppressWarnings("unchecked")
     Holder<Biome>[] biomes = new Holder[0];
+    /**
+     * Coarse tiles only: per column, a bit per voxel row ({@link #wordsAColumn} longs a column) for
+     * the rows where a voxel this column is part of could show a face, so the surface rules run
+     * there and not in the rock no face of the tile will ever show ({@link #markSeenRows}).
+     */
+    private long[] seenRows = new long[0];
+    private long[] openRows = new long[0];
+    private long[] voxelOpen = new long[0];
+    private int wordsAColumn;
+    /** For the test that predicted land is the same: run the rules on every voxel's top row, as up to 1.1.4. */
+    boolean rulesOnEveryRow;
 
     private final BlockPos.MutableBlockPos scratch = new BlockPos.MutableBlockPos();
 
@@ -178,6 +192,9 @@ final class TerrainColumns {
                         }
                     }
                 }
+            }
+            if (voxel > 1) {
+                markSeenRows();
             }
             buildSurfaces(noise);
         }
@@ -303,9 +320,106 @@ final class TerrainColumns {
 
     private boolean seen(BlockState[] blocks, int x, int z, int row, int stoneAboveDepth, int stoneBelowDepth) {
         if (voxel > 1) {
-            return (row + 1) % voxel == 0 || row + 1 >= height || !solid(blocks[row + 1]);
+            boolean showsForItsVoxel = (row + 1) % voxel == 0 || row + 1 >= height || !solid(blocks[row + 1]);
+            return showsForItsVoxel && (rulesOnEveryRow || rowSeen(x + z * size, row / voxel));
         }
         return stoneAboveDepth <= SURFACE_DEPTH || stoneBelowDepth <= CEILING_DEPTH || openSideways(x, z, row);
+    }
+
+    private boolean rowSeen(int column, int voxelRow) {
+        return (seenRows[column * wordsAColumn + voxelRow / ROWS_A_WORD] & 1L << (voxelRow % ROWS_A_WORD)) != 0;
+    }
+
+    /**
+     * Coarse tiles: which voxel rows of each column can show. The mesher draws a whole voxel's face
+     * only toward a voxel that doesn't cover it (air or water), and the wall and curtain toward land
+     * never seen only on the tile's edge, a predicted tile's every column being known; every other
+     * voxel is inside the rock, and its block is never seen. A neighbour can be uncovered only if one
+     * of its columns has air or fluid in its rows, so a voxel may show if it is at the tile's edge or
+     * if it or any of its six neighbours has air or fluid in any of its columns: the rules run on
+     * those voxels' rows, which is all a voxel's look comes from. Worked out from the substances
+     * before the rules, which change rock to other rock only.
+     *
+     * <p>Up to 1.1.4 the rules ran on every voxel's top row down to the world's floor: at level 1
+     * that was three quarters of a tile's time (DECISIONS, seedgen-speed-115).
+     */
+    private void markSeenRows() {
+        int voxelRows = (height + voxel - 1) / voxel;
+        wordsAColumn = (voxelRows + ROWS_A_WORD - 1) / ROWS_A_WORD;
+        int count = size * size;
+        int voxels = TileVoxels.SIZE * TileVoxels.SIZE;
+        if (seenRows.length < count * wordsAColumn) {
+            seenRows = new long[count * wordsAColumn];
+            openRows = new long[count * wordsAColumn];
+        }
+        if (voxelOpen.length < voxels * wordsAColumn) {
+            voxelOpen = new long[voxels * wordsAColumn];
+        }
+        Arrays.fill(seenRows, 0, count * wordsAColumn, 0L);
+        Arrays.fill(openRows, 0, count * wordsAColumn, 0L);
+        Arrays.fill(voxelOpen, 0, voxels * wordsAColumn, 0L);
+        for (int column = 0; column < count; column++) {
+            BlockState[] blocks = columns[column];
+            int at = column * wordsAColumn;
+            for (int row = 0; row < height; row++) {
+                if (!solid(blocks[row])) {
+                    int voxelRow = row / voxel;
+                    openRows[at + voxelRow / ROWS_A_WORD] |= 1L << (voxelRow % ROWS_A_WORD);
+                }
+            }
+        }
+        // A voxel is open in a row where any of its columns is.
+        for (int vz = 0; vz < TileVoxels.SIZE; vz++) {
+            for (int vx = 0; vx < TileVoxels.SIZE; vx++) {
+                int voxelAt = (vx + vz * TileVoxels.SIZE) * wordsAColumn;
+                forEachColumnOf(vx, vz, column -> {
+                    for (int word = 0; word < wordsAColumn; word++) {
+                        voxelOpen[voxelAt + word] |= openRows[column * wordsAColumn + word];
+                    }
+                });
+            }
+        }
+        long[] mayShow = new long[wordsAColumn];
+        for (int vz = 0; vz < TileVoxels.SIZE; vz++) {
+            for (int vx = 0; vx < TileVoxels.SIZE; vx++) {
+                boolean edge = vx == 0 || vz == 0 || vx == TileVoxels.SIZE - 1 || vz == TileVoxels.SIZE - 1;
+                int voxelAt = (vx + vz * TileVoxels.SIZE) * wordsAColumn;
+                for (int word = 0; word < wordsAColumn; word++) {
+                    if (edge) {
+                        mayShow[word] = -1L;
+                        continue;
+                    }
+                    long own = voxelOpen[voxelAt + word];
+                    // The voxels over and under: this voxel's open rows a row down and a row up, carried across words.
+                    long above = own >>> 1 | (word + 1 < wordsAColumn ? voxelOpen[voxelAt + word + 1] << 63 : 0L);
+                    long below = own << 1 | (word > 0 ? voxelOpen[voxelAt + word - 1] >>> 63 : 0L);
+                    mayShow[word] = own | above | below
+                        | voxelOpen[voxelAt + word - wordsAColumn] | voxelOpen[voxelAt + word + wordsAColumn]
+                        | voxelOpen[voxelAt + word - TileVoxels.SIZE * wordsAColumn] | voxelOpen[voxelAt + word + TileVoxels.SIZE * wordsAColumn];
+                }
+                forEachColumnOf(vx, vz, column -> {
+                    for (int word = 0; word < wordsAColumn; word++) {
+                        seenRows[column * wordsAColumn + word] |= mayShow[word];
+                    }
+                });
+            }
+        }
+    }
+
+    /** The sampled columns a coarse tile's voxel column is made of (TerrainSampler.sourcesOf). */
+    private void forEachColumnOf(int vx, int vz, java.util.function.IntConsumer action) {
+        if (step == 1) {
+            for (int z = vz * voxel; z < (vz + 1) * voxel; z++) {
+                for (int x = vx * voxel; x < (vx + 1) * voxel; x++) {
+                    action.accept(x + z * size);
+                }
+            }
+        } else {
+            action.accept(vx + vz * size);
+            action.accept(vx + 1 + vz * size);
+            action.accept(vx + (vz + 1) * size);
+            action.accept(vx + 1 + (vz + 1) * size);
+        }
     }
 
     /** A block with air or fluid beside it (a cliff's face); at the square's edge, taken as open. */

@@ -20,6 +20,7 @@ public final class CloudColumn {
     private final float[] densities = new float[MAX_SPANS + 1];
     private final float[] storminess = new float[MAX_SPANS + 1];
     private final CloudType[] types = new CloudType[MAX_SPANS + 1];
+    private final boolean[] anvils = new boolean[MAX_SPANS + 1];
     private int count;
     private Precipitation precipitation = Precipitation.NONE;
     private float precipitationRate;
@@ -53,6 +54,11 @@ public final class CloudColumn {
 
     public CloudType type(int span) {
         return types[span];
+    }
+
+    /** Whether the span is a thunderstorm's anvil, spread at the top of the sky over its tower. */
+    public boolean anvil(int span) {
+        return anvils[span];
     }
 
     /** What falls from this column's clouds. */
@@ -137,6 +143,11 @@ public final class CloudColumn {
      * {@link #MAX_SPANS} the faintest (least density times height) is dropped.
      */
     void addSpan(float bottom, float top, float density, float storm, CloudType type) {
+        addSpan(bottom, top, density, storm, type, false);
+    }
+
+    /** The same, for a thunderstorm's anvil when {@code anvil}. */
+    void addSpan(float bottom, float top, float density, float storm, CloudType type, boolean anvil) {
         if (!(top > bottom) || !(density > 0.0f)) {
             return;
         }
@@ -150,6 +161,7 @@ public final class CloudColumn {
         densities[index] = density;
         storminess[index] = storm;
         types[index] = type;
+        anvils[index] = anvil;
         count++;
         if (count > MAX_SPANS) {
             dropFaintest();
@@ -206,5 +218,6 @@ public final class CloudColumn {
         densities[to] = densities[from];
         storminess[to] = storminess[from];
         types[to] = types[from];
+        anvils[to] = anvils[from];
     }
 }

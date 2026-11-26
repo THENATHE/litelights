@@ -28,8 +28,18 @@ public interface RowValue {
 
     Component description();
 
-    /** The one-line credit under the row, or null. */
+    /** The credit the heart beside the row's name shows, or null. */
     Component credit();
+
+    /** A line under the row that says what its status stands for right now, or null (module notices). */
+    default Component detail() {
+        return null;
+    }
+
+    /** Whether a notice's status is good news: a tick, in the good colour. */
+    default boolean noticeGood() {
+        return state() instanceof RowState.Ready;
+    }
 
     int value();
 
@@ -62,6 +72,14 @@ public interface RowValue {
 
     /** What the tag shows when the pointer is over it, or null to show nothing more than the tag. */
     default Component rowTagTooltip() {
+        return null;
+    }
+
+    /**
+     * Why a row is locked by another setting (such as "Dynamic clouds only"), or null. A locked row
+     * is left off its page (PageModel.onPage); search shows it with this reason.
+     */
+    default Component lockedTag() {
         return null;
     }
 
@@ -249,6 +267,11 @@ public interface RowValue {
         }
 
         @Override
+        public Component lockedTag() {
+            return !active() && option.lockedTagKey() != null ? Component.translatable(option.lockedTagKey()) : null;
+        }
+
+        @Override
         public RowState state() {
             return option.feature().state();
         }
@@ -334,6 +357,16 @@ public interface RowValue {
         }
 
         @Override
+        public Component detail() {
+            return row.detail();
+        }
+
+        @Override
+        public boolean noticeGood() {
+            return row.state() instanceof RowState.Ready && row.good();
+        }
+
+        @Override
         public int value() {
             return row.value();
         }
@@ -396,6 +429,11 @@ public interface RowValue {
         @Override
         public Component rowTagTooltip() {
             return RowValue.tagTooltip(row.tagKey());
+        }
+
+        @Override
+        public Component lockedTag() {
+            return !active() && row.lockedTagKey() != null ? Component.translatable(row.lockedTagKey()) : null;
         }
 
         @Override

@@ -25,7 +25,8 @@ public final class SnowFanField {
     public static final int FULL = 250;
     /** How far snow fans in, in blocks: under a canopy, and under anything else. */
     public static final int TREE_REACH = 5;
-    public static final int OVERHANG_REACH = 3;
+    /** Four since visual-snow-117 (three before): eaves and awnings left too hard a line where the snow stopped (the owner). */
+    public static final int OVERHANG_REACH = 4;
 
     private static final int STRAIGHT = 8;
     private static final int DIAGONAL = 11;

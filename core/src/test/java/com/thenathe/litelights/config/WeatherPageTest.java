@@ -46,7 +46,7 @@ class WeatherPageTest {
         for (Option<?> option : LiteLightsConfig.registry().onPage(Pages.WEATHER)) {
             sections.computeIfAbsent(Pages.parentSection(option.section()), key -> new ArrayList<>()).add(option.id());
         }
-        assertEquals(List.of("rain_snow", "storms", "details", "visual_snow", "glass", "events"), List.copyOf(sections.keySet()));
+        assertEquals(List.of("rain_snow", "storms", "details", "glass", "events"), List.copyOf(sections.keySet()));
         assertEquals(List.of("weather.precipitation", "weather.density", "weather.distance", "weather.distance_fill", "weather.rain_mist",
             "weather.mist_style", "weather.mist_distance", "weather.mist_layers"),
             sections.get("rain_snow"));
@@ -56,12 +56,19 @@ class WeatherPageTest {
             storms.add("weather.storms." + type + ".clouds");
         }
         assertEquals(storms, sections.get("storms"));
+        // More snow in snowstorms is falling snow: it stayed on the Weather page when Visual snow got its own (far-snow-115).
         assertEquals(List.of("weather.rain_drips", "weather.wall_streaks", "weather.puddles", "weather.snowy_leaves", "weather.drifting_sand",
-            "weather.sandstorms"),
+            "weather.sandstorms", "weather.visual_snow.more_flakes"),
             sections.get("details"));
-        assertEquals(List.of("weather.visual_snow", "weather.visual_snow.blocks", "weather.visual_snow.drips",
-            "weather.visual_snow.under_trees", "weather.visual_snow.under_overhangs", "weather.visual_snow.leaves",
-            "weather.visual_snow.grass", "weather.visual_snow.more_flakes", "weather.visual_snow.far"), sections.get("visual_snow"));
+        Map<String, List<String>> visualSnow = new LinkedHashMap<>();
+        for (Option<?> option : LiteLightsConfig.registry().onPage(Pages.VISUAL_SNOW)) {
+            visualSnow.computeIfAbsent(option.section(), key -> new ArrayList<>()).add(option.id());
+        }
+        assertEquals(Map.of("visual_snow", List.of("weather.visual_snow"),
+            "visual_snow/on_blocks", List.of("weather.visual_snow.blocks", "weather.visual_snow.drips"),
+            "visual_snow/sheltered", List.of("weather.visual_snow.under_trees", "weather.visual_snow.under_overhangs"),
+            "visual_snow/plants", List.of("weather.visual_snow.leaves", "weather.visual_snow.grass")), visualSnow,
+            "the Visual Snow page, under the same saved names");
         assertTrue(sections.get("glass").contains("weather.glass"));
         assertEquals(List.of("weather.polar_lights", "weather.meteor_nights", "weather.rainbows", "weather.far_fireworks"), sections.get("events"));
     }

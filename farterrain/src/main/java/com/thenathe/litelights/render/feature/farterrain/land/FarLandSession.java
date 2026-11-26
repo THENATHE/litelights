@@ -32,7 +32,9 @@ import java.util.stream.Stream;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -134,6 +136,8 @@ final class FarLandSession implements AutoCloseable {
     private final Thread storageThread;
     private final ThreadPoolExecutor meshPool;
     private final boolean skyLight;
+    /** No far light from below this height: the sea level where there is sky light (DECISIONS, seedgen-speed-115). */
+    private final int lightFloorY;
     private final int minY;
     private final int worldHeight;
     private final ConcurrentLinkedQueue<MeshResult> results = new ConcurrentLinkedQueue<>();
@@ -208,6 +212,7 @@ final class FarLandSession implements AutoCloseable {
         this.looks = new BlockLooks(palette, appearances);
         this.land = new LandView(store, looks);
         this.skyLight = level.dimensionType().hasSkyLight();
+        this.lightFloorY = skyLight ? level.getSeaLevel() : FarMesher.NO_LIGHT_FLOOR;
         this.minY = level.getMinY();
         this.worldHeight = level.getHeight();
         this.storage = new FarLandStorage(store, palette, looks, minY, worldHeight);
@@ -405,17 +410,27 @@ final class FarLandSession implements AutoCloseable {
         });
     }
 
-    /** Once a frame while predicting: the next work, paced by the integrated server's tick ({@code serverTickMillis}, or -1). */
-    void planPredictions(CameraView camera, FarLandSettings settings, double serverTickMillis) {
+    /**
+     * Once a frame while predicting: the next work, paced by the integrated server's tick
+     * ({@code serverTickMillis}, or -1); {@code nearDistance} is how far the near terrain reaches.
+     */
+    void planPredictions(CameraView camera, FarLandSettings settings, double nearDistance, double serverTickMillis) {
         PredictedLand open = predicted;
         if (open != null) {
-            open.plan(camera.x(), camera.z(), settings.distance.get().blocks, settings.detail.get().levelDistance, serverTickMillis,
+            open.plan(camera.x(), camera.z(), settings.distance.get().blocks, settings.detail.get().levelDistance, nearDistance, serverTickMillis,
                 System.currentTimeMillis());
         }
     }
 
     @Nullable PredictedLand predictions() {
         return predicted;
+    }
+
+    /** Every tile drawn next fades in afresh, as far land does when it first appears (after being held back). */
+    void fadeInAgain() {
+        chosenBefore.clear();
+        fadingOut.clear();
+        chosenDirty = true;
     }
 
     private Path predictionsFolder() {
@@ -584,14 +599,62 @@ final class FarLandSession implements AutoCloseable {
             public boolean onlyWater(int section) {
                 return FarLandSession.onlyWater(chunk.getSection(chunk.getSectionIndexFromSectionY(section)));
             }
-        }, sectionY, level.getMinSectionY(), BED_SECTIONS);
+        }, sectionY, waterOverSection(chunk, chunkX, chunkZ, top - 1), level.getMinSectionY(), BED_SECTIONS);
         return cover == SeamCoverage.Cover.ALL && !landInside ? SeamCoverage.Cover.WATER : cover;
+    }
+
+    /**
+     * Whether the column's top block (at {@code topY}, the chunk's middle) is water with nothing
+     * but water under it down to its section's bottom, so its bed lies in a section further down.
+     * Ice, land and shallow water are drawn whole by their top section.
+     */
+    private static boolean waterOverSection(LevelChunk chunk, int chunkX, int chunkZ, int topY) {
+        BlockPos.MutableBlockPos at = new BlockPos.MutableBlockPos((chunkX << 4) + 8, topY, (chunkZ << 4) + 8);
+        if (!chunk.getBlockState(at).is(Blocks.WATER)) {
+            return false;
+        }
+        int bottom = Math.floorDiv(topY, 16) * 16;
+        for (int y = topY - 1; y >= bottom; y--) {
+            BlockState state = chunk.getBlockState(at.setY(y));
+            if (!state.isAir() && !state.is(Blocks.WATER)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Whether a section holds nothing but water and air. */
     private static boolean onlyWater(LevelChunkSection section) {
         return !section.getStates().maybeHas(state -> !state.isAir() && !state.is(Blocks.WATER));
     }
+
+    /**
+     * The highest land the far land knows of in a rectangle of columns (FarTerrainState.highestLand),
+     * from the tiles' own highest rows (their highest voxel that isn't air, so water and trees
+     * count) at the finest level from {@link #HIGHEST_LAND_LEVEL} up that knows any of it: coarse,
+     * never lower than the land it knows. Integer.MIN_VALUE where none of it is known.
+     */
+    int highestLand(int minX, int minZ, int maxX, int maxZ) {
+        int highest = Integer.MIN_VALUE;
+        for (int level = HIGHEST_LAND_LEVEL; level <= TileKey.MAX_LEVEL; level++) {
+            int span = TileKey.span(level);
+            for (int x = Math.floorDiv(minX, span); x <= Math.floorDiv(maxX, span); x++) {
+                for (int z = Math.floorDiv(minZ, span); z <= Math.floorDiv(maxZ, span); z++) {
+                    TileMeta meta = land.meta(TileKey.of(level, x, z));
+                    if (meta != null && !meta.empty()) {
+                        highest = Math.max(highest, minY + ((meta.highestRow() + 1) << level));
+                    }
+                }
+            }
+            if (highest != Integer.MIN_VALUE) {
+                return highest;
+            }
+        }
+        return highest;
+    }
+
+    /** highestLand's finest level: tiles of 256 blocks, a handful over a show's place. */
+    private static final int HIGHEST_LAND_LEVEL = 3;
 
     private final FarSelection.Tiles tiles = new FarSelection.Tiles() {
         @Override
@@ -895,7 +958,7 @@ final class FarLandSession implements AutoCloseable {
                     results.add(new MeshResult(key, 0, meshGeneration, null, minY));
                     return;
                 }
-                FarMesh mesh = MESHER.get().mesh(tile, outside(key), looks, skyLight);
+                FarMesh mesh = MESHER.get().mesh(tile, outside(key), looks, skyLight, lightFloorY);
                 results.add(new MeshResult(key, meta.revision(), meshGeneration, mesh, tile.minY));
                 meshesBuilt.incrementAndGet();
             } catch (Throwable failure) {

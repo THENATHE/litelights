@@ -71,7 +71,9 @@ public final class FarTerrain implements ModuleEvents.BeforeTranslucents {
         String dropped = droppedModInstalled();
         if (dropped != null) {
             LiteLightsMod.LOG.info("{} is installed; LiteLights' far terrain steps aside (Voxy and Distant Horizons support was dropped in 1.0.8)", dropped);
-            features.markUnavailable("far_shadows", "Off while " + dropped + " is installed: LiteLights' support for it was dropped in 1.0.8");
+            // The row says why it is off, not that support was dropped: that stays an internal note (user, 2026-11-25).
+            features.markUnavailable("far_shadows", "Off while " + dropped + " is installed: it draws far terrain of its own, so LiteLights' "
+                + "far terrain and these shadows stay off");
             return;
         }
         features.claimPipelines(ModuleFeature.FAR_SHADOWS, FarTerrainPass.MAIN, FarShadows.SCREEN, FarShadows.ADVANCED);

@@ -80,6 +80,21 @@ public final class RainbowSchedule {
         return smooth(Math.clamp((sunElevation + 0.01f) / 0.09f, 0.0f, 1.0f));
     }
 
+    /**
+     * How much of the bow shows over what lies this far from the eye (blocks; the sky is infinitely
+     * far): a rainbow is the light of raindrops all along the line of sight, so it shows over far
+     * land and far cloud and not over what is near. Nothing over the nearest few hundred blocks,
+     * all of it from a kilometre and a half, eased between. {@code shaders/sky/events.fsh} repeats
+     * it ({@code lite_rainbow_over}).
+     */
+    public static float shownOver(double distance) {
+        return smooth((float) Math.clamp((distance - NEAR_NONE) / (NEAR_FULL - NEAR_NONE), 0.0, 1.0));
+    }
+
+    /** Over nothing nearer than this the bow shows, and over all from this far, in blocks. */
+    static final float NEAR_NONE = 300.0f;
+    static final float NEAR_FULL = 1_500.0f;
+
     private static float smooth(float t) {
         return t * t * (3.0f - 2.0f * t);
     }

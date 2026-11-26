@@ -44,7 +44,9 @@ public final class CloudRows {
                     LiteLightsOptions.CLOUD_HEIGHT.min(), LiteLightsOptions.CLOUD_HEIGHT.max(), LiteLightsOptions.CLOUD_HEIGHT.step(),
                     value -> Component.translatable("litelights.value.blocks", value),
                     CloudRows::sodiumExtraHeight, CloudRows::setSodiumExtraHeight)
-                .shownWhen(CloudRows::sodiumExtraOwnsHeight));
+                .shownWhen(CloudRows::sodiumExtraOwnsHeight)
+                .enabledWhen(() -> LiteLightsOptions.CLOUDS.get() != LiteLightsOptions.Clouds.OFF)
+                .lockedTag("litelights.tag.clouds_off"));
         }
         OptionInstance<Integer> range = Minecraft.getInstance().options.cloudRange();
         if (range.values() instanceof OptionInstance.IntRange(int min, int max, boolean immediately)) {
@@ -54,7 +56,11 @@ public final class CloudRows {
                 range::get, value -> {
                     range.set(value);
                     Minecraft.getInstance().options.save();
-                }));
+                })
+                // Vanilla's cloud distance draws the Flat and Fancy clouds; the Dynamic ones reach as far as Cloud reach says.
+                .enabledWhen(() -> LiteLightsOptions.CLOUDS.get() == LiteLightsOptions.Clouds.FLAT
+                    || LiteLightsOptions.CLOUDS.get() == LiteLightsOptions.Clouds.FANCY)
+                .lockedTag("litelights.tag.flat_fancy_clouds_only"));
         }
     }
 

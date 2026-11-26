@@ -63,6 +63,13 @@ public final class MaterialAtlas implements AutoCloseable {
         CompletableFuture<Built> start(Map<Identifier, SpriteArea> sprites, int atlasWidth, int atlasHeight);
     }
 
+    /**
+     * Seeds tried beyond the first for a classified block state's model, so every weighted variant
+     * a resource pack gives it is seen: a weighted pick of three variants misses one in eight
+     * seeds about one time in 23.
+     */
+    private static final int VARIANT_SEEDS = 8;
+
     /** The textures each rock's profile is taken from, in {@link OreRocks}' order. */
     private static final Identifier[] ROCK_SPRITES = {
         Identifier.withDefaultNamespace("block/stone"),
@@ -249,11 +256,17 @@ public final class MaterialAtlas implements AutoCloseable {
                     blockMaterial = VegetationMaterials.checkModel(blockMaterial, parts);
                 }
                 Set<Identifier> users = blockMaterial == MaterialIds.GLOWING ? usedGlowing : usedNotGlowing;
-                for (BlockStateModelPart part : parts) {
-                    for (Direction direction : Direction.values()) {
-                        claimSprites(part.getQuads(direction), blockMaterial, users, result);
+                claimParts(parts, blockMaterial, users, result);
+                if (blockMaterial != MaterialIds.DEFAULT) {
+                    // A state with weighted variants (a resource pack's second and third short grass)
+                    // gives one of them a seed: the others' sprites are claimed too, or those plants
+                    // went unclassified and kept none of their material's looks (visual-snow-117).
+                    for (long seed = 1; seed <= VARIANT_SEEDS; seed++) {
+                        parts.clear();
+                        random.setSeed(seed);
+                        models.get(state).collectParts(random, parts);
+                        claimParts(parts, blockMaterial, users, result);
                     }
-                    claimSprites(part.getQuads(null), blockMaterial, users, result);
                 }
             }
         }
@@ -262,6 +275,15 @@ public final class MaterialAtlas implements AutoCloseable {
             result.put(sprite, MaterialClassifier.withGlow(claimed, usedNotGlowing.contains(sprite)));
         }
         return result;
+    }
+
+    private static void claimParts(List<BlockStateModelPart> parts, int blockMaterial, Set<Identifier> users, Map<Identifier, Integer> result) {
+        for (BlockStateModelPart part : parts) {
+            for (Direction direction : Direction.values()) {
+                claimSprites(part.getQuads(direction), blockMaterial, users, result);
+            }
+            claimSprites(part.getQuads(null), blockMaterial, users, result);
+        }
     }
 
     private static void claimSprites(List<BakedQuad> quads, int blockMaterial, Set<Identifier> users, Map<Identifier, Integer> result) {

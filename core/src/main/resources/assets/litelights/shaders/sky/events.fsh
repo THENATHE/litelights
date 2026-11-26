@@ -2,6 +2,24 @@
 #extension GL_ARB_separate_shader_objects : require
 
 #include <litelights:frame.glsl>
+#if defined(RAINBOW) || (defined(WORLD) && !defined(DEPTH_ONLY))
+#include <litelights:post_common.glsl>
+
+// The scene's depth before translucent terrain: the solid world, far terrain and the Dynamic
+// clouds' fronts (where they hide more than half of what is behind).
+uniform sampler2D SceneDepth;
+
+// How far from the eye the scene at this pixel is, in blocks; the sky is very far.
+float lite_scene_distance() {
+    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    float depth = texelFetch(SceneDepth, pixel, 0).r;
+    if (depth <= 0.0) {
+        return 1.0e9;
+    }
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(textureSize(SceneDepth, 0));
+    return length(lite_position_from_depth(uv, depth) - lite_view_origin());
+}
+#endif
 
 layout(location = 0) in vec2 texCoord0;
 layout(location = 1) in vec4 vertexColor;
@@ -85,8 +103,11 @@ void main() {
     fragColor = vec4(color * vertexColor.a * 0.95, 1.0);
 }
 #elif defined(RAINBOW)
-// A rainbow after the rain (idea by AppleNButter, You Must Have The Rain). Its light is added to
-// the sky. texCoord0 holds the point opposite the sun (its azimuth from north turning east, and its
+// A rainbow after the rain (idea by AppleNButter, You Must Have The Rain). Its light is added after
+// the clouds, before translucent terrain, over the scene by its distance: a rainbow is the light of
+// raindrops all along the line of sight, so it shows over the sky, far cloud and far land and fades
+// out over what is near (lite_rainbow_over); water, glass and particles are drawn over it later.
+// texCoord0 holds the point opposite the sun (its azimuth from north turning east, and its
 // elevation, radians) and vertexColor.a the rainbow's strength; each pixel's angle from that point
 // says what it shows.
 //
@@ -101,6 +122,15 @@ const vec3 LITE_RAINBOW_BANDS[6] = vec3[6](vec3(1.0, 0.22, 0.2), vec3(1.0, 0.58,
     vec3(0.35, 0.92, 0.32), vec3(0.3, 0.55, 1.0), vec3(0.58, 0.32, 0.95));
 // How bright each band shows: the outer red and the violet fade into the sky.
 const float LITE_RAINBOW_WEIGHTS[6] = float[6](0.65, 0.95, 1.0, 0.95, 0.8, 0.5);
+// Over nothing nearer than this the bow shows, and over all from this far, in blocks
+// (RainbowSchedule.shownOver, NEAR_NONE and NEAR_FULL).
+const float LITE_RAINBOW_NEAR_NONE = 300.0;
+const float LITE_RAINBOW_NEAR_FULL = 1500.0;
+
+// How much of the bow shows over what lies this far away.
+float lite_rainbow_over(float distance) {
+    return smoothstep(LITE_RAINBOW_NEAR_NONE, LITE_RAINBOW_NEAR_FULL, distance);
+}
 
 // The colour of a bow at a place across it, 0 at its red edge to 1 at its violet edge.
 vec3 lite_rainbow_band(float across) {
@@ -122,23 +152,125 @@ void main() {
     // Inside the main bow, the light the drops send back at smaller angles.
     color += vec3(0.12) * smoothstep(20.0, 40.5, radius) * (1.0 - step(40.5, radius));
     float horizon = smoothstep(-0.01, 0.08, direction.y);
-    fragColor = vec4(color, vertexColor.a * horizon * 0.42);
+    float over = lite_rainbow_over(lite_scene_distance());
+    if (over <= 0.0) {
+        discard;
+    }
+    fragColor = vec4(color, vertexColor.a * horizon * over * 0.42);
+}
+#elif defined(DEPTH_ONLY)
+// The sparks' depth, after their light (texCoord0 as below): what is drawn later at their distance
+// sorts against them. The glows write none, and a spark that has faded out writes none.
+layout(location = 2) in vec3 cameraRelative;
+
+void main() {
+    if (texCoord0.x > 5.0 || length(texCoord0) >= 1.0 || vertexColor.a < 0.02) {
+        discard;
+    }
+    fragColor = vec4(0.0);
 }
 #else
 // Firework sparks: texCoord0 runs -1..1 across the quad. A bright core with a dimmer
 // rim, in two steps. Firework glows run 9..11 instead: a soft round falloff in four steps.
-void main() {
-    if (texCoord0.x > 5.0) {
-        float distance = length(texCoord0 - 10.0);
-        float glow = 1.0 - smoothstep(0.0, 1.0, distance);
-        fragColor = vec4(vertexColor.rgb, vertexColor.a * lite_steps(glow * glow, 4.0));
-        return;
+//
+// A show is a place in the world under the clouds' bases (render.feature.weather.FireworksShow),
+// drawn after the clouds and before translucent terrain. The land in front hides it, the Dynamic
+// clouds in front dim it by what they let through, and the air between dims it as it dims the
+// far lights.
+#include <minecraft:fog.glsl>
+#include <litelights:skyfog/atmosphere.glsl>
+
+layout(location = 2) in vec3 cameraRelative;
+
+#ifdef CLOUD_COVER
+// The Dynamic clouds as their composite laid them over the picture: light, and the distance to
+// their front plus the share of what lies behind that shows through (volume_composite.fsh). Bound
+// only for a camera over the clouds' floor, the one place cloud can stand between it and a burst.
+uniform sampler2D CloudMarch;
+
+layout(push_constant) uniform SkyEventsCover {
+    vec4 Cover;   // x screen pixels per marched pixel; yzw unused
+};
+
+// The share of a burst that shows through the clouds here, from the four marched pixels round this
+// one. With the camera over the floor and every burst under it, all the cloud along this line of
+// sight lies in front of the burst.
+float lite_cloud_through() {
+    ivec2 size = textureSize(CloudMarch, 0);
+    vec2 marched = gl_FragCoord.xy / Cover.x - 0.5;
+    ivec2 corner = ivec2(floor(marched));
+    vec2 blend = marched - vec2(corner);
+    float through = 0.0;
+    for (int i = 0; i < 4; i++) {
+        ivec2 offset = ivec2(i & 1, i >> 1);
+        vec4 tap = texelFetch(CloudMarch, clamp(corner + offset, ivec2(0), size - 1), 0);
+        float weight = (offset.x == 1 ? blend.x : 1.0 - blend.x) * (offset.y == 1 ? blend.y : 1.0 - blend.y);
+        through += min(fract(tap.a) / 0.998, 1.0) * weight;
     }
-    float distance = length(texCoord0);
-    float shape = distance < 0.45 ? 1.0 : (distance < 1.0 ? 0.35 : 0.0);
-    if (shape <= 0.0) {
+    return through;
+}
+
+// Whether the scene's depth here is the cloud's front, which the clouds write where they hide more
+// than half of what is behind (volume_depth.fsh, from the same marched pixel), rather than land.
+bool lite_scene_is_cloud(float sceneDistance) {
+    ivec2 size = textureSize(CloudMarch, 0);
+    vec4 tap = texelFetch(CloudMarch, clamp(ivec2(gl_FragCoord.xy / Cover.x), ivec2(0), size - 1), 0);
+    float front = floor(tap.a);
+    return front > 0.0 && fract(tap.a) < 0.5 && abs(sceneDistance - front) <= front * 0.01 + 1.0;
+}
+#endif
+
+// How much of a burst at this distance shows past what stands in front of it.
+float lite_firework_seen(float distance) {
+    float sceneDistance = lite_scene_distance();
+#ifdef CLOUD_COVER
+    if (sceneDistance < distance && !lite_scene_is_cloud(sceneDistance)) {
+        return 0.0;
+    }
+    return lite_cloud_through();
+#else
+    return sceneDistance < distance ? 0.0 : 1.0;
+#endif
+}
+
+// A burst is far brighter than the land the haze is tuned for: the air takes the same share of
+// its light, but it shows dimmer only once more than this share's inverse is gone (a show two
+// kilometres off on a clear night loses about four fifths of its light to the haze; rain's storm
+// fog takes nearly all of it).
+const float LITE_FIREWORK_SHINE = 4.0;
+
+// How much of the burst's light comes through the air between: LiteLights' haze, mist and storm
+// fog, as the far lights take them (the air's own colour is in the scene behind already), or with
+// vanilla's fog its environmental part, which closes in for rain, water and blindness.
+float lite_firework_air(vec3 position) {
+    float through;
+    if (lite_feature(LITE_FEATURE_LITE_FOG)) {
+        through = lite_feature(LITE_FEATURE_HAZE) ? 1.0 - lite_air(position, 1.0).a : 1.0;
+    } else {
+        through = 1.0 - linear_fog_value(length(position), FogEnvironmentalStart, FogEnvironmentalEnd);
+    }
+    return min(through * LITE_FIREWORK_SHINE, 1.0);
+}
+
+void main() {
+    float alpha;
+    if (texCoord0.x > 5.0) {
+        float glow = 1.0 - smoothstep(0.0, 1.0, length(texCoord0 - 10.0));
+        alpha = lite_steps(glow * glow, 4.0);
+    } else {
+        // A spark only a few pixels across is all core: its rim would be all a far one showed.
+        float core = max(0.45, fwidth(texCoord0.x) * 0.9);
+        float distance = length(texCoord0);
+        alpha = distance < core ? 1.0 : (distance < 1.0 ? 0.35 : 0.0);
+    }
+    alpha *= vertexColor.a;
+    if (alpha <= 0.0) {
         discard;
     }
-    fragColor = vec4(vertexColor.rgb, vertexColor.a * shape);
+    alpha *= lite_firework_seen(length(cameraRelative - lite_view_origin()));
+    if (alpha <= 0.0) {
+        discard;
+    }
+    fragColor = vec4(vertexColor.rgb, alpha * lite_firework_air(cameraRelative));
 }
 #endif

@@ -47,6 +47,9 @@ const int LITE_SNOW_VISUAL_FAN_OVERHANGS = 16;
 const float LITE_SNOW_GRASS_WHITE = 0.96;
 // The fanned dusting: how soft each texel's edge is against the share of snow that reaches it.
 const float LITE_SNOW_FAN_SOFT = 0.06;
+// How much of the texels the fanned dusting turns white for the share of snow that reaches them:
+// a little under three quarters since visual-snow-117, so the ground shows through more (the owner).
+const float LITE_SNOW_FAN_COVER = 0.72;
 // A face needs at least this much sky light (16 a level): the ground under the thickest canopy
 // keeps about 11. It rules out most of what lies under the canopy before the texel fetch.
 const float LITE_SNOW_SKY_LIGHT = 112.0;
@@ -159,7 +162,7 @@ void lite_snow_fanned(inout vec4 color, vec4 vertexColor, vec3 inside, ivec3 blo
     ivec3 face = ivec3(floor(inside * 16.0)) + ivec3(LiteWaterAnchor.x, LiteCameraBlock.y, LiteWaterAnchor.y) * 16;
     float speckle = lite_water_hash(ivec2(face.x + face.y * 7, face.z - face.y * 13));
     float need = 0.04 + 0.92 * speckle;
-    float snow = smoothstep(need - LITE_SNOW_FAN_SOFT, need + LITE_SNOW_FAN_SOFT, reach) * LITE_SNOW_DUSTING;
+    float snow = smoothstep(need - LITE_SNOW_FAN_SOFT, need + LITE_SNOW_FAN_SOFT, reach * LITE_SNOW_FAN_COVER) * LITE_SNOW_DUSTING;
     vec3 white = LITE_SNOW_WHITE * lite_snow_shading(vertexColor.rgb) * (0.94 + 0.06 * speckle);
     color.rgb = mix(color.rgb, white, snow);
 }

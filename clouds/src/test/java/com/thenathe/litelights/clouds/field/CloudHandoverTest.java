@@ -15,7 +15,9 @@ class CloudHandoverTest {
     @Test
     void theTypeNamesAreTheAgreedList() {
         // These names travel between mods: renaming one breaks a weather mod's sky.
-        assertEquals(List.of("cumulus", "congestus", "cumulonimbus", "nimbostratus", "stratus", "stratocumulus", "altocumulus", "cirrus"),
+        // New names go at the end (altostratus, cirrocumulus and cirrostratus since 1.1.1).
+        assertEquals(List.of("cumulus", "congestus", "cumulonimbus", "nimbostratus", "stratus", "stratocumulus", "altocumulus", "cirrus",
+                "altostratus", "cirrocumulus", "cirrostratus"),
             Arrays.stream(CloudType.values()).map(CloudType::id).toList());
         for (CloudType type : CloudType.values()) {
             assertSame(type, CloudType.byId(type.id()));

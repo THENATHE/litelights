@@ -14,10 +14,12 @@ final class Footprint {
 
     /*
      * A storm's area (CloudFormation.Edge.STORM) is whole over its rain core and fades to nothing
-     * a little past the storm's own edge, so its cloud is solid where rain falls and its ragged
-     * outline sits on the storm's edge. Its edge noise is small: the storm decides where it is.
+     * past the storm's own edge. Its outline wanders in lobes and bays, mostly outward: the noise
+     * scales the distance by 1 - STORM_EDGE_OUT plus or minus STORM_EDGE_NOISE, so the edge lies
+     * between about 1.09 and 1.5 radii and the rain core (0.8) stays under whole cloud.
      */
-    private static final double STORM_EDGE_NOISE = 0.06;
+    private static final double STORM_EDGE_NOISE = 0.15;
+    private static final double STORM_EDGE_OUT = 0.12;
     private static final double STORM_FADES_OUT_BY = 1.12;
 
     private final boolean everywhere;
@@ -33,6 +35,7 @@ final class Footprint {
     private final double fullInside;
     private final double fadedBy;
     private final double edgeNoise;
+    private final double edgeOut;
     private final double farthest;
 
     /**
@@ -48,13 +51,14 @@ final class Footprint {
         double radius = everywhere ? 1.0 : Math.max(1.0, formation.radius() * scale);
         this.longAxis = radius * stretchRoot;
         this.shortAxis = radius / stretchRoot;
-        this.noiseSize = radius * 0.45;
+        this.noiseSize = radius * 0.4;
         this.seed = seed;
         boolean storm = formation.edge() == CloudFormation.Edge.STORM;
         this.fullInside = storm ? Math.min(formation.rainCoreShare(), STORM_FADES_OUT_BY - 0.05) : FULL_INSIDE;
         this.fadedBy = storm ? STORM_FADES_OUT_BY : 1.0;
         this.edgeNoise = storm ? STORM_EDGE_NOISE : EDGE_NOISE;
-        this.farthest = fadedBy / (1.0 - edgeNoise);
+        this.edgeOut = storm ? STORM_EDGE_OUT : 0.0;
+        this.farthest = fadedBy / (1.0 - edgeNoise - edgeOut);
     }
 
     boolean everywhere() {
@@ -93,8 +97,8 @@ final class Footprint {
             return 0.0;
         }
         // The noise is read relative to the centre, so the ragged outline moves with the area.
-        double noise = CloudNoise.fractal(seed, along / noiseSize, across / noiseSize, 2, 0.0);
-        double edged = distance * (1.0 + edgeNoise * noise);
+        double noise = CloudNoise.fractal(seed, along / noiseSize, across / noiseSize, edgeOut > 0.0 ? 3 : 2, 0.0);
+        double edged = distance * (1.0 - edgeOut + edgeNoise * noise);
         return 1.0 - FieldMath.smoothstep(fullInside, fadedBy, edged);
     }
 
@@ -106,6 +110,24 @@ final class Footprint {
         double dx = worldX - centreX;
         double dz = worldZ - centreZ;
         return ellipseDistance(dx * cos + dz * sin, dz * cos - dx * sin);
+    }
+
+    /**
+     * The distance in radii from a point {@code shift} radii out along the long axis, where a
+     * storm's highest part stands, so it builds off its middle rather than round it.
+     */
+    double fromPeak(double worldX, double worldZ, double shift) {
+        double dx = worldX - centreX;
+        double dz = worldZ - centreZ;
+        return ellipseDistance(dx * cos + dz * sin - shift * longAxis, dz * cos - dx * sin);
+    }
+
+    /** Noise that travels with the area, about -1..1, of features {@code size} short radii across. */
+    double noiseInArea(double worldX, double worldZ, double size, int octaves, long noiseSeed) {
+        double dx = worldX - centreX;
+        double dz = worldZ - centreZ;
+        double scale = shortAxis * size;
+        return CloudNoise.fractal(noiseSeed, (dx * cos + dz * sin) / scale, (dz * cos - dx * sin) / scale, octaves, 0.0);
     }
 
     private double ellipseDistance(double along, double across) {

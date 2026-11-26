@@ -27,4 +27,14 @@ public interface FarTerrainState {
 
     /** How far the far terrain reaches, in blocks, while {@link #farTerrainDrawn}; 0 otherwise. */
     float farDistance();
+
+    /**
+     * The highest land (or water surface) far terrain knows of within a rectangle of block columns,
+     * at least as high as any of it and coarse (whole tiles of a few hundred blocks), or
+     * {@link Integer#MIN_VALUE} where it knows none of it or isn't drawn. For placing things over
+     * distant land without putting them inside it (the distant fireworks). Client thread.
+     */
+    default int highestLand(int minX, int minZ, int maxX, int maxZ) {
+        return Integer.MIN_VALUE;
+    }
 }

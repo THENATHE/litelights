@@ -2,11 +2,15 @@ package com.thenathe.litelights.render.feature.weather.snow;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import com.thenathe.litelights.render.feature.water.WindowGlass;
 import java.util.stream.DoubleStream;
+import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBlockTags;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.BaseTorchBlock;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
@@ -14,11 +18,17 @@ import net.minecraft.world.level.block.FenceBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.IronBarsBlock;
 import net.minecraft.world.level.block.LanternBlock;
+import net.minecraft.world.level.block.LeavesBlock;
+import net.minecraft.world.level.block.PowderSnowBlock;
 import net.minecraft.world.level.block.RedstoneWallTorchBlock;
 import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.SnowLayerBlock;
+import net.minecraft.world.level.block.SnowyBlock;
+import net.minecraft.world.level.block.StainedGlassBlock;
+import net.minecraft.world.level.block.StainedGlassPaneBlock;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.StemBlock;
+import net.minecraft.world.level.block.TransparentBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.VegetationBlock;
 import net.minecraft.world.level.block.WallBlock;
@@ -88,6 +98,41 @@ public final class SnowHosts {
             tops = SnowSurfaces.NONE;
         }
         return base || !tops.isEmpty() ? new Host(base, tops, false) : NONE;
+    }
+
+    /**
+     * Whether Snow over edges may weep down a block's faces, under snow on it or along the edge of
+     * the visual snow's own snow on its top. Never on a block that already shows snow of its own or
+     * has its own look for it (the owner, far-snow-115):
+     * <ul>
+     *   <li>blocks with a snowy side, the game's {@code snowy} property (grass blocks, podzol,
+     *   mycelium, and other mods' blocks built the same way): their own snowy side covers it;</li>
+     *   <li>snow itself: snow layers, snow blocks and powder snow (the game's snow tag too);</li>
+     *   <li>glass and glass panes of every kind: the game's glass classes (clear, tinted and
+     *   stained), the conventional glass tags, and whatever the window glass counts as glass
+     *   (panes by their kind, or other mods' panes named for glass); Glass frost shows on them;</li>
+     *   <li>leaves (the leaves tag, or the game's leaves class): Snowy leaves shows on them.</li>
+     * </ul>
+     * Tags are read as asked, never cached, since a server's tags arrive after the models load.
+     */
+    public static boolean takesDrips(BlockState state) {
+        Block block = state.getBlock();
+        if (block instanceof SnowyBlock || state.hasProperty(BlockStateProperties.SNOWY)) {
+            return false;
+        }
+        if (block instanceof SnowLayerBlock || block instanceof PowderSnowBlock || state.is(Blocks.SNOW_BLOCK) || state.is(BlockTags.SNOW)) {
+            return false;
+        }
+        if (block instanceof LeavesBlock || state.is(BlockTags.LEAVES)) {
+            return false;
+        }
+        return !glass(state, block);
+    }
+
+    private static boolean glass(BlockState state, Block block) {
+        return block instanceof TransparentBlock || block instanceof StainedGlassBlock || block instanceof StainedGlassPaneBlock
+            || state.is(BlockTags.IMPERMEABLE) || state.is(ConventionalBlockTags.GLASS_BLOCKS) || state.is(ConventionalBlockTags.GLASS_PANES)
+            || WindowGlass.isGlass(state);
     }
 
     private static boolean takesSnowAtBase(BlockState state, Block block) {

@@ -11,6 +11,20 @@ final class FieldMath {
         return t * t * (3.0 - 2.0 * t);
     }
 
+    /**
+     * The greater of two values, rounded off where they come within {@code softness} of each
+     * other, so a shape made of two meeting where they cross has no crease along the meeting.
+     */
+    static double smoothMax(double a, double b, double softness) {
+        double near = Math.max(softness - Math.abs(a - b), 0.0) / softness;
+        return Math.max(a, b) + near * near * softness * 0.25;
+    }
+
+    /** The lesser of two values, rounded off like {@link #smoothMax}. */
+    static double smoothMin(double a, double b, double softness) {
+        return -smoothMax(-a, -b, softness);
+    }
+
     static double lerp(double from, double to, double amount) {
         return from + (to - from) * amount;
     }

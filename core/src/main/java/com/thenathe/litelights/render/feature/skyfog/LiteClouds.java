@@ -50,12 +50,23 @@ public final class LiteClouds {
     private boolean drawnEarly;
     /** This frame's clouds are the Dynamic ones, which draw before translucent terrain. */
     private boolean dynamic;
+    /** The top of the layer the rain falls from, in world y, while this frame's clouds are Fancy or Flat layers; NaN otherwise. */
+    private float rainLayerTop = Float.NaN;
 
     private LiteClouds() {
     }
 
     public static LiteClouds get() {
         return INSTANCE;
+    }
+
+    /**
+     * The top of the layer the rain falls from (the lower one; the second layer is alto cloud), in
+     * world y: the Cloud height setting's height, plus the cells' height with Fancy clouds. NaN
+     * unless this frame's clouds are LiteLights' Fancy or Flat layers (climate.RegionalRain).
+     */
+    public float rainLayerTop() {
+        return rainLayerTop;
     }
 
     /** Whether LiteLights draws this frame's clouds (decided during options extraction). */
@@ -71,6 +82,7 @@ public final class LiteClouds {
         RenderSettings settings = RenderSettingsAccess.current();
         active = DimensionGate.allows(Aspect.SKY) && RenderFeatureStatus.mayRun(RenderFeature.CLOUDS);
         dynamic = false;
+        rainLayerTop = Float.NaN;
         if (!active) {
             return vanilla;
         }
@@ -104,6 +116,9 @@ public final class LiteClouds {
             }
             color = previewColour(color);
             lower.prepare(color, status, bottomY, rangeChunks, camera, gameTime, partialTicks);
+            if (status != CloudStatus.OFF) {
+                rainLayerTop = bottomY + (status == CloudStatus.FANCY ? lower.thickness() : 0.0f);
+            }
             if (twoLayers) {
                 upper.prepare(color, status, bottomY + UPPER_LAYER_RISE, rangeChunks, camera, gameTime, partialTicks);
             }

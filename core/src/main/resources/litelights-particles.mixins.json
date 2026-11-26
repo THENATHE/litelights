@@ -10,6 +10,7 @@
         "FireBlockInvoker",
         "LeavesBlockMixin",
         "RainSplashProviderMixin",
+        "SkyEventsFarPlaneMixin",
         "WeatherExtractionMixin"
     ],
     "injectors": {

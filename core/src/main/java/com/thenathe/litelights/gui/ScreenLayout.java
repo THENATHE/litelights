@@ -11,6 +11,7 @@ import com.thenathe.litelights.gui.widget.ResetWidget;
  * @param navAcross   whether the navigation is a row of icons above the list
  * @param describeH   height of the description box under the list; 0 when there is no room
  * @param describeMaxH the most the description box may grow to; 0 when there is no box
+ * @param costW       width of the cost column at the right edge of the setting rows
  */
 public record ScreenLayout(
         boolean docked,
@@ -20,7 +21,7 @@ public record ScreenLayout(
         int creditsY,
         int listX, int listY, int listW, int listBottom,
         int describeY, int describeH, int describeMaxH,
-        int footerY) {
+        int footerY, int costW) {
 
     public static final int PAD = 6;
     public static final int SEARCH_H = 16;
@@ -32,6 +33,25 @@ public record ScreenLayout(
     private static final int DESCRIBE_MIN_BODY = 150;
     /** The smallest box: a name and one line of description. */
     public static final int DESCRIBE_MIN_H = 30;
+    /** What the credit heart takes after a row's name: a gap and the 7-pixel heart. */
+    public static final int HEART_ROOM = 11;
+    /**
+     * How much of the 6-pixel margin a row's name keeps before its control the heart may use,
+     * leaving it 3 pixels clear of the control.
+     */
+    public static final int HEART_MARGIN = 3;
+    /** The gap a row's name (and the markers after it) keeps before the row's control. */
+    public static final int NAME_GAP = 6;
+    /** The cost column's width when the list is too narrow for the cost's words: a coloured dot. */
+    public static final int COST_DOT_W = 9;
+    /** The cost's words show when the list is at least this wide; dots below. */
+    public static final int COST_WORDS_MIN_LIST = 230;
+    /** The cost column before the screen has measured its words ("Medium" in the default font). */
+    private static final int DEFAULT_COST_W = 38;
+    /** Between the reset and the cost column. */
+    private static final int COST_GAP = 4;
+    /** What the changed marker takes after the name (or after the heart). */
+    public static final int CHANGED_ROOM = 5;
 
     public static ScreenLayout of(int width, int height, boolean fullScreenWanted, int pages) {
         int dockedW = Math.clamp(Math.round(width * 0.46F), 300, 460);
@@ -104,7 +124,23 @@ public record ScreenLayout(
 
         return new ScreenLayout(docked, panelX, panelY, panelW, panelH, titleY, searchX, searchY, searchW,
                 navX, navY, navW, navStep, navItemH, navLabels, navAcross, creditsY,
-                listX, listY, listW, listBottom, describeY, describeH, describeMaxH, footerY);
+                listX, listY, listW, listBottom, describeY, describeH, describeMaxH, footerY, DEFAULT_COST_W);
+    }
+
+    /**
+     * The same layout with the cost column as wide as the widest cost badge ({@code wordsW}), or
+     * as wide as a dot when the list is too narrow for words.
+     */
+    public ScreenLayout withCostColumn(int wordsW) {
+        int w = listW >= COST_WORDS_MIN_LIST ? wordsW : COST_DOT_W;
+        return new ScreenLayout(docked, panelX, panelY, panelW, panelH, titleY, searchX, searchY, searchW,
+                navX, navY, navW, navStep, navItemH, navLabels, navAcross, creditsY,
+                listX, listY, listW, listBottom, describeY, describeH, describeMaxH, footerY, w);
+    }
+
+    /** Whether the cost column shows the cost's words rather than dots. */
+    public boolean costWords() {
+        return costW > COST_DOT_W;
     }
 
     /**
@@ -122,7 +158,7 @@ public record ScreenLayout(
         int newListBottom = bodyBottom() - h - 4;
         return new ScreenLayout(docked, panelX, panelY, panelW, panelH, titleY, searchX, searchY, searchW,
                 navX, navY, navW, navStep, navItemH, navLabels, navAcross, creditsY,
-                listX, listY, listW, newListBottom, newListBottom + 4, h, describeMaxH, footerY);
+                listX, listY, listW, newListBottom, newListBottom + 4, h, describeMaxH, footerY, costW);
     }
 
     /**
@@ -168,13 +204,48 @@ public record ScreenLayout(
         return Math.clamp(Math.round(listW * 0.4F), 70, 140);
     }
 
-    /** Offsets from listX: the reset is flush right, the control just before it. */
+    /** Offsets from listX: the cost column is flush right, the reset before it, the control before that. */
+    public int costDx() {
+        return listW - costW;
+    }
+
     public int resetDx() {
-        return listW - ResetWidget.SIZE;
+        return costDx() - COST_GAP - ResetWidget.SIZE;
     }
 
     public int controlDx() {
         return resetDx() - 4 - controlW();
+    }
+
+    /**
+     * An action row's button: as wide as a control and its reset together, flush with the list's
+     * right edge, since an action has no reset and no cost; its name runs up to it.
+     */
+    public int actionDx() {
+        return listW - controlW() - 4 - ResetWidget.SIZE;
+    }
+
+    /** Where every control ends: a switch, as the narrowest, is flush with this edge. */
+    public int controlEndDx() {
+        return controlDx() + controlW();
+    }
+
+    /**
+     * A row's name runs up to its own control: the room from the list's left edge to a control
+     * starting at {@code controlLeftDx}, less the gap before it. A switch starts further right
+     * than a slider or a choice, so its name gets more room.
+     */
+    public static int nameRoom(int controlLeftDx) {
+        return controlLeftDx - NAME_GAP;
+    }
+
+    /**
+     * The room left for a row's name out of {@code room}, once a credited row has kept space for
+     * its heart and a changed row for its marker; the name is shortened to fit, so neither reaches
+     * the row's control.
+     */
+    public static int labelRoom(int room, boolean credited, boolean changed) {
+        return room - (credited ? HEART_ROOM - HEART_MARGIN : 0) - (changed ? CHANGED_ROOM : 0);
     }
 
     public int panelRight() {

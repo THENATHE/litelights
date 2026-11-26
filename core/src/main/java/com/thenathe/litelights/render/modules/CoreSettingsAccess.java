@@ -4,6 +4,7 @@ import com.thenathe.litelights.api.FarTerrainSettings;
 import com.thenathe.litelights.api.FarTerrainSettings.FarShadowMode;
 import com.thenathe.litelights.api.SettingsAccess;
 import com.thenathe.litelights.api.VisualSnowSettings;
+import com.thenathe.litelights.config.LiteLightsOptions;
 import com.thenathe.litelights.render.RenderSettings;
 import com.thenathe.litelights.render.RenderSettingsAccess;
 import org.jspecify.annotations.Nullable;
@@ -24,11 +25,12 @@ final class CoreSettingsAccess implements SettingsAccess {
 
     @Override
     public VisualSnowSettings visualSnow() {
-        RenderSettings.VisualSnow visual = RenderSettingsAccess.current().weather().visualSnow();
+        // As saved, whatever the Visual snow switch: far snow is far terrain's own row (far-snow-115).
         VisualSnowSettings made = visualSnow;
-        boolean leafTops = visual.leaves() == RenderSettings.SnowyLeavesLook.TOPS;
-        if (made == null || made.far() != visual.far() || made.leafTops() != leafTops || made.grass() != visual.grass()) {
-            made = new VisualSnowSettings(visual.far(), leafTops, visual.grass());
+        boolean leafTops = LiteLightsOptions.SNOWY_LEAVES_LOOK.get() == LiteLightsOptions.SnowyLeavesLook.TOPS;
+        boolean grass = LiteLightsOptions.SNOWY_GRASS.on();
+        if (made == null || made.leafTops() != leafTops || made.grass() != grass) {
+            made = new VisualSnowSettings(leafTops, grass);
             visualSnow = made;
         }
         return made;

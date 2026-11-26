@@ -5,6 +5,7 @@ import com.thenathe.litelights.config.CustomRow;
 import com.thenathe.litelights.config.DimensionOptions;
 import com.thenathe.litelights.config.GradeTemplates;
 import com.thenathe.litelights.config.LiteLightsConfig;
+import com.thenathe.litelights.config.Option;
 import com.thenathe.litelights.config.LiteLightsOptions.GradeTime;
 import com.thenathe.litelights.config.LiteLightsOptions.GradeSchedule;
 import com.thenathe.litelights.config.LiteLightsOptions;
@@ -52,6 +53,8 @@ final class BuiltInPages {
         Pages.contribute(Pages.SKY, CloudRows::contribute);
         Pages.register(new Pages.PageInfo(FAR_TERRAIN_PAGE, "litelights.page.far_terrain", FAR_TERRAIN_PAGE, 750));
         Pages.contribute(FAR_TERRAIN_PAGE, BuiltInPages::farTerrain);
+        Pages.register(new Pages.PageInfo(Pages.VISUAL_SNOW, "litelights.page.visual_snow", Pages.VISUAL_SNOW, 1050));
+        Pages.contribute(Pages.VISUAL_SNOW, BuiltInPages::visualSnow);
         Pages.contribute(Pages.COLOUR_GRADING, page -> page.section("grading").row(gradeTemplatePicker()).row(gradeTimePicker()));
         Pages.contribute(Pages.PARTICLES, page -> {
             page.section("particles").note(Component.translatable("litelights.note.nether_ambience"));
@@ -68,8 +71,10 @@ final class BuiltInPages {
                 page.section("modded").note(Component.translatable("litelights.note.no_modded_dimensions"));
             }
         });
+        // Credits for a whole page: a heart beside the page's first caption.
+        PageModel.pageCredit(Pages.OVERLAYS, "litelights.credit.overlays");
+        PageModel.pageCredit(FAR_TERRAIN_PAGE, "litelights.credit.far_terrain");
         Pages.contribute(Pages.OVERLAYS, page -> {
-            page.note(Component.translatable("litelights.credit.overlays"));
             page.section("recommended")
                     .recommendation(LAMBDABETTERGRASS, Component.translatable("litelights.recommend.lambdabettergrass"));
         });
@@ -159,16 +164,28 @@ final class BuiltInPages {
     }
 
     /**
-     * The far terrain settings that are left, and the permanent note that Voxy and Distant Horizons
-     * support was dropped in 1.0.8 (user, 2026-11-24). The Far shadows and Reach rows are the
-     * Shadows page's own, so a change on either page shows on the other.
+     * The far terrain settings that are left. The Far shadows and Reach rows are the Shadows page's
+     * own, so a change on either page shows on the other. That Voxy and Distant Horizons support was
+     * dropped in 1.0.8 is an internal note (DECISIONS, 1.0.8 and seedgen-server-112), not said on the
+     * page (user, 2026-11-25); with either installed, the Far shadows row says why it is off.
      */
     private static void farTerrain(PageContent page) {
-        page.note(Component.translatable("litelights.note.far_terrain_dropped"));
-        page.note(Component.translatable("litelights.credit.far_terrain"));
         page.section("from_shadows", Component.translatable("litelights.page.shadows"), false)
                 .option(LiteLightsOptions.FAR_SHADOWS)
                 .option(LiteLightsOptions.SHADOW_REACH);
+    }
+
+    /**
+     * Snow on far terrain on the Visual snow page too: the same option as far terrain's own row (one
+     * setting, two rows), in a section of its own, since the Visual snow switch doesn't grey it out.
+     */
+    private static void visualSnow(PageContent page) {
+        Option<?> farSnow = LiteLightsConfig.registry().get("weather.visual_snow.far");
+        if (farSnow != null) {
+            page.section("far_snow")
+                    .note(Component.translatable("litelights.note.far_snow"))
+                    .option(farSnow);
+        }
     }
 
     private static void resetEverything() {

@@ -399,6 +399,9 @@ class CloudFieldPictures {
             case STRATOCUMULUS -> new Color(0x7F, 0xC8, 0x8A);
             case ALTOCUMULUS -> new Color(0x6F, 0xB7, 0xF0);
             case CIRRUS -> new Color(0xC7, 0x8B, 0xF2);
+            case ALTOSTRATUS -> new Color(0x9F, 0xD4, 0xE8);
+            case CIRROCUMULUS -> new Color(0xE8, 0xB5, 0xF5);
+            case CIRROSTRATUS -> new Color(0xD8, 0xD0, 0xF0);
         };
     }
 

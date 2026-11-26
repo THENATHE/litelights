@@ -11,37 +11,58 @@ import org.jspecify.annotations.Nullable;
  * overworld), so a dimension or data pack that moves vanilla's clouds moves these too. The base
  * height is also the floor: no cloud reaches below it (the user's rule, 2026-11-25), so the low
  * and rain types sit just above it, the rain deck lowest, and their ragged bases fray down to it.
- * The numbers come from real clouds at one scale, 150 blocks to the kilometre across and up to
- * 3 km high, and 100 blocks to the kilometre above that (so towers and cirrus stay within a
- * reachable sky); the lowest real rain base sits at the floor. See docs/CLOUDS-FIELD.md for each
- * type's real figures.
+ *
+ * <p>The sky is four levels deep ({@link #levelTop}): the low clouds in the first, stratocumulus
+ * in the second, the alto clouds in the third and the cirro clouds in the fourth, while
+ * nimbostratus reaches from the first through the third and a thunderstorm through all four. The
+ * levels say how far up each type reaches, not slabs it fills (the user, 2026-11-25: "clouds that
+ * extend a somewhat fixed distance so that they mimic real cloud shapes"); within its reach a
+ * cloud's own shape decides its height.
  */
 public enum CloudType {
-    /** Fair-weather cumulus: low, puffy, from small wisps to clouds 300 blocks across. */
-    CUMULUS("cumulus", new Heights(28, 10, 210, 60, 6),
-        new Puffs(15, 150, 1.35f, 0.6f, 1.4f, 3, 0.12f, 0.18f, 0.4f, 40, 0.3f, 4_000, 12_000), null, null, false, false),
-    /** Towering cumulus: big, tall, bright heads; never rains in LiteLights' own skies. */
-    CONGESTUS("congestus", new Heights(24, 10, 490, 90, 5),
-        new Puffs(80, 360, 1.2f, 1.4f, 2.6f, 4, 0.1f, 0.2f, 0.3f, 70, 0.25f, 8_000, 20_000), null, null, false, false),
-    /** The thunderstorm: towers that reach the top of the sky and spread into an anvil. */
-    CUMULONIMBUS("cumulonimbus", new Heights(6, 4, 1_150, 120, 12),
-        new Puffs(200, 750, 1.0f, 1.8f, 3.2f, 6, 0.05f, 0.1f, 0.14f, 130, 0.1f, 12_000, 30_000), null,
-        new Anvil(1.8f, 120, new Sheet(500, 2.5f, 0.12f, 0.35f, 1.0f, 0.25f, 110, 10)), true, false),
-    /** The layered rain cloud: a thick grey deck with the lowest base, uneven and ragged. */
-    NIMBOSTRATUS("nimbostratus", new Heights(32, 6, 240, 40, 14),
-        null, new Sheet(900, 1.3f, 0.12f, 0.35f, 1.0f, 0.2f, 130, 12), null, true, false),
+    /** Fair-weather cumulus: low, puffy and about as tall as they are wide, from heaps 140 blocks across to clouds of 800. */
+    CUMULUS("cumulus", new Heights(40, 15, 345, 15, 10),
+        new Puffs(70, 390, 1.35f, 1.0f, 1.9f, 3, 0.08f, 0.15f, 0.3f, 60, 0.25f, 6_000, 16_000), null, null, false, 1, 1),
+    /** Towering cumulus: big and tall with bright heads, from the low level into the second; never rains in LiteLights' own skies. */
+    CONGESTUS("congestus", new Heights(36, 12, 690, 40, 8),
+        new Puffs(200, 650, 1.2f, 1.5f, 2.6f, 4, 0.08f, 0.15f, 0.25f, 110, 0.2f, 10_000, 24_000), null, null, false, 1, 2),
+    /**
+     * The thunderstorm: one great tower from the floor to the top of the sky, nearly as wide as the
+     * storm, spreading into an anvil at the top. Its puffs are the core tower's sizes; it has no
+     * smaller clouds of its own.
+     */
+    CUMULONIMBUS("cumulonimbus", new Heights(24, 6, 1_480, 20, 16),
+        new Puffs(300, 1_600, 1.0f, 1.8f, 3.2f, 6, 0.04f, 0.08f, 0.12f, 220, 0.12f, 12_000, 30_000), null,
+        new Anvil(1.5f, 200, new Sheet(900, 1.4f, 0.14f, 0.3f, 1.0f, 0.2f, 220, 14)), true, 1, 4),
+    /** The layered rain cloud: a thick grey mass with the lowest base, from the floor up through the third level. */
+    NIMBOSTRATUS("nimbostratus", new Heights(46, 8, 900, 120, 20),
+        null, new Sheet(1_200, 1.3f, 0.12f, 0.3f, 1.0f, 0.15f, 260, 14), null, true, 1, 3),
     /** A low, even grey layer. */
-    STRATUS("stratus", new Heights(4, 4, 44, 10, 6),
-        null, new Sheet(1_400, 1.5f, 0.15f, 0.3f, 1.0f, 0.12f, 90, 3), null, false, false),
-    /** A low lumpy layer of rolls and cells with gaps between. */
-    STRATOCUMULUS("stratocumulus", new Heights(14, 8, 110, 25, 5),
-        null, new Sheet(160, 1.4f, 0.06f, 0.5f, 1.0f, 0.35f, 55, 4), null, false, false),
-    /** Small puffs in rows at middle height. */
-    ALTOCUMULUS("altocumulus", new Heights(340, 40, 375, 15, 3),
-        null, new Sheet(45, 2.0f, 0.05f, 0.5f, 0.9f, 0.3f, 28, 0), null, false, false),
-    /** Thin wisps high up, drawn in the sky pass rather than as cubes. */
-    CIRRUS("cirrus", new Heights(820, 80, 840, 10, 0),
-        null, new Sheet(600, 6.0f, 0.15f, 0.4f, 0.35f, 0.0f, 100, 0), null, false, true);
+    STRATUS("stratus", new Heights(8, 6, 110, 20, 6),
+        null, new Sheet(1_400, 1.5f, 0.15f, 0.3f, 1.0f, 0.12f, 120, 4), null, false, 1, 1),
+    /** A lumpy layer of rolls and cells with gaps between, in the second level. */
+    STRATOCUMULUS("stratocumulus", new Heights(385, 25, 535, 30, 6),
+        null, new Sheet(260, 1.4f, 0.06f, 0.4f, 1.0f, 0.3f, 90, 8), null, false, 2, 2),
+    /** Small puffs in rows in the third level. */
+    ALTOCUMULUS("altocumulus", new Heights(780, 40, 890, 20, 4),
+        null, new Sheet(200, 1.6f, 0.08f, 0.5f, 0.95f, 0.35f, 110, 6), null, false, 3, 3),
+    /** Thin wisps at the top of the sky. */
+    CIRRUS("cirrus", new Heights(1_300, 60, 1_370, 15, 0),
+        null, new Sheet(600, 6.0f, 0.15f, 0.4f, 0.35f, 0.0f, 100, 0), null, false, 4, 4),
+    /** A pale, even sheet in the third level, the sun showing through it where it is thin. */
+    ALTOSTRATUS("altostratus", new Heights(760, 40, 990, 30, 8),
+        null, new Sheet(1_800, 2.5f, 0.2f, 0.3f, 0.85f, 0.08f, 200, 10), null, false, 3, 3),
+    /** Rows of tiny puffs at the top of the sky. */
+    CIRROCUMULUS("cirrocumulus", new Heights(1_250, 50, 1_300, 10, 0),
+        null, new Sheet(90, 1.6f, 0.06f, 0.5f, 0.5f, 0.25f, 50, 0), null, false, 4, 4),
+    /** A faint veil at the top of the sky. */
+    CIRROSTRATUS("cirrostratus", new Heights(1_240, 50, 1_360, 20, 0),
+        null, new Sheet(2_400, 3.0f, 0.3f, 0.25f, 0.22f, 0.0f, 200, 0), null, false, 4, 4);
+
+    /** How many levels the sky has. */
+    public static final int LEVELS = 4;
+    /** The top of each level, in blocks over the sky's base height: about 350, 700, 1,100 and 1,500. */
+    private static final float[] LEVEL_TOPS = {350.0f, 700.0f, 1_100.0f, 1_500.0f};
 
     /**
      * Heights from the sky's base height, in blocks.
@@ -113,17 +134,19 @@ public enum CloudType {
     private final @Nullable Sheet sheet;
     private final @Nullable Anvil anvil;
     private final boolean precipitates;
-    private final boolean skyLayer;
+    private final int lowestLevel;
+    private final int highestLevel;
 
     CloudType(String id, Heights heights, @Nullable Puffs puffs, @Nullable Sheet sheet, @Nullable Anvil anvil,
-              boolean precipitates, boolean skyLayer) {
+              boolean precipitates, int lowestLevel, int highestLevel) {
         this.id = id;
         this.heights = heights;
         this.puffs = puffs;
         this.sheet = sheet;
         this.anvil = anvil;
         this.precipitates = precipitates;
-        this.skyLayer = skyLayer;
+        this.lowestLevel = lowestLevel;
+        this.highestLevel = highestLevel;
     }
 
     /** The type's name in the list both mods share. Never changes. */
@@ -155,9 +178,24 @@ public enum CloudType {
         return precipitates;
     }
 
-    /** Drawn in the sky pass as a thin layer, not as cubes (cirrus). */
-    public boolean skyLayer() {
-        return skyLayer;
+    /** The lowest level of the sky this type reaches, 1 (the low clouds) to {@link #LEVELS}. */
+    public int lowestLevel() {
+        return lowestLevel;
+    }
+
+    /** The highest level of the sky this type reaches. */
+    public int highestLevel() {
+        return highestLevel;
+    }
+
+    /** The bottom of a level (1 to {@link #LEVELS}), in blocks over the sky's base height. */
+    public static float levelBottom(int level) {
+        return level <= 1 ? 0.0f : LEVEL_TOPS[level - 2];
+    }
+
+    /** The top of a level (1 to {@link #LEVELS}), in blocks over the sky's base height. */
+    public static float levelTop(int level) {
+        return LEVEL_TOPS[Math.clamp(level, 1, LEVELS) - 1];
     }
 
     /** The type with this {@link #id()}, or null for a name this version doesn't know. */

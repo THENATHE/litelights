@@ -1,10 +1,16 @@
 package com.thenathe.litelights.render.feature.farterrain.seed;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.stream.Stream;
+import net.fabricmc.fabric.api.event.registry.DynamicRegistries;
+import net.minecraft.ReportedException;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.LayeredRegistryAccess;
 import net.minecraft.core.Registry;
@@ -37,8 +43,9 @@ import net.minecraft.world.level.validation.DirectoryValidator;
  * pack repository, with their resource conditions and {@code pack.mcmeta} overlays), and loose
  * data packs in {@code <game>/litelights/datapacks/}, which take priority over both. The packs a
  * new world would have on are selected ({@link MinecraftServer#configurePackRepository}), then the
- * world-generation and dimension registries are read through {@link RegistryDataLoader}, with the
- * static registries' tags from the same packs, without touching the game's own registries.
+ * world-generation and dimension registries (vanilla's and the mods' own, as a server reads them:
+ * {@link #withModRegistries}) are read through {@link RegistryDataLoader}, with the static
+ * registries' tags from the same packs, without touching the game's own registries.
  *
  * <p>A bare scan of each jar's {@code data/} folder would miss nested built-in packs and version
  * overlays; going through the game's own pack loading is what the earlier companion project
@@ -67,11 +74,19 @@ public final class InstalledGenerationData {
     public static InstalledGenerationData load(Path datapackFolder, Executor executor) {
         // Symbolic links in the loose folder are refused, as a server refuses links it wasn't told to allow.
         PackRepository repository = ServerPacksSource.createPackRepository(datapackFolder, new DirectoryValidator(path -> false));
-        return load(repository, executor);
+        return load(repository, withModRegistries(RegistryDataLoader.WORLD_REGISTRIES, DynamicRegistries.getWorldRegistries()), executor);
     }
 
-    /** Loads from the packs a repository offers, selected as for a new world. */
+    /** Loads from the packs a repository offers, selected as for a new world, with vanilla's world registries only. */
     public static InstalledGenerationData load(PackRepository repository, Executor executor) {
+        return load(repository, RegistryDataLoader.WORLD_REGISTRIES, executor);
+    }
+
+    /**
+     * Loads from the packs a repository offers, selected as for a new world, reading these world
+     * registries. Throws {@link UnreadableData} when the packs' data can't be read.
+     */
+    public static InstalledGenerationData load(PackRepository repository, List<RegistryDataLoader.RegistryData<?>> worldRegistries, Executor executor) {
         MinecraftServer.configurePackRepository(repository, WorldDataConfiguration.DEFAULT, true, false);
         List<String> selected = List.copyOf(repository.getSelectedIds());
         List<PackResources> opened = repository.openAllSelected();
@@ -80,11 +95,41 @@ public final class InstalledGenerationData {
             List<Registry.PendingTags<?>> staticTags = TagLoader.loadTagsForExistingRegistries(resources, layers.getLayer(RegistryLayer.STATIC));
             RegistryAccess.Frozen worldContext = layers.getAccessForLoading(RegistryLayer.WORLD);
             List<HolderLookup.RegistryLookup<?>> worldLookups = TagLoader.buildUpdatedLookups(worldContext, staticTags);
-            RegistryAccess.Frozen generationRegistries = RegistryDataLoader.load(resources, worldLookups, RegistryDataLoader.WORLD_REGISTRIES, executor).join();
+            RegistryAccess.Frozen generationRegistries = loaded(RegistryDataLoader.load(resources, worldLookups, worldRegistries, executor));
             List<HolderLookup.RegistryLookup<?>> dimensionLookups = Stream.concat(worldLookups.stream(), generationRegistries.listRegistries()).toList();
-            RegistryAccess.Frozen dimensions = RegistryDataLoader.load(resources, dimensionLookups, RegistryDataLoader.DIMENSION_REGISTRIES, executor).join();
+            RegistryAccess.Frozen dimensions = loaded(RegistryDataLoader.load(resources, dimensionLookups, RegistryDataLoader.DIMENSION_REGISTRIES, executor));
             HolderLookup.Provider lookups = HolderLookup.Provider.create(Stream.concat(dimensionLookups.stream(), dimensions.listRegistries()));
             return new InstalledGenerationData(generationRegistries, dimensions, lookups, selected);
+        }
+    }
+
+    /**
+     * The world registries a server reads: vanilla's, then every mod's. A server's world loading
+     * reads the mods' registries (those registered through Fabric API) beside vanilla's, but
+     * {@link RegistryDataLoader#WORLD_REGISTRIES} holds vanilla's alone. Without the mods' own, a
+     * mod's world generation that refers to one (Lithostitched's density functions read their
+     * noise from its {@code lithostitched:fast_noise_config} registry, which Tectonic's terrain
+     * uses) can't be read, and loading fails for every registry at once: what stopped seed
+     * generation on servers with terrain mods in 1.1.1 (DECISIONS, seedgen-server-112).
+     */
+    static List<RegistryDataLoader.RegistryData<?>> withModRegistries(List<RegistryDataLoader.RegistryData<?>> vanilla,
+                                                                      List<RegistryDataLoader.RegistryData<?>> all) {
+        Map<ResourceKey<?>, RegistryDataLoader.RegistryData<?>> byKey = new LinkedHashMap<>();
+        for (RegistryDataLoader.RegistryData<?> data : vanilla) {
+            byKey.put(data.key(), data);
+        }
+        for (RegistryDataLoader.RegistryData<?> data : all) {
+            byKey.putIfAbsent(data.key(), data);
+        }
+        return List.copyOf(byKey.values());
+    }
+
+    /** A load's registries, or {@link UnreadableData} naming what couldn't be read. */
+    private static RegistryAccess.Frozen loaded(CompletableFuture<RegistryAccess.Frozen> loading) {
+        try {
+            return loading.join();
+        } catch (CompletionException failure) {
+            throw failure.getCause() instanceof ReportedException report ? UnreadableData.from(report) : failure;
         }
     }
 

@@ -52,13 +52,23 @@ public final class SeamCoverage {
 
     /**
      * What the near terrain covers in a column whose land (or water) reaches up into
-     * {@code topSection}: nothing until that section is drawn; then the water, and the land too
-     * once the first section below with anything but water is drawn. Water deeper than
-     * {@code bedSections} sections hides its bed anyway, so it counts as covered without it.
+     * {@code topSection}: nothing until that section is drawn, then everything. Only where the
+     * column's top is water whose bed lies below that section ({@code overWater}) does the land
+     * wait for the first section below with anything but water: until it is drawn, the water
+     * alone. Water deeper than {@code bedSections} sections hides its bed anyway, so it counts as
+     * covered without it.
+     *
+     * <p>Land, ice and water with its bed in the top section never wait for a section below:
+     * there is nothing of theirs to see there, and the near renderer never compiles a section it
+     * can't see into, such as the ground under a field, so waiting for one kept far land drawn
+     * under loaded land for good (seen through the near ice as a patchwork of chunks).
      */
-    public static Cover cover(Column column, int topSection, int lowestSection, int bedSections) {
+    public static Cover cover(Column column, int topSection, boolean overWater, int lowestSection, int bedSections) {
         if (!column.drawn(topSection)) {
             return Cover.NONE;
+        }
+        if (!overWater) {
+            return Cover.ALL;
         }
         for (int below = topSection - 1; below >= lowestSection && below >= topSection - bedSections; below--) {
             if (!column.onlyWater(below)) {

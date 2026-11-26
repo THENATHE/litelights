@@ -117,4 +117,104 @@ class FarTerrainRowsTest {
             registry.resetAll();
         }
     }
+
+    @Test
+    void snowOnFarTerrainIsFarTerrainsOwnRowOnByDefault() {
+        Option<?> farSnow = options().get("weather.visual_snow.far");
+        assertEquals(true, farSnow.defaultValue(), "on: far land carries the snow the near land has");
+        assertEquals("far_terrain", farSnow.page());
+        assertEquals("far_terrain", farSnow.feature().id());
+        assertEquals(options().get("far_terrain.enabled"), farSnow.needs(), "greyed out only while far terrain is off");
+        BoolOption farTerrain = (BoolOption) options().get("far_terrain.enabled");
+        farTerrain.set(true);
+        LiteLightsOptions.VISUAL_SNOW.set(false);
+        try {
+            assertTrue(farSnow.active(), "Visual snow off doesn't touch it");
+            farTerrain.set(false);
+            assertFalse(farSnow.active(), "far terrain off does");
+        } finally {
+            LiteLightsOptions.VISUAL_SNOW.reset();
+            farTerrain.reset();
+        }
+    }
+
+    /**
+     * Files saved by 1.1.4 and before, when Snow on far terrain sat under Visual snow: every file
+     * holds the row (every value is saved), on unless the player turned it off.
+     */
+    @Test
+    void snowOnFarTerrainSavedBy114CarriesOver() throws IOException {
+        assertEquals(true, farSnowAfterLoading("\"weather.visual_snow\": true, \"weather.visual_snow.far\": true"),
+            "Visual snow and far snow on: far snow stays on");
+        assertEquals(false, farSnowAfterLoading("\"weather.visual_snow\": true, \"weather.visual_snow.far\": false"),
+            "far snow turned off under Visual snow: stays off");
+        assertEquals(false, farSnowAfterLoading("\"weather.visual_snow\": false, \"weather.visual_snow.far\": false"),
+            "turned off, then Visual snow off: stays off");
+        assertEquals(true, farSnowAfterLoading("\"weather.visual_snow\": false, \"weather.visual_snow.far\": true"),
+            "never touched, Visual snow off (the old default): on, the new default");
+        assertEquals(true, farSnowAfterLoading("\"shadows.reach\": 192"), "a file from before the row: the default");
+    }
+
+    private Object farSnowAfterLoading(String values) throws IOException {
+        Path path = folder.resolve("litelights.json");
+        Files.writeString(path, "{ \"schema\": 3, \"options\": { " + values + " } }");
+        OptionRegistry registry = LiteLightsConfig.registry();
+        try {
+            ConfigFile file = new ConfigFile(path, registry, ConfigMigrations.standard());
+            file.load();
+            Object loaded = options().get("weather.visual_snow.far").get();
+            file.save();
+            JsonObject saved = JsonParser.parseString(Files.readString(path)).getAsJsonObject().getAsJsonObject("options");
+            assertEquals(loaded, saved.get("weather.visual_snow.far").getAsBoolean(), "saved back under its old name");
+            return loaded;
+        } finally {
+            registry.resetAll();
+        }
+    }
+
+    @Test
+    void waitForDetailIsOnBySeedGeneration() {
+        Map<String, Option<?>> options = options();
+        Option<?> wait = options.get("far_terrain.seed_wait_for_detail");
+        assertEquals(true, wait.defaultValue(), "on by default: the coarse stand-ins stay out of sight on a first fill");
+        assertEquals("far_terrain", wait.page());
+        assertEquals(options.get("far_terrain.seed_generation"), wait.needs(), "greyed out while Seed generation is off");
+    }
+
+    @Test
+    void aFileSavedBy111LoadsWholeAndWaitForDetailTakesItsDefault() throws IOException {
+        Path path = folder.resolve("litelights.json");
+        Files.writeString(path, """
+                {
+                  "schema": 3,
+                  "options": {
+                    "far_terrain.enabled": true,
+                    "far_terrain.distance": "km_8",
+                    "far_terrain.detail": "high",
+                    "far_terrain.seed_generation": true,
+                    "far_terrain.water_look": "plain",
+                    "shadows.reach": 192
+                  }
+                }""");
+        OptionRegistry registry = LiteLightsConfig.registry();
+        try {
+            ConfigFile file = new ConfigFile(path, registry, ConfigMigrations.standard());
+            file.load();
+            Map<String, Option<?>> options = options();
+            assertEquals(true, options.get("far_terrain.enabled").get());
+            assertEquals("KM_8", options.get("far_terrain.distance").get().toString());
+            assertEquals("HIGH", options.get("far_terrain.detail").get().toString());
+            assertEquals(true, options.get("far_terrain.seed_generation").get());
+            assertEquals("PLAIN", options.get("far_terrain.water_look").get().toString());
+            assertEquals(192, ((Number) options.get("shadows.reach").get()).intValue());
+            assertEquals(true, options.get("far_terrain.seed_wait_for_detail").get());
+
+            file.save();
+            JsonObject saved = JsonParser.parseString(Files.readString(path)).getAsJsonObject().getAsJsonObject("options");
+            assertTrue(saved.get("far_terrain.seed_generation").getAsBoolean(), "nothing the 1.1.1 file held is lost on saving");
+            assertEquals("km_8", saved.get("far_terrain.distance").getAsString());
+        } finally {
+            registry.resetAll();
+        }
+    }
 }

@@ -14,7 +14,11 @@ import com.thenathe.litelights.render.api.LiteRenderEvents;
 import com.thenathe.litelights.render.api.RenderFeature;
 import com.thenathe.litelights.render.api.RenderFeatureStatus;
 import com.thenathe.litelights.render.feature.climate.LocalClimate;
+import com.thenathe.litelights.render.feature.clouds.DynamicClouds;
+import com.thenathe.litelights.render.feature.lightning.CloudLightning;
 import com.thenathe.litelights.render.feature.weather.AuroraColdness;
+import com.thenathe.litelights.render.feature.weather.FireworksShow;
+import com.thenathe.litelights.render.feature.weather.ShowGround;
 import com.thenathe.litelights.render.feature.weather.SkyEvents;
 import com.thenathe.litelights.render.feature.weather.WeatherCompat;
 import com.thenathe.litelights.render.feature.weather.WeatherParticles;
@@ -38,6 +42,7 @@ import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.biome.Biome;
@@ -159,6 +164,7 @@ public final class ParticleSystem {
     private boolean heldForQa;
     private ParticleBatch auditScratch;
     private final SkyEvents sky = new SkyEvents();
+    private final ShowGround showGround = new ShowGround();
     private final AuroraColdness auroraColdness = new AuroraColdness();
     private final HazeDrift hazeDrift = new HazeDrift();
     private final SimulationWorker worker = new SimulationWorker(this::stepOnWorker);
@@ -484,6 +490,13 @@ public final class ParticleSystem {
         boolean skyAllowed = surroundings.overworldSky && surroundings.weatherAllowed && !surroundings.underground
             && RenderFeatureStatus.mayRun(RenderFeature.SKY_EVENTS);
         sky.update(settings.weather(), skyAllowed, surroundings.seed, surroundings.clockTime, surroundings.gameTime, coldness, visibility);
+        // Tonight's show goes under the clouds' bases, over the land at its place.
+        float cloudBase = fireworksCloudBase(settings);
+        int playerGround = level.getHeight(Heightmap.Types.MOTION_BLOCKING, (int) Math.floor(surroundings.cameraX),
+            (int) Math.floor(surroundings.cameraZ));
+        showGround.use(level);
+        sky.followShow(surroundings.cameraX, surroundings.cameraZ, showGround,
+            FireworksShow.guessedGround(level.getSeaLevel(), playerGround, cloudBase), cloudBase);
         // The rainbows follow the world's rain, not a previewed one, where the camera is.
         BlockPos camera = surroundings.cursor.set(surroundings.cameraX, surroundings.cameraY, surroundings.cameraZ);
         boolean rainsHere = LocalClimate.fallAt(level, camera) == Biome.Precipitation.RAIN;
@@ -500,6 +513,39 @@ public final class ParticleSystem {
             level.playLocalSound(x, surroundings.cameraY + FIREWORK_SOUND_HEIGHT, z, SoundEvents.FIREWORK_ROCKET_LARGE_BLAST_FAR, SoundSource.AMBIENT,
                 FIREWORK_SOUND_VOLUME, 0.85f + surroundings.random.nextFloat() * 0.2f, false);
         }
+    }
+
+    /**
+     * The clouds' bases for the distant fireworks' ceiling: where this frame's clouds start (the
+     * Dynamic clouds' floor, or Flat and Fancy clouds' height, as the cloud hook last gave it), or
+     * the Cloud height row's before any were placed; infinite with the clouds off.
+     */
+    private static float fireworksCloudBase(RenderSettings settings) {
+        if (settings.sky().clouds() == RenderSettings.CloudStyle.OFF) {
+            return Float.POSITIVE_INFINITY;
+        }
+        float base = CloudLightning.get().cloudBaseY();
+        return Float.isNaN(base) ? LiteLightsOptions.CLOUD_HEIGHT.value() : base;
+    }
+
+    /** Whether the distant fireworks or the rainbow draw before translucent terrain this frame (mixin.water.LevelRendererWaterMixin). */
+    public boolean wantsSkyEventsBeforeTranslucents() {
+        return sky.wantsPassBeforeTranslucents() && RenderFeatureStatus.mayRun(RenderFeature.SKY_EVENTS);
+    }
+
+    /** After the solid world, far terrain and the Dynamic clouds, before translucent terrain: the distant fireworks and the rainbow. */
+    public void drawSkyEventsBeforeTranslucents(RenderTarget target) {
+        if (!wantsSkyEventsBeforeTranslucents()) {
+            return;
+        }
+        long started = System.nanoTime();
+        try {
+            sky.drawBeforeTranslucents(target, LiteLightsRenderer.get().frame(), DynamicClouds.get().coverThisFrame());
+            RenderFeatureStatus.succeeded(RenderFeature.SKY_EVENTS);
+        } catch (RuntimeException error) {
+            RenderFeatureStatus.failed(RenderFeature.SKY_EVENTS, error);
+        }
+        totals[SKY_NANOS] += System.nanoTime() - started;
     }
 
     /** An atlas was stitched again; the particle atlas holds this system's sprites. */

@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 class VisualSnowSettingsTest {
     @Test
     void withTheMasterOffNothingCounts() {
-        VisualSnow off = VisualSnow.of(false, true, true, true, true, SnowyLeavesLook.TOPS, true, true, true);
+        VisualSnow off = VisualSnow.of(false, true, true, true, true, SnowyLeavesLook.TOPS, true, true);
         assertEquals(VisualSnow.DEFAULTS, off, "every row reads off, and the leaves keep today's look");
         assertEquals(0, SnowyLeaves.visualBits(off, true));
         assertEquals(RenderSettings.Weather.DEFAULTS.visualSnow(), VisualSnow.DEFAULTS);
@@ -20,17 +20,17 @@ class VisualSnowSettingsTest {
 
     @Test
     void eachRowIsItsOwnBit() {
-        VisualSnow all = VisualSnow.of(true, true, true, true, true, SnowyLeavesLook.TOPS, true, true, true);
+        VisualSnow all = VisualSnow.of(true, true, true, true, true, SnowyLeavesLook.TOPS, true, true);
         assertEquals(SnowyLeaves.VISUAL_ON | SnowyLeaves.VISUAL_GRASS | SnowyLeaves.VISUAL_LEAF_TOPS | SnowyLeaves.VISUAL_FAN_TREES
             | SnowyLeaves.VISUAL_FAN_OVERHANGS, SnowyLeaves.visualBits(all, true));
-        VisualSnow none = VisualSnow.of(true, false, false, false, false, SnowyLeavesLook.WHOLE, false, false, false);
+        VisualSnow none = VisualSnow.of(true, false, false, false, false, SnowyLeavesLook.WHOLE, false, false);
         assertEquals(SnowyLeaves.VISUAL_ON, SnowyLeaves.visualBits(none, true));
         assertFalse(none.blocks());
     }
 
     @Test
     void theSnowUnderTreesNeedsSnowyLeavesAndGround() {
-        VisualSnow trees = VisualSnow.of(true, false, false, true, false, SnowyLeavesLook.WHOLE, false, false, false);
+        VisualSnow trees = VisualSnow.of(true, false, false, true, false, SnowyLeavesLook.WHOLE, false, false);
         assertEquals(SnowyLeaves.VISUAL_ON | SnowyLeaves.VISUAL_FAN_TREES, SnowyLeaves.visualBits(trees, true));
         assertEquals(SnowyLeaves.VISUAL_ON, SnowyLeaves.visualBits(trees, false));
     }

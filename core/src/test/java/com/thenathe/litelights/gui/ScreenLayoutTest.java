@@ -1,5 +1,7 @@
 package com.thenathe.litelights.gui;
 
+import com.thenathe.litelights.gui.widget.ResetWidget;
+import com.thenathe.litelights.gui.widget.ToggleWidget;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -47,5 +49,37 @@ class ScreenLayoutTest {
             assertEquals(largest.listH(), largest.shortestListH(), "whatever the box's size now");
             assertTrue(layout.shortestListH() <= layout.listH());
         }
+    }
+
+    /**
+     * row-layout-116: the cost column is flush right, the reset just before it and the controls
+     * before that, and a row's name runs up to its own control, so a switch's name gets more room
+     * than a slider's or a choice's.
+     */
+    @Test
+    void aSwitchLeavesItsNameMoreRoomThanAWideControl() {
+        for (int[] window : WINDOWS) {
+            for (boolean full : new boolean[] {false, true}) {
+                ScreenLayout layout = ScreenLayout.of(window[0], window[1], full, 13).withCostColumn(38);
+                assertEquals(layout.listW(), layout.costDx() + layout.costW(), "the cost column ends at the list's edge");
+                assertTrue(layout.resetDx() + ResetWidget.SIZE < layout.costDx(), "the reset comes before the cost");
+                assertTrue(layout.controlEndDx() < layout.resetDx(), "the control comes before the reset");
+                int switchRoom = ScreenLayout.nameRoom(layout.controlEndDx() - ToggleWidget.WIDTH);
+                int sliderRoom = ScreenLayout.nameRoom(layout.controlDx());
+                assertTrue(switchRoom > sliderRoom, "a switch's name has more room: " + switchRoom + " against " + sliderRoom);
+                assertEquals(layout.controlW() - ToggleWidget.WIDTH, switchRoom - sliderRoom);
+                assertTrue(sliderRoom > 0, "a slider's row still has room for a name at " + window[0] + "x" + window[1]);
+            }
+        }
+    }
+
+    @Test
+    void theCostShowsAsDotsOnlyOnTheNarrowestLists() {
+        ScreenLayout docked = ScreenLayout.of(960, 540, false, 13).withCostColumn(38);
+        assertTrue(docked.costWords(), "docked at 1920x1080 (GUI scale 2) the costs are words");
+        assertEquals(38, docked.costW());
+        ScreenLayout narrow = new ScreenLayout(false, 0, 0, 200, 200, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, true, 0,
+                0, 0, ScreenLayout.COST_WORDS_MIN_LIST - 1, 200, 0, 0, 0, 180, 38).withCostColumn(38);
+        assertEquals(ScreenLayout.COST_DOT_W, narrow.costW());
     }
 }
